@@ -175,6 +175,8 @@ const authForm = document.querySelector("#authForm");
 const authTitle = document.querySelector("#authTitle");
 const authSubmitButton = document.querySelector("#authSubmitButton");
 const authMessage = document.querySelector("#authMessage");
+const gateAuthForm = document.querySelector("#gateAuthForm");
+const gateAuthMessage = document.querySelector("#gateAuthMessage");
 const inviteDialog = document.querySelector("#inviteDialog");
 const inviteForm = document.querySelector("#inviteForm");
 const inviteMessage = document.querySelector("#inviteMessage");
@@ -203,6 +205,11 @@ function queueCloudSync() {
       renderProfileView();
     });
   }, 800);
+}
+
+function updateAccessMode() {
+  const locked = cloudState.enabled && !cloudState.user;
+  document.body.classList.toggle("auth-locked", locked);
 }
 
 function supabaseConfig() {
@@ -1905,6 +1912,7 @@ document.addEventListener("click", (event) => {
       cloudState.user = null;
       clearCompanyContext();
       cloudState.message = "Користувач вийшов з акаунта.";
+      updateAccessMode();
       render();
     });
   }
@@ -2242,6 +2250,52 @@ async function inviteUser(email, role) {
   renderProfileView();
 }
 
+async function authenticateUser(email, password, mode, messageTarget) {
+  if (!cloudState.client) {
+    messageTarget.textContent = "Supabase не налаштовано.";
+    return false;
+  }
+
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const passwordValue = String(password || "");
+  const authModeValue = mode === "signup" ? "signup" : "signin";
+  messageTarget.textContent = authModeValue === "signup" ? "Створюю акаунт..." : "Вхід...";
+
+  const authRequest = authModeValue === "signup"
+    ? cloudState.client.auth.signUp({
+        email: normalizedEmail,
+        password: passwordValue,
+        options: {
+          data: {
+            full_name: normalizedEmail.split("@")[0],
+          },
+        },
+      })
+    : cloudState.client.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: passwordValue,
+      });
+
+  const { data: authData, error } = await authRequest;
+
+  if (error) {
+    messageTarget.textContent = error.message;
+    return false;
+  }
+
+  if (authModeValue === "signup" && !authData.session) {
+    messageTarget.textContent = "Акаунт створено. Перевір email, підтверди реєстрацію і увійди.";
+    return false;
+  }
+
+  cloudState.user = authData.user;
+  await loadCompanyContext();
+  await loadProjectsFromCloud();
+  updateAccessMode();
+  render();
+  return true;
+}
+
 searchInput.addEventListener("input", renderProjectList);
 statusFilter.addEventListener("change", renderProjectList);
 
@@ -2260,46 +2314,19 @@ document.querySelector("#newProjectButton").addEventListener("click", () => {
 
 authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!cloudState.client) {
-    authMessage.textContent = "Supabase не налаштовано. Створи supabase-config.js.";
-    return;
-  }
-
   const data = new FormData(authForm);
-  const email = String(data.get("email") || "").trim().toLowerCase();
-  const password = String(data.get("password") || "");
-  const mode = data.get("authMode") || authMode;
-  authMessage.textContent = mode === "signup" ? "Створюю акаунт..." : "Вхід...";
-  const authRequest = mode === "signup"
-    ? cloudState.client.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: email.split("@")[0],
-          },
-        },
-      })
-    : cloudState.client.auth.signInWithPassword({ email, password });
-
-  const { data: authData, error } = await authRequest;
-
-  if (error) {
-    authMessage.textContent = error.message;
-    return;
-  }
-
-  if (mode === "signup" && !authData.session) {
+  const success = await authenticateUser(data.get("email"), data.get("password"), data.get("authMode") || authMode, authMessage);
+  if (success) {
+    authDialog.close();
+  } else if ((data.get("authMode") || authMode) === "signup") {
     setAuthMode("signin");
-    authMessage.textContent = "Акаунт створено. Перевір email і підтверди реєстрацію, потім увійди.";
-    return;
   }
+});
 
-  cloudState.user = authData.user;
-  await loadCompanyContext();
-  await loadProjectsFromCloud();
-  authDialog.close();
-  render();
+gateAuthForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = new FormData(gateAuthForm);
+  await authenticateUser(data.get("email"), data.get("password"), "signin", gateAuthMessage);
 });
 
 inviteForm.addEventListener("submit", async (event) => {
@@ -2496,12 +2523,12 @@ technicalForm.addEventListener("submit", (event) => {
 });
 
 async function initApp() {
-  render();
   try {
     await initCloud();
   } catch (error) {
     cloudState.message = `Supabase помилка: ${error.message}`;
   }
+  updateAccessMode();
   render();
 }
 

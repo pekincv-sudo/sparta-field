@@ -6,7 +6,30 @@
     <title>Solar Object Manager</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body>
+  <body class="auth-locked">
+    <section class="auth-screen" aria-label="Вхід у SPARTA field">
+      <form class="auth-card" id="gateAuthForm">
+        <img class="auth-logo" src="./assets/sparta-logo.jpeg" alt="SPARTA power" />
+        <div class="auth-brand">
+          <strong>SPARTA</strong>
+          <span>power</span>
+        </div>
+        <input name="authMode" type="hidden" value="signin" />
+        <label class="auth-field">
+          <span>Email</span>
+          <input name="email" type="email" required autocomplete="email" />
+        </label>
+        <label class="auth-field">
+          <span>Пароль</span>
+          <input name="password" type="password" required autocomplete="current-password" />
+        </label>
+        <button class="primary-button auth-submit" id="gateAuthSubmitButton" type="submit">Увійти</button>
+        <button class="auth-link" type="button">Забули пароль?</button>
+        <p class="auth-message" id="gateAuthMessage">Увійди, щоб працювати з об'єктами SPARTA power.</p>
+        <small>Версія 1.0.0</small>
+      </form>
+    </section>
+
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">

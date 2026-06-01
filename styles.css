@@ -32,6 +32,114 @@ body {
     url("./assets/solar-background.png") center / cover fixed;
 }
 
+.auth-screen {
+  min-height: 100vh;
+  display: none;
+  place-items: center;
+  padding: 28px 18px;
+  background:
+    linear-gradient(180deg, rgba(5, 10, 13, 0.68), rgba(5, 10, 13, 0.96)),
+    url("./assets/solar-background.png") center / cover fixed;
+}
+
+body.auth-locked {
+  overflow: hidden;
+}
+
+body.auth-locked .auth-screen {
+  display: grid;
+}
+
+body.auth-locked .app-shell {
+  display: none;
+}
+
+.auth-card {
+  width: min(380px, 100%);
+  padding: 30px 22px 22px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(255, 210, 26, 0.26);
+  border-radius: 22px;
+  background: rgba(8, 14, 18, 0.88);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(16px);
+}
+
+.auth-logo {
+  width: 126px;
+  height: 126px;
+  object-fit: contain;
+  justify-self: center;
+  border-radius: 50%;
+  background: #fff;
+  padding: 10px;
+}
+
+.auth-brand {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.auth-brand strong {
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.auth-brand span {
+  font-size: 28px;
+  font-weight: 300;
+}
+
+.auth-field {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-field span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.auth-field input {
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(12, 20, 25, 0.95);
+  color: var(--ink);
+  padding: 12px 14px;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.auth-link {
+  border: 0;
+  background: transparent;
+  color: var(--yellow);
+  font-weight: 800;
+  padding: 2px;
+}
+
+.auth-message {
+  margin: 0;
+  min-height: 38px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+}
+
+.auth-card small {
+  color: var(--muted);
+  text-align: center;
+}
+
 button,
 input,
 select,
