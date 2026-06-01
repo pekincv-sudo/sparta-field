@@ -113,8 +113,14 @@ const defaultProjects = [
   },
 ];
 
-const savedProjects = localStorage.getItem("solarObjectManager.projects");
-let projects = savedProjects ? JSON.parse(savedProjects) : defaultProjects;
+const hasCloudConfig = Boolean(
+  window.SPARTA_SUPABASE_CONFIG?.url &&
+    window.SPARTA_SUPABASE_CONFIG?.anonKey &&
+    !window.SPARTA_SUPABASE_CONFIG.url.includes("YOUR_PROJECT_URL") &&
+    !window.SPARTA_SUPABASE_CONFIG.anonKey.includes("YOUR_SUPABASE_ANON_KEY")
+);
+const savedProjects = hasCloudConfig ? null : localStorage.getItem("solarObjectManager.projects");
+let projects = savedProjects ? JSON.parse(savedProjects) : hasCloudConfig ? [] : defaultProjects;
 
 let selectedProjectId = String(projects[0]?.id ?? "");
 let selectedTab = "summary";
