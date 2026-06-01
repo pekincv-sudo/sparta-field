@@ -355,7 +355,7 @@ async function loadCompanyContext() {
     cloudState.ready = false;
     cloudState.members = [];
     cloudState.invitations = [];
-    cloudState.message = "Користувач не доданий до компанії.";
+    cloudState.message = `Користувач не доданий до компанії. Запрошення для ${cloudState.user.email || "цього email"} не знайдено або ще не активне.`;
     return;
   }
 
@@ -374,6 +374,27 @@ async function acceptPendingInvitation() {
     return false;
   }
   return Boolean(data?.length);
+}
+
+async function retryAcceptInvitation() {
+  if (!cloudState.user) {
+    cloudState.message = "Спочатку увійди в акаунт.";
+    renderProfileView();
+    return;
+  }
+
+  cloudState.message = "Перевіряю запрошення...";
+  renderProfileView();
+  const accepted = await acceptPendingInvitation();
+  if (!accepted) {
+    cloudState.message = `Запрошення для ${cloudState.user.email || "цього email"} не знайдено. Перевір email у запрошенні.`;
+    renderProfileView();
+    return;
+  }
+
+  await loadCompanyContext();
+  await loadProjectsFromCloud();
+  render();
 }
 
 async function loadCompanyPeople() {
@@ -1719,6 +1740,7 @@ function renderProfileView() {
   const email = cloudState.user?.email || "Користувач не увійшов";
   const mode = cloudState.enabled ? cloudState.message : "Локальне збереження в браузері";
   const canManageUsers = ["owner", "admin"].includes(cloudState.memberRole);
+  const canAcceptInvitation = Boolean(cloudState.user && cloudState.enabled && !cloudState.ready);
   profileView.innerHTML = `
     <section class="profile-panel">
       <div class="profile-card">
@@ -1736,6 +1758,7 @@ function renderProfileView() {
             : `<button id="loginButton">Увійти в акаунт <span>›</span></button>`
         }
         <button id="syncNowButton">Синхронізувати зараз <span>›</span></button>
+        ${canAcceptInvitation ? `<button id="acceptInvitationButton">Прийняти запрошення <span>›</span></button>` : ""}
         ${canManageUsers ? `<button id="inviteUserButton">Додати користувача <span>›</span></button>` : ""}
         <button>Моя бригада <span>›</span></button>
         <button>Налаштування <span>›</span></button>
@@ -1883,6 +1906,13 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("#syncNowButton")) {
     syncProjectsToCloud().then(render).catch((error) => {
       cloudState.message = `Помилка синхронізації: ${error.message}`;
+      renderProfileView();
+    });
+  }
+
+  if (event.target.closest("#acceptInvitationButton")) {
+    retryAcceptInvitation().catch((error) => {
+      cloudState.message = `Помилка запрошення: ${error.message}`;
       renderProfileView();
     });
   }
