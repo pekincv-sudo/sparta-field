@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Solar Object Manager</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img class="brand-logo" src="./assets/sparta-logo.jpeg" alt="SPARTA power" />
+          <div>
+            <strong>SPARTA power</strong>
+            <span>Solar Object Manager</span>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Головна навігація">
+          <button class="nav-item active" data-section="home"><span>⌂</span>Головна</button>
+          <button class="nav-item" data-section="projects"><span>▤</span>Об'єкти</button>
+          <button class="nav-item" data-section="map"><span>⌖</span>Карта</button>
+          <button class="nav-item" data-section="service"><span>⚒</span>Сервіс</button>
+          <button class="nav-item" data-section="monitoring"><span>⌁</span>Моніторинг</button>
+          <button class="nav-item" data-section="profile"><span>○</span>Профіль</button>
+        </nav>
+
+        <div class="user-card">
+          <span class="label">Роль</span>
+          <strong>Власник компанії</strong>
+          <small>Повний доступ до MVP</small>
+        </div>
+      </aside>
+
+      <main class="main">
+        <section class="topbar">
+          <div>
+            <p class="eyebrow">Прототип</p>
+            <h1>SPARTA field</h1>
+          </div>
+          <button class="primary-button" id="newProjectButton">+ Новий об'єкт</button>
+        </section>
+
+        <section class="section active" id="home">
+          <div id="homeView"></div>
+        </section>
+
+        <section class="section" id="projects">
+          <div class="toolbar">
+            <label class="search">
+              <span>Пошук</span>
+              <input id="searchInput" type="search" placeholder="Клієнт, адреса, бригада" />
+            </label>
+            <label>
+              <span>Статус</span>
+              <select id="statusFilter">
+                <option value="all">Усі</option>
+                <option value="new">Новий</option>
+                <option value="planned">Заплановано</option>
+                <option value="in_progress">В роботі</option>
+                <option value="waiting_review">Очікує перевірки</option>
+                <option value="completed">Завершено</option>
+                <option value="passport_issued">Паспорт видано</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="object-list" id="projectList"></div>
+        </section>
+
+        <section class="section" id="objectDetail">
+          <article class="detail-panel" id="projectDetail"></article>
+        </section>
+
+        <section class="section" id="map">
+          <div id="mapView"></div>
+        </section>
+
+        <section class="section" id="service">
+          <div id="serviceView"></div>
+        </section>
+
+        <section class="section" id="monitoring">
+          <div id="monitoringView"></div>
+        </section>
+
+        <section class="section" id="profile">
+          <div id="profileView"></div>
+        </section>
+
+        <section class="section" id="dashboard">
+          <div class="stats-grid" id="statsGrid"></div>
+          <div class="wide-panel">
+            <h2>Що дає перша версія</h2>
+            <div class="feature-grid">
+              <div>
+                <strong>Контроль об'єктів</strong>
+                <p>Статуси, бригади, адреси, клієнти й відповідальні в одному місці.</p>
+              </div>
+              <div>
+                <strong>Менше помилок</strong>
+                <p>Автоматична перевірка: кількість панелей у стрінгах має збігатися з техданими.</p>
+              </div>
+              <div>
+                <strong>Документ для клієнта</strong>
+                <p>Паспорт об'єкта збирається з уже внесених даних без ручного копіювання.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="passport">
+          <div class="passport-actions">
+            <button class="secondary-button" id="passportPreviewButton">Попередній перегляд</button>
+            <button class="primary-button" id="passportPrintButton">Друк / PDF</button>
+          </div>
+          <article class="passport-preview" id="passportPreview"></article>
+        </section>
+
+        <section class="section" id="schema">
+          <div class="wide-panel">
+            <h2>Модель даних MVP</h2>
+            <div class="schema-grid">
+              <div><strong>projects</strong><span>об'єкти, клієнти, статуси</span></div>
+              <div><strong>technical_data</strong><span>панелі, інвертор, АКБ</span></div>
+              <div><strong>connection_strings</strong><span>MPPT, стрінги, кількість панелей</span></div>
+              <div><strong>materials</strong><span>план, факт, одиниці виміру</span></div>
+              <div><strong>photos</strong><span>категорії фото об'єкта</span></div>
+              <div><strong>passports</strong><span>PDF, статус, дата видачі</span></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="authDialog">
+      <form method="dialog" class="modal-form" id="authForm">
+        <div class="modal-head">
+          <h2>Вхід користувача</h2>
+          <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
+        </div>
+        <div class="form-grid">
+          <label>Email<input name="email" type="email" required autocomplete="email" /></label>
+          <label>Пароль<input name="password" type="password" required autocomplete="current-password" /></label>
+        </div>
+        <p class="calculation-note" id="authMessage">Увійди, щоб синхронізувати дані з базою.</p>
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Скасувати</button>
+          <button type="submit" class="primary-button">Увійти</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="inviteDialog">
+      <form method="dialog" class="modal-form" id="inviteForm">
+        <div class="modal-head">
+          <h2>Додати користувача</h2>
+          <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
+        </div>
+        <div class="form-grid">
+          <label>Email<input name="email" type="email" required autocomplete="email" /></label>
+          <label>Роль
+            <select name="role">
+              <option value="installer">Монтажник</option>
+              <option value="brigadier">Бригадир</option>
+              <option value="engineer">Інженер</option>
+              <option value="viewer">Тільки перегляд</option>
+              <option value="admin">Адміністратор</option>
+            </select>
+          </label>
+        </div>
+        <p class="calculation-note" id="inviteMessage">Користувач має бути створений у Supabase Auth з цим email.</p>
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Скасувати</button>
+          <button type="submit" class="primary-button">Зберегти запрошення</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="projectDialog">
+      <form method="dialog" class="modal-form" id="projectForm">
+        <div class="modal-head">
+          <h2>Новий об'єкт</h2>
+          <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
+        </div>
+        <div class="form-grid">
+          <label>Назва об'єкта<input name="title" required /></label>
+          <label>Клієнт<input name="clientName" required /></label>
+          <label>Телефон<input name="clientPhone" /></label>
+          <label>Адреса<input name="address" required /></label>
+          <label>Тип об'єкта
+            <select name="objectType">
+              <option value="Приватний будинок">Приватний будинок</option>
+              <option value="Комерційний об'єкт">Комерційний об'єкт</option>
+              <option value="Наземна станція">Наземна станція</option>
+            </select>
+          </label>
+          <label>Статус
+            <select name="status">
+              <option value="new">Новий</option>
+              <option value="planned">Заплановано</option>
+              <option value="in_progress">В роботі</option>
+            </select>
+          </label>
+          <label>Дата монтажу<input name="installationDate" type="date" /></label>
+          <label>Бригада<input name="teamName" /></label>
+          <label>Орієнтовна потужність, кВт<input name="estimatedPower" type="number" step="0.01" /></label>
+          <label class="full">Коментар<textarea name="comment" rows="3"></textarea></label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Скасувати</button>
+          <button type="submit" class="primary-button" id="saveProjectButton" value="default">Зберегти</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="projectInfoDialog">
+      <form method="dialog" class="modal-form" id="projectInfoForm">
+        <div class="modal-head">
+          <h2>Основна інформація</h2>
+          <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
+        </div>
+        <div class="form-grid">
+          <label>Назва об'єкта<input name="title" required /></label>
+          <label>Клієнт<input name="clientName" required /></label>
+          <label>Телефон<input name="clientPhone" /></label>
+          <label>Адреса<input name="address" required /></label>
+          <label>Тип об'єкта
+            <select name="objectType">
+              <option value="Приватний будинок">Приватний будинок</option>
+              <option value="Комерційний об'єкт">Комерційний об'єкт</option>
+              <option value="Промисловий об'єкт">Промисловий об'єкт</option>
+              <option value="Наземна станція">Наземна станція</option>
+            </select>
+          </label>
+          <label>Дата монтажу<input name="installationDate" type="date" /></label>
+          <label>Бригада<input name="teamName" /></label>
+          <label class="full">Коментар<textarea name="comment" rows="3"></textarea></label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Скасувати</button>
+          <button type="submit" class="primary-button" value="default">Зберегти інформацію</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="technicalDialog">
+      <form method="dialog" class="modal-form" id="technicalForm">
+        <div class="modal-head">
+          <h2>Технічні дані</h2>
+          <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
+        </div>
+        <div class="form-section-title">Фотомодулі</div>
+        <div class="form-grid">
+          <label>Вибрати виробника
+            <select id="panelManufacturerSelect" name="panelManufacturer">
+              <option value="">Оберіть зі списку</option>
+              <option value="Longi">Longi</option>
+              <option value="Jinko">Jinko</option>
+              <option value="Jasolar">Jasolar</option>
+              <option value="Tongwei Solar">Tongwei Solar</option>
+              <option value="Trina Solar">Trina Solar</option>
+              <option value="custom">Інший виробник</option>
+            </select>
+          </label>
+          <label>Модель фотомодуля<input name="panelModel" placeholder="LR5-72HTH-580M" required /></label>
+          <label>Потужність однієї панелі, Вт<input name="panelPowerW" type="number" min="0" step="1" required /></label>
+          <label>Кількість панелей<input name="panelCount" type="number" min="0" step="1" required /></label>
+        </div>
+
+        <div class="form-section-title">Інвертор</div>
+        <div class="form-grid">
+          <label>Виробник інвертора<input name="inverterManufacturer" placeholder="Deye, Huawei, Solis" /></label>
+          <label>Модель інвертора<input name="inverterModel" placeholder="SUN-12K-SG04LP3" required /></label>
+          <label>Потужність інвертора, кВт<input name="inverterPowerKw" type="number" min="0" step="0.01" /></label>
+          <label>Серійний номер<input name="inverterSerialNumber" /></label>
+          <label>Кількість MPPT<input name="mpptCount" type="number" min="0" step="1" /></label>
+          <label>PV входів на один MPPT<input name="pvInputsPerMppt" type="number" min="0" step="1" /></label>
+        </div>
+
+        <div class="form-section-title">Система збереження / акумулятор</div>
+        <div class="form-grid">
+          <label>Виробник акумулятора<input name="batteryManufacturer" placeholder="Dyness, Pylontech, Deye" /></label>
+          <label>Модель акумулятора<input name="batteryModel" placeholder="Tower T10, US5000" /></label>
+          <label>Потужність / ємність одного модуля, кВт·год<input name="batteryCapacityKwh" type="number" min="0" step="0.01" /></label>
+          <label>Кількість модулів<input name="batteryModulesCount" type="number" min="0" step="1" /></label>
+          <label class="full">Серійні номери акумуляторів<textarea name="batterySerialNumbers" rows="3" placeholder="Кожен серійний номер з нового рядка"></textarea></label>
+        </div>
+
+        <p class="calculation-note" id="technicalPowerPreview">Загальна потужність: 0.00 кВт</p>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Скасувати</button>
+          <button type="submit" class="primary-button" value="default">Зберегти техдані</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./supabase-config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
