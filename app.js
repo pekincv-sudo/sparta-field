@@ -126,6 +126,7 @@ let selectedProjectId = String(projects[0]?.id ?? "");
 let selectedTab = "summary";
 let stringsEditing = false;
 let materialsEditing = false;
+let authMode = "signin";
 let cloudSyncTimer = null;
 let cloudLoading = false;
 let pendingCloudDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingDeletes") || "[]");
@@ -163,6 +164,8 @@ const technicalPowerPreview = document.querySelector("#technicalPowerPreview");
 const panelManufacturerSelect = document.querySelector("#panelManufacturerSelect");
 const authDialog = document.querySelector("#authDialog");
 const authForm = document.querySelector("#authForm");
+const authTitle = document.querySelector("#authTitle");
+const authSubmitButton = document.querySelector("#authSubmitButton");
 const authMessage = document.querySelector("#authMessage");
 const inviteDialog = document.querySelector("#inviteDialog");
 const inviteForm = document.querySelector("#inviteForm");
@@ -1755,6 +1758,26 @@ function renderRoleLabel(role) {
   return labels[role] || role || "-";
 }
 
+function setAuthMode(mode) {
+  authMode = mode === "signup" ? "signup" : "signin";
+  authForm.querySelector("[name='authMode']").value = authMode;
+  authForm.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.authMode === authMode);
+  });
+
+  if (authMode === "signup") {
+    authTitle.textContent = "Створити акаунт";
+    authSubmitButton.textContent = "Створити акаунт";
+    authMessage.textContent = "Введи email, який власник додав у запрошення, і придумай пароль.";
+  } else {
+    authTitle.textContent = "Вхід користувача";
+    authSubmitButton.textContent = "Увійти";
+    authMessage.textContent = cloudState.enabled
+      ? "Введи email і пароль користувача."
+      : "Supabase ще не налаштовано. Додай supabase-config.js.";
+  }
+}
+
 function renderCompanyUsers() {
   if (!cloudState.ready) return "";
   const members = cloudState.members || [];
@@ -1839,8 +1862,13 @@ document.addEventListener("click", (event) => {
 
   if (event.target.closest("#loginButton")) {
     authForm.reset();
-    authMessage.textContent = cloudState.enabled ? "Введи email і пароль Supabase-користувача." : "Supabase ще не налаштовано. Додай supabase-config.js.";
+    setAuthMode("signin");
     authDialog.showModal();
+  }
+
+  const authModeButton = event.target.closest("[data-auth-mode]");
+  if (authModeButton) {
+    setAuthMode(authModeButton.dataset.authMode);
   }
 
   if (event.target.closest("#logoutButton")) {
@@ -1869,7 +1897,7 @@ document.addEventListener("click", (event) => {
       return;
     }
     inviteForm.reset();
-    inviteMessage.textContent = "Користувач має бути створений у Supabase Auth з цим email.";
+    inviteMessage.textContent = "Додай email і роль. Користувач зможе створити акаунт із цим email та автоматично приєднається до компанії.";
     inviteDialog.showModal();
   }
 
@@ -2202,14 +2230,32 @@ authForm.addEventListener("submit", async (event) => {
   }
 
   const data = new FormData(authForm);
-  authMessage.textContent = "Вхід...";
-  const { data: authData, error } = await cloudState.client.auth.signInWithPassword({
-    email: data.get("email"),
-    password: data.get("password"),
-  });
+  const email = String(data.get("email") || "").trim().toLowerCase();
+  const password = String(data.get("password") || "");
+  const mode = data.get("authMode") || authMode;
+  authMessage.textContent = mode === "signup" ? "Створюю акаунт..." : "Вхід...";
+  const authRequest = mode === "signup"
+    ? cloudState.client.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: email.split("@")[0],
+          },
+        },
+      })
+    : cloudState.client.auth.signInWithPassword({ email, password });
+
+  const { data: authData, error } = await authRequest;
 
   if (error) {
     authMessage.textContent = error.message;
+    return;
+  }
+
+  if (mode === "signup" && !authData.session) {
+    setAuthMode("signin");
+    authMessage.textContent = "Акаунт створено. Перевір email і підтверди реєстрацію, потім увійди.";
     return;
   }
 

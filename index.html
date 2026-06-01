@@ -137,9 +137,14 @@
     <dialog id="authDialog">
       <form method="dialog" class="modal-form" id="authForm">
         <div class="modal-head">
-          <h2>Вхід користувача</h2>
+          <h2 id="authTitle">Вхід користувача</h2>
           <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
         </div>
+        <div class="segmented" aria-label="Режим авторизації">
+          <button type="button" class="active" data-auth-mode="signin">Увійти</button>
+          <button type="button" data-auth-mode="signup">Створити акаунт</button>
+        </div>
+        <input name="authMode" type="hidden" value="signin" />
         <div class="form-grid">
           <label>Email<input name="email" type="email" required autocomplete="email" /></label>
           <label>Пароль<input name="password" type="password" required autocomplete="current-password" /></label>
@@ -147,7 +152,7 @@
         <p class="calculation-note" id="authMessage">Увійди, щоб синхронізувати дані з базою.</p>
         <div class="modal-actions">
           <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Скасувати</button>
-          <button type="submit" class="primary-button">Увійти</button>
+          <button type="submit" class="primary-button" id="authSubmitButton">Увійти</button>
         </div>
       </form>
     </dialog>
@@ -170,7 +175,7 @@
             </select>
           </label>
         </div>
-        <p class="calculation-note" id="inviteMessage">Користувач має бути створений у Supabase Auth з цим email.</p>
+        <p class="calculation-note" id="inviteMessage">Додай email і роль. Користувач зможе створити акаунт із цим email та автоматично приєднається до компанії.</p>
         <div class="modal-actions">
           <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Скасувати</button>
           <button type="submit" class="primary-button">Зберегти запрошення</button>
