@@ -143,6 +143,14 @@ const cloudState = {
   invitations: [],
 };
 
+function clearCompanyContext() {
+  cloudState.companyId = supabaseConfig()?.companyId || null;
+  cloudState.memberRole = null;
+  cloudState.ready = false;
+  cloudState.members = [];
+  cloudState.invitations = [];
+}
+
 const projectList = document.querySelector("#projectList");
 const projectDetail = document.querySelector("#projectDetail");
 const passportPreview = document.querySelector("#passportPreview");
@@ -352,9 +360,7 @@ async function loadCompanyContext() {
     const accepted = await acceptPendingInvitation();
     if (accepted) return loadCompanyContext();
 
-    cloudState.ready = false;
-    cloudState.members = [];
-    cloudState.invitations = [];
+    clearCompanyContext();
     cloudState.message = `Користувач не доданий до компанії. Запрошення для ${cloudState.user.email || "цього email"} не знайдено або ще не активне.`;
     return;
   }
@@ -1897,7 +1903,7 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("#logoutButton")) {
     cloudState.client?.auth.signOut().then(() => {
       cloudState.user = null;
-      cloudState.ready = false;
+      clearCompanyContext();
       cloudState.message = "Користувач вийшов з акаунта.";
       render();
     });
