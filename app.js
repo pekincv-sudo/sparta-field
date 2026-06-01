@@ -406,11 +406,9 @@ async function loadProjectsFromCloud() {
   cloudLoading = false;
   if (error) throw error;
 
-  if (data?.length) {
-    projects = data.map(dbProjectToApp);
-    selectedProjectId = normalizeProjectId(projects[0]?.id);
-    localStorage.setItem("solarObjectManager.projects", JSON.stringify(projects));
-  }
+  projects = (data || []).map(dbProjectToApp);
+  selectedProjectId = projects[0] ? normalizeProjectId(projects[0].id) : "";
+  localStorage.setItem("solarObjectManager.projects", JSON.stringify(projects));
 }
 
 async function syncProjectsToCloud() {
