@@ -15,6 +15,7 @@ const companyContacts = {
 };
 
 const PHOTO_BUCKET = "project-photos";
+const PROJECT_FILE_BUCKET = "project-files";
 const PROJECT_FILE_DB = "sparta-project-files";
 const PROJECT_FILE_STORE = "files";
 
@@ -146,6 +147,7 @@ const savedProjects = hasCloudConfig ? null : localStorage.getItem("solarObjectM
 let projects = savedProjects ? JSON.parse(savedProjects) : hasCloudConfig ? [] : defaultProjects;
 const savedCrmTasks = localStorage.getItem("solarObjectManager.crmTasks");
 let crmTasks = savedCrmTasks ? JSON.parse(savedCrmTasks) : [];
+let projectFilesByProjectId = JSON.parse(localStorage.getItem("solarObjectManager.projectFiles") || "{}");
 
 let selectedProjectId = String(projects[0]?.id ?? "");
 let selectedTab = "summary";
@@ -233,6 +235,35 @@ function saveCrmTasks() {
   localStorage.setItem("solarObjectManager.crmTasks", JSON.stringify(crmTasks));
   renderCrmNotification();
   queueCrmSync();
+}
+
+function projectFilesFor(projectId) {
+  return projectFilesByProjectId[String(projectId || "")] || [];
+}
+
+function saveProjectFilesByProjectId() {
+  localStorage.setItem("solarObjectManager.projectFiles", JSON.stringify(projectFilesByProjectId));
+}
+
+function saveProjectFileMetadata(project) {
+  if (!project) return;
+  const projectId = normalizeProjectId(project.id);
+  projectFilesByProjectId[projectId] = (project.files || []).map((file) => ({
+    category: file.category || "other",
+    note: file.note || "",
+    fileName: file.fileName || "",
+    type: file.type || "application/octet-stream",
+    size: Number(file.size || 0),
+    fileKey: file.fileKey || "",
+    src: file.src || "",
+    createdAt: file.createdAt || "",
+  }));
+  saveProjectFilesByProjectId();
+}
+
+function clearProjectFileMetadata(projectId) {
+  delete projectFilesByProjectId[normalizeProjectId(projectId)];
+  saveProjectFilesByProjectId();
 }
 
 function openProjectFileDb() {
@@ -374,6 +405,14 @@ function publicPhotoUrl(storagePath) {
   return `${config.url}/storage/v1/object/public/${PHOTO_BUCKET}/${storagePath}`;
 }
 
+function publicProjectFileUrl(storagePath) {
+  if (!storagePath) return "";
+  if (storagePath.startsWith("http") || storagePath.startsWith("data:")) return storagePath;
+  const config = supabaseConfig();
+  if (!config?.url) return storagePath;
+  return `${config.url}/storage/v1/object/public/${PROJECT_FILE_BUCKET}/${storagePath}`;
+}
+
 function dbProjectToApp(row) {
   return {
     id: row.client_id || row.id,
@@ -430,7 +469,7 @@ function dbProjectToApp(row) {
       src: publicPhotoUrl(item.storage_path || ""),
       createdAt: item.created_at || "",
     })),
-    files: [],
+    files: projectFilesFor(row.client_id || row.id),
   };
 }
 
@@ -586,8 +625,50 @@ async function loadProjectsFromCloud() {
   if (error) throw error;
 
   projects = (data || []).map(dbProjectToApp);
+  await loadProjectFilesFromCloud();
   selectedProjectId = projects[0] ? normalizeProjectId(projects[0].id) : "";
   localStorage.setItem("solarObjectManager.projects", JSON.stringify(projects));
+}
+
+async function loadProjectFilesFromCloud() {
+  if (!cloudState.ready || !projects.length) return;
+
+  const projectIds = projects.map((project) => normalizeProjectId(project.id));
+  const { data, error } = await cloudState.client
+    .from("project_files")
+    .select("category, note, file_name, mime_type, file_size, storage_path, created_at, projects!inner(client_id)")
+    .in("projects.client_id", projectIds)
+    .eq("projects.company_id", cloudState.companyId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    cloudState.message = `Файли ще не підключені в Supabase: ${error.message}`;
+    renderProfileView();
+    return;
+  }
+
+  const nextFilesByProjectId = {};
+  (data || []).forEach((item) => {
+    const clientId = normalizeProjectId(item.projects?.client_id || "");
+    if (!clientId) return;
+    nextFilesByProjectId[clientId] ||= [];
+    nextFilesByProjectId[clientId].push({
+      category: item.category || "other",
+      note: item.note || "",
+      fileName: item.file_name || "",
+      type: item.mime_type || "application/octet-stream",
+      size: Number(item.file_size || 0),
+      storagePath: item.storage_path || "",
+      src: publicProjectFileUrl(item.storage_path || ""),
+      createdAt: item.created_at || "",
+    });
+  });
+
+  projectFilesByProjectId = { ...projectFilesByProjectId, ...nextFilesByProjectId };
+  saveProjectFilesByProjectId();
+  projects.forEach((project) => {
+    project.files = projectFilesFor(project.id);
+  });
 }
 
 async function syncProjectsToCloud() {
@@ -661,10 +742,38 @@ async function syncProjectsToCloud() {
       })));
       if (error) throw error;
     }
+
+    await syncProjectFilesToCloud(project, projectId);
   }
 
   cloudState.message = `Синхронізовано ${new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}`;
   renderProfileView();
+}
+
+async function syncProjectFilesToCloud(project, projectId) {
+  const cloudFiles = (project.files || []).filter((item) => item.storagePath);
+  const { error: deleteError } = await cloudState.client.from("project_files").delete().eq("project_id", projectId);
+  if (deleteError) {
+    cloudState.message = `Файли ще не підключені в Supabase: ${deleteError.message}`;
+    renderProfileView();
+    return;
+  }
+
+  if (!cloudFiles.length) return;
+  const { error } = await cloudState.client.from("project_files").insert(cloudFiles.map((item) => ({
+    project_id: projectId,
+    category: item.category || "other",
+    note: item.note || "",
+    file_name: item.fileName || "",
+    mime_type: item.type || "application/octet-stream",
+    file_size: Number(item.size || 0),
+    storage_path: item.storagePath,
+    created_by: cloudState.user?.id || null,
+  })));
+  if (error) {
+    cloudState.message = `Файли ще не підключені в Supabase: ${error.message}`;
+    renderProfileView();
+  }
 }
 
 function totalPower(project) {
@@ -882,7 +991,10 @@ function ensureProjectCollections(project) {
   project.strings ||= [];
   project.materials ||= [];
   project.photos ||= [];
-  project.files ||= [];
+  const storedFiles = projectFilesFor(project.id);
+  if (!Array.isArray(project.files) || (!project.files.length && storedFiles.length)) {
+    project.files = storedFiles;
+  }
   return project;
 }
 
@@ -1387,7 +1499,7 @@ function formatProjectFileDate(value) {
 }
 
 function renderProjectFileCard(file, index) {
-  const canOpen = Boolean(file.src || file.fileKey);
+  const canOpen = Boolean(file.src || file.storagePath || file.fileKey);
   return `
     <article class="project-file-card">
       <div class="project-file-icon">${projectFileIcon(file.category)}</div>
@@ -2539,10 +2651,17 @@ document.addEventListener("click", (event) => {
     if (!project) return;
     const index = Number(deleteFileButton.dataset.deleteFileIndex);
     const [removedFile] = project.files.splice(index, 1);
+    saveProjectFileMetadata(project);
     saveProjects();
     render();
     if (removedFile?.fileKey) {
       deleteProjectFileBlob(removedFile.fileKey).catch(() => {});
+    }
+    if (cloudState.ready && removedFile?.storagePath) {
+      cloudState.client.storage.from(PROJECT_FILE_BUCKET).remove([removedFile.storagePath]).catch((error) => {
+        cloudState.message = `Файл видалено зі списку, але у Storage він лишився: ${error.message}`;
+        renderProfileView();
+      });
     }
   }
 
@@ -2673,6 +2792,28 @@ async function uploadPhotoToCloud(project, file) {
   };
 }
 
+async function uploadProjectFileToCloud(project, file) {
+  if (!cloudState.ready || !cloudState.client) return null;
+
+  const extension = file.name.split(".").pop() || "bin";
+  const safeExtension = extension.replace(/[^a-z0-9]/gi, "").toLowerCase() || "bin";
+  const path = `${cloudState.companyId}/${normalizeProjectId(project.id)}/${Date.now()}-${Math.random().toString(16).slice(2)}.${safeExtension}`;
+  const { error } = await cloudState.client.storage
+    .from(PROJECT_FILE_BUCKET)
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || "application/octet-stream",
+    });
+
+  if (error) throw error;
+
+  return {
+    storagePath: path,
+    src: publicProjectFileUrl(path),
+  };
+}
+
 function addPhoto(formElement) {
   const project = selectedProject();
   if (!project) return;
@@ -2720,9 +2861,10 @@ function addPhoto(formElement) {
 
 async function openProjectFile(file) {
   if (!file) return;
-  if (file.src) {
+  const cloudUrl = file.src || publicProjectFileUrl(file.storagePath || "");
+  if (cloudUrl) {
     const link = document.createElement("a");
-    link.href = file.src;
+    link.href = cloudUrl;
     link.download = file.fileName || "file";
     link.target = "_blank";
     link.click();
@@ -2749,11 +2891,25 @@ async function addProjectFile(formElement) {
   if (!file || !file.name) return;
 
   const fileKey = `${normalizeProjectId(project.id)}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  try {
-    await putProjectFileBlob(fileKey, file);
-  } catch (error) {
-    alert(`Файл не вдалося зберегти локально: ${error.message}`);
-    return;
+  let uploaded = null;
+  if (cloudState.ready) {
+    try {
+      cloudState.message = "Файл завантажується...";
+      renderProfileView();
+      uploaded = await uploadProjectFileToCloud(project, file);
+    } catch (error) {
+      cloudState.message = `Файл лишився локально: ${error.message}`;
+      renderProfileView();
+    }
+  }
+
+  if (!uploaded) {
+    try {
+      await putProjectFileBlob(fileKey, file);
+    } catch (error) {
+      alert(`Файл не вдалося зберегти локально: ${error.message}`);
+      return;
+    }
   }
 
   project.files.push({
@@ -2762,10 +2918,13 @@ async function addProjectFile(formElement) {
     fileName: file.name,
     type: file.type || "application/octet-stream",
     size: file.size || 0,
-    fileKey,
+    fileKey: uploaded ? "" : fileKey,
+    storagePath: uploaded?.storagePath || "",
+    src: uploaded?.src || "",
     createdAt: new Date().toISOString(),
   });
 
+  saveProjectFileMetadata(project);
   saveProjects();
   formElement.reset();
   render();
@@ -2986,6 +3145,10 @@ function deleteSelectedProject() {
     savePendingCloudDeletes();
     projects.splice(index, 1);
   }
+  clearProjectFileMetadata(project.id);
+  (project.files || []).forEach((file) => {
+    if (file.fileKey) deleteProjectFileBlob(file.fileKey).catch(() => {});
+  });
 
   selectedProjectId = projects[0]?.id ?? null;
   selectedTab = "summary";
