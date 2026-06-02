@@ -263,6 +263,7 @@ h3 {
 .user-card,
 .hero-card,
 .quick-panel,
+.crm-panel,
 .map-panel,
 .service-panel,
 .monitoring-panel,
@@ -294,6 +295,36 @@ h3 {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 20px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.notification-badge {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--red);
+  color: #fff;
+  font-weight: 950;
+  box-shadow: 0 0 0 4px rgba(255, 65, 54, 0.16), 0 12px 28px rgba(255, 65, 54, 0.32);
+  animation: badge-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
 }
 
 .primary-button,
@@ -445,6 +476,18 @@ textarea::placeholder {
   border-radius: 8px;
   padding: 14px;
   background: var(--panel-2);
+}
+
+button.metric-card {
+  color: var(--ink);
+  text-align: left;
+}
+
+button.metric-card:hover,
+.crm-filter-card.active {
+  border-color: rgba(255, 210, 26, 0.72);
+  background: rgba(255, 210, 26, 0.12);
+  outline: 1px solid rgba(255, 210, 26, 0.22);
 }
 
 .metric-card strong,
@@ -1024,6 +1067,63 @@ th {
   background: rgba(8, 12, 15, 0.85);
 }
 
+.file-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.project-file-card {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-left-color: rgba(255, 210, 26, 0.72);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.project-file-icon {
+  min-height: 82px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 210, 26, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 210, 26, 0.1);
+  color: var(--yellow);
+  font-weight: 950;
+  font-size: 18px;
+  text-align: center;
+}
+
+.project-file-main {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.project-file-main h3 {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.project-file-main p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.file-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .file-field input {
   padding: 8px;
 }
@@ -1127,6 +1227,7 @@ th {
 }
 
 .ticket-card,
+.crm-card,
 .monitor-card {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -1149,6 +1250,150 @@ th {
   color: var(--yellow);
   font-size: 12px;
   font-weight: 850;
+}
+
+.crm-panel {
+  padding: 18px;
+}
+
+.crm-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.modal-crm-list {
+  max-height: min(70vh, 680px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.crm-filter-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(17, 25, 30, 0.72);
+}
+
+.crm-card {
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.crm-card.crm-overdue {
+  border-left-color: var(--red);
+}
+
+.crm-card.crm-today {
+  border-left-color: var(--yellow);
+}
+
+.crm-card.crm-done {
+  border-left-color: var(--green);
+  opacity: 0.88;
+}
+
+.crm-card-main {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.crm-card h3 {
+  margin: 0 0 4px;
+}
+
+.crm-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.crm-visual {
+  min-height: 108px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 210, 26, 0.18), rgba(255, 210, 26, 0.04)),
+    url("./assets/solar-background.png") center / cover;
+  border: 1px solid rgba(255, 210, 26, 0.18);
+  text-align: center;
+}
+
+.crm-visual span {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(5, 10, 13, 0.78);
+  color: var(--yellow);
+  font-weight: 950;
+  font-size: 20px;
+}
+
+.crm-visual small {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
+}
+
+.crm-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.crm-meta div {
+  min-height: 54px;
+  border: 1px solid var(--line);
+  border-left: 2px solid rgba(255, 210, 26, 0.72);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(17, 25, 30, 0.78);
+}
+
+.crm-meta span,
+.crm-meta strong {
+  display: block;
+}
+
+.crm-meta span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.crm-meta strong {
+  margin-top: 3px;
+  color: #dfe7ea;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.crm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .ticket-icon {
@@ -1627,23 +1872,26 @@ dialog::backdrop {
 
   .nav {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 4px;
   }
 
   .nav-item {
-    padding: 7px 2px;
+    min-width: 0;
+    padding: 7px 1px;
     min-height: 56px;
     justify-content: center;
     text-align: center;
     display: grid;
     gap: 2px;
-    font-size: 10px;
+    font-size: 8px;
+    line-height: 1.1;
+    overflow: hidden;
   }
 
   .nav-item span {
     width: auto;
-    font-size: 17px;
+    font-size: 15px;
   }
 
   .main {
@@ -1669,7 +1917,8 @@ dialog::backdrop {
 
   .metric-grid,
   .quick-grid,
-  .object-specs {
+  .object-specs,
+  .crm-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1682,6 +1931,11 @@ dialog::backdrop {
     flex-direction: column;
   }
 
+  .topbar-actions {
+    align-items: center;
+    justify-content: space-between;
+  }
+
   .object-list,
   .form-grid,
   .photo-grid {
@@ -1692,12 +1946,40 @@ dialog::backdrop {
     grid-template-columns: 86px 1fr;
   }
 
+  .crm-card {
+    grid-template-columns: 1fr;
+  }
+
+  .project-file-card {
+    grid-template-columns: 1fr;
+  }
+
+  .project-file-icon {
+    min-height: 64px;
+  }
+
+  .crm-visual {
+    min-height: 78px;
+  }
+
+  .crm-actions {
+    justify-content: stretch;
+  }
+
+  .crm-actions button {
+    flex: 1 1 120px;
+  }
+
   .pv-visual,
   .panel-branch {
     grid-template-columns: 1fr;
   }
 
   .object-specs {
+    grid-template-columns: 1fr;
+  }
+
+  .crm-meta {
     grid-template-columns: 1fr;
   }
 

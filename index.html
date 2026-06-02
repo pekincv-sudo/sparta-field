@@ -43,6 +43,7 @@
         <nav class="nav" aria-label="Головна навігація">
           <button class="nav-item active" data-section="home"><span>⌂</span>Головна</button>
           <button class="nav-item" data-section="projects"><span>▤</span>Об'єкти</button>
+          <button class="nav-item" data-section="crm"><span>☑</span>CRM</button>
           <button class="nav-item" data-section="map"><span>⌖</span>Карта</button>
           <button class="nav-item" data-section="service"><span>⚒</span>Сервіс</button>
           <button class="nav-item" data-section="monitoring"><span>⌁</span>Моніторинг</button>
@@ -62,7 +63,10 @@
             <p class="eyebrow">Прототип</p>
             <h1>SPARTA field</h1>
           </div>
-          <button class="primary-button" id="newProjectButton">+ Новий об'єкт</button>
+          <div class="topbar-actions">
+            <button class="notification-badge is-hidden" id="crmNotificationButton" type="button" aria-label="CRM нагадування">0</button>
+            <button class="primary-button" id="newProjectButton">+ Новий об'єкт</button>
+          </div>
         </section>
 
         <section class="section active" id="home">
@@ -94,6 +98,10 @@
 
         <section class="section" id="objectDetail">
           <article class="detail-panel" id="projectDetail"></article>
+        </section>
+
+        <section class="section" id="crm">
+          <div id="crmView"></div>
         </section>
 
         <section class="section" id="map">
@@ -204,6 +212,60 @@
           <button type="submit" class="primary-button">Зберегти запрошення</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="crmTaskDialog">
+      <form method="dialog" class="modal-form" id="crmTaskForm">
+        <div class="modal-head">
+          <h2>Нова задача</h2>
+          <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
+        </div>
+        <input name="id" type="hidden" />
+        <div class="form-grid">
+          <label class="full">Назва задачі<input name="title" required placeholder="Передзвонити клієнту, замовити кабель..." /></label>
+          <label>Об'єкт (не обов'язково)<select name="projectId" id="crmProjectSelect"></select></label>
+          <label>Тип
+            <select name="type">
+              <option value="task">Задача</option>
+              <option value="call">Дзвінок</option>
+              <option value="note">Запис / нотатка</option>
+              <option value="service">Сервіс</option>
+              <option value="materials">Матеріали</option>
+              <option value="documents">Документи</option>
+            </select>
+          </label>
+          <label>Дата і час<input name="dueAt" type="datetime-local" /></label>
+          <label>Пріоритет
+            <select name="priority">
+              <option value="normal">Звичайний</option>
+              <option value="high">Важливий</option>
+              <option value="urgent">Терміново</option>
+            </select>
+          </label>
+          <label>Статус
+            <select name="status">
+              <option value="planned">Заплановано</option>
+              <option value="in_progress">В роботі</option>
+              <option value="done">Виконано</option>
+            </select>
+          </label>
+          <label class="full">Запис / примітка<textarea name="note" rows="3" placeholder="Що потрібно зробити або що обговорили"></textarea></label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Скасувати</button>
+          <button type="submit" class="primary-button">Зберегти задачу</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="overdueTasksDialog">
+      <div class="modal-form">
+        <div class="modal-head">
+          <h2>Прострочені задачі</h2>
+          <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
+        </div>
+        <div class="crm-list modal-crm-list" id="overdueTasksView"></div>
+      </div>
     </dialog>
 
     <dialog id="projectDialog">

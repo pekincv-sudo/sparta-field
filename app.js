@@ -15,6 +15,29 @@ const companyContacts = {
 };
 
 const PHOTO_BUCKET = "project-photos";
+const PROJECT_FILE_DB = "sparta-project-files";
+const PROJECT_FILE_STORE = "files";
+
+const crmTypeLabels = {
+  task: "Задача",
+  call: "Дзвінок",
+  note: "Запис",
+  service: "Сервіс",
+  materials: "Матеріали",
+  documents: "Документи",
+};
+
+const crmStatusLabels = {
+  planned: "Заплановано",
+  in_progress: "В роботі",
+  done: "Виконано",
+};
+
+const crmPriorityLabels = {
+  normal: "Звичайний",
+  high: "Важливий",
+  urgent: "Терміново",
+};
 
 const defaultProjects = [
   {
@@ -121,15 +144,20 @@ const hasCloudConfig = Boolean(
 );
 const savedProjects = hasCloudConfig ? null : localStorage.getItem("solarObjectManager.projects");
 let projects = savedProjects ? JSON.parse(savedProjects) : hasCloudConfig ? [] : defaultProjects;
+const savedCrmTasks = localStorage.getItem("solarObjectManager.crmTasks");
+let crmTasks = savedCrmTasks ? JSON.parse(savedCrmTasks) : [];
 
 let selectedProjectId = String(projects[0]?.id ?? "");
 let selectedTab = "summary";
 let stringsEditing = false;
 let materialsEditing = false;
 let authMode = "signin";
+let crmFilter = "today";
 let cloudSyncTimer = null;
+let crmSyncTimer = null;
 let cloudLoading = false;
 let pendingCloudDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingDeletes") || "[]");
+let pendingCrmDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingCrmDeletes") || "[]");
 
 const cloudState = {
   client: null,
@@ -155,7 +183,9 @@ const projectList = document.querySelector("#projectList");
 const projectDetail = document.querySelector("#projectDetail");
 const passportPreview = document.querySelector("#passportPreview");
 const statsGrid = document.querySelector("#statsGrid");
+const crmNotificationButton = document.querySelector("#crmNotificationButton");
 const homeView = document.querySelector("#homeView");
+const crmView = document.querySelector("#crmView");
 const mapView = document.querySelector("#mapView");
 const serviceView = document.querySelector("#serviceView");
 const monitoringView = document.querySelector("#monitoringView");
@@ -180,6 +210,11 @@ const gateAuthMessage = document.querySelector("#gateAuthMessage");
 const inviteDialog = document.querySelector("#inviteDialog");
 const inviteForm = document.querySelector("#inviteForm");
 const inviteMessage = document.querySelector("#inviteMessage");
+const crmTaskDialog = document.querySelector("#crmTaskDialog");
+const crmTaskForm = document.querySelector("#crmTaskForm");
+const crmProjectSelect = document.querySelector("#crmProjectSelect");
+const overdueTasksDialog = document.querySelector("#overdueTasksDialog");
+const overdueTasksView = document.querySelector("#overdueTasksView");
 
 function saveProjects() {
   localStorage.setItem("solarObjectManager.projects", JSON.stringify(projects));
@@ -188,6 +223,70 @@ function saveProjects() {
 
 function savePendingCloudDeletes() {
   localStorage.setItem("solarObjectManager.pendingDeletes", JSON.stringify(pendingCloudDeletes));
+}
+
+function savePendingCrmDeletes() {
+  localStorage.setItem("solarObjectManager.pendingCrmDeletes", JSON.stringify(pendingCrmDeletes));
+}
+
+function saveCrmTasks() {
+  localStorage.setItem("solarObjectManager.crmTasks", JSON.stringify(crmTasks));
+  renderCrmNotification();
+  queueCrmSync();
+}
+
+function openProjectFileDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(PROJECT_FILE_DB, 1);
+    request.addEventListener("upgradeneeded", () => {
+      request.result.createObjectStore(PROJECT_FILE_STORE);
+    });
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+async function putProjectFileBlob(key, file) {
+  const db = await openProjectFileDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(PROJECT_FILE_STORE, "readwrite");
+    transaction.objectStore(PROJECT_FILE_STORE).put(file, key);
+    transaction.addEventListener("complete", () => {
+      db.close();
+      resolve();
+    });
+    transaction.addEventListener("error", () => {
+      db.close();
+      reject(transaction.error);
+    });
+  });
+}
+
+async function getProjectFileBlob(key) {
+  const db = await openProjectFileDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(PROJECT_FILE_STORE, "readonly");
+    const request = transaction.objectStore(PROJECT_FILE_STORE).get(key);
+    request.addEventListener("success", () => resolve(request.result || null));
+    request.addEventListener("error", () => reject(request.error));
+    transaction.addEventListener("complete", () => db.close());
+  });
+}
+
+async function deleteProjectFileBlob(key) {
+  const db = await openProjectFileDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(PROJECT_FILE_STORE, "readwrite");
+    transaction.objectStore(PROJECT_FILE_STORE).delete(key);
+    transaction.addEventListener("complete", () => {
+      db.close();
+      resolve();
+    });
+    transaction.addEventListener("error", () => {
+      db.close();
+      reject(transaction.error);
+    });
+  });
 }
 
 function normalizeProjectId(value) {
@@ -205,6 +304,13 @@ function queueCloudSync() {
       renderProfileView();
     });
   }, 800);
+}
+
+function queueCrmSync() {
+  window.clearTimeout(crmSyncTimer);
+  crmSyncTimer = window.setTimeout(() => {
+    renderProfileView();
+  }, 300);
 }
 
 function updateAccessMode() {
@@ -324,6 +430,36 @@ function dbProjectToApp(row) {
       src: publicPhotoUrl(item.storage_path || ""),
       createdAt: item.created_at || "",
     })),
+    files: [],
+  };
+}
+
+function dbCrmTaskToApp(row) {
+  return {
+    id: row.client_task_id || row.id,
+    projectId: row.project_client_id || "",
+    title: row.title || "",
+    note: row.note || "",
+    type: row.task_type || "task",
+    status: row.status || "planned",
+    priority: row.priority || "normal",
+    dueAt: row.due_at ? row.due_at.slice(0, 16) : "",
+    createdAt: row.created_at || "",
+  };
+}
+
+function crmTaskToDb(task) {
+  return {
+    client_task_id: normalizeProjectId(task.id),
+    company_id: cloudState.companyId,
+    project_client_id: task.projectId || null,
+    title: task.title || "",
+    note: task.note || "",
+    task_type: task.type || "task",
+    status: task.status || "planned",
+    priority: task.priority || "normal",
+    due_at: task.dueAt || null,
+    created_by: cloudState.user?.id || null,
   };
 }
 
@@ -741,8 +877,17 @@ function escapeAttribute(value) {
     .replaceAll(">", "&gt;");
 }
 
+function ensureProjectCollections(project) {
+  if (!project) return project;
+  project.strings ||= [];
+  project.materials ||= [];
+  project.photos ||= [];
+  project.files ||= [];
+  return project;
+}
+
 function selectedProject() {
-  return projects.find((project) => String(project.id) === String(selectedProjectId)) || projects[0];
+  return ensureProjectCollections(projects.find((project) => String(project.id) === String(selectedProjectId)) || projects[0]);
 }
 
 function showSection(sectionId) {
@@ -929,6 +1074,7 @@ function renderDetail() {
         ["strings", "MPPT"],
         ["materials", "Матеріали"],
         ["photos", "Фото"],
+        ["files", "Файли"],
         ["passport", "Паспорт об'єкта"],
       ]
         .map((tab) => `<button class="tab ${selectedTab === tab[0] ? "active" : ""}" data-tab="${tab[0]}">${tab[1]}</button>`)
@@ -1108,6 +1254,36 @@ function renderTab(project, isValid, stringsTotal, expected) {
     `;
   }
 
+  if (selectedTab === "files") {
+    return `
+      <form class="inline-form file-upload-form" id="projectFileForm">
+        <label>Тип файлу
+          <select name="category">
+            <option value="commercial_offer">Комерційна пропозиція</option>
+            <option value="estimate_update">Оновлений кошторис</option>
+            <option value="sketchup_model">SketchUp / 3D модель</option>
+            <option value="contract">Договір</option>
+            <option value="other">Інший файл</option>
+          </select>
+        </label>
+        <label>Опис
+          <input name="note" placeholder="Наприклад: КП на старті або зміни після заміру" />
+        </label>
+        <label class="file-field">Файл
+          <input name="file" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.skp,.skb,.dae,.dwg,.dxf,.jpg,.jpeg,.png,.webp,.txt,.zip" required />
+        </label>
+        <div class="form-submit-cell">
+          <button class="primary-button">Додати файл</button>
+        </div>
+      </form>
+      <div class="file-list">
+        ${(project.files.length ? project.files : [])
+          .map((file, index) => renderProjectFileCard(file, index))
+          .join("") || `<div class="empty-state"><strong>Файли ще не додано</strong><span>Додай комерційну пропозицію, оновлений кошторис або SketchUp-модель об'єкта.</span></div>`}
+      </div>
+    `;
+  }
+
   if (selectedTab === "passport") {
     return `
       <div class="passport-actions">
@@ -1169,6 +1345,70 @@ function renderPhotoTile(photo, index) {
       </figcaption>
       <button class="table-button danger-text photo-delete" data-delete-photo-index="${index}">Видалити</button>
     </figure>
+  `;
+}
+
+function projectFileCategoryLabel(category) {
+  const labels = {
+    commercial_offer: "Комерційна пропозиція",
+    estimate_update: "Оновлений кошторис",
+    sketchup_model: "SketchUp / 3D модель",
+    contract: "Договір",
+    other: "Інший файл",
+  };
+  return labels[category] || "Файл";
+}
+
+function projectFileIcon(category) {
+  if (category === "commercial_offer") return "КП";
+  if (category === "estimate_update") return "₴";
+  if (category === "sketchup_model") return "3D";
+  if (category === "contract") return "DOC";
+  return "FILE";
+}
+
+function formatFileSize(size) {
+  const bytes = Number(size || 0);
+  if (!bytes) return "Розмір не вказано";
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+}
+
+function formatProjectFileDate(value) {
+  if (!value) return "Без дати";
+  return new Date(value).toLocaleString("uk-UA", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderProjectFileCard(file, index) {
+  const canOpen = Boolean(file.src || file.fileKey);
+  return `
+    <article class="project-file-card">
+      <div class="project-file-icon">${projectFileIcon(file.category)}</div>
+      <div class="project-file-main">
+        <div class="object-line">
+          <div>
+            <h3>${file.fileName || "Файл без назви"}</h3>
+            <p>${file.note || "Опис не додано."}</p>
+          </div>
+          <span class="chip">${projectFileCategoryLabel(file.category)}</span>
+        </div>
+        <div class="file-meta">
+          <span>${formatFileSize(file.size)}</span>
+          <span>${formatProjectFileDate(file.createdAt)}</span>
+        </div>
+        <div class="crm-actions">
+          ${canOpen ? `<button class="secondary-button compact-button" data-open-file-index="${index}">Відкрити</button>` : ""}
+          <button class="danger-button compact-button" data-delete-file-index="${index}">Видалити</button>
+        </div>
+      </div>
+    </article>
   `;
 }
 
@@ -1690,6 +1930,192 @@ function renderMapView() {
   `;
 }
 
+function crmProjectName(projectId) {
+  if (!projectId) return "Без об'єкта";
+  return projects.find((project) => normalizeProjectId(project.id) === normalizeProjectId(projectId))?.title || "Об'єкт не знайдено";
+}
+
+function crmDueLabel(dueAt) {
+  if (!dueAt) return "Без терміну";
+  return new Date(dueAt).toLocaleString("uk-UA", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function crmDueTone(task) {
+  if (task.status === "done") return "done";
+  if (!task.dueAt) return "muted";
+  const due = new Date(task.dueAt).getTime();
+  const now = Date.now();
+  if (due < now) return "overdue";
+  if (due - now < 24 * 60 * 60 * 1000) return "today";
+  return "planned";
+}
+
+function dueCrmTasksCount() {
+  const now = Date.now();
+  return crmTasks.filter((task) => {
+    if (task.status === "done" || !task.dueAt) return false;
+    return new Date(task.dueAt).getTime() <= now;
+  }).length;
+}
+
+function renderCrmNotification() {
+  if (!crmNotificationButton) return;
+  const count = dueCrmTasksCount();
+  crmNotificationButton.textContent = count > 99 ? "99+" : String(count);
+  crmNotificationButton.classList.toggle("is-hidden", count === 0);
+  crmNotificationButton.setAttribute("aria-label", `CRM нагадування: ${count}`);
+}
+
+function crmFilteredTasks(filter = crmFilter) {
+  if (filter === "active") return crmTasks.filter((task) => task.status !== "done");
+  if (filter === "today") return crmTasks.filter((task) => crmDueTone(task) === "today");
+  if (filter === "overdue") return crmTasks.filter((task) => crmDueTone(task) === "overdue");
+  if (filter === "done") return crmTasks.filter((task) => task.status === "done");
+  return crmTasks;
+}
+
+function sortedCrmTasks(tasks) {
+  return [...tasks].sort((a, b) => {
+    if (a.status === "done" && b.status !== "done") return 1;
+    if (a.status !== "done" && b.status === "done") return -1;
+    return new Date(a.dueAt || "2999-01-01").getTime() - new Date(b.dueAt || "2999-01-01").getTime();
+  });
+}
+
+function renderCrmTaskCard(task) {
+  return `
+    <article class="crm-card crm-${crmDueTone(task)}">
+      <div class="crm-visual">
+        <span>${task.status === "done" ? "✓" : task.type === "call" ? "☎" : task.type === "note" ? "✎" : task.type === "materials" ? "▣" : "☑"}</span>
+        <small>${crmTypeLabels[task.type] || "Задача"}</small>
+      </div>
+      <div class="crm-card-main">
+        <div class="object-line">
+          <div>
+            <h3>${task.title}</h3>
+            <p>${task.note || "Нотатку ще не додано."}</p>
+          </div>
+          <span class="chip ${task.status === "done" ? "green" : task.status === "in_progress" ? "amber" : ""}">${crmStatusLabels[task.status] || "Заплановано"}</span>
+        </div>
+        <div class="crm-meta">
+          <div><span>Об'єкт</span><strong>${crmProjectName(task.projectId)}</strong></div>
+          <div><span>Термін</span><strong>${crmDueLabel(task.dueAt)}</strong></div>
+          <div><span>Пріоритет</span><strong>${crmPriorityLabels[task.priority] || "Звичайний"}</strong></div>
+        </div>
+        <div class="crm-actions">
+          ${task.status !== "done" ? `<button class="secondary-button compact-button" data-crm-done="${task.id}">Готово</button>` : ""}
+          <button class="secondary-button compact-button" data-crm-edit="${task.id}">Редагувати</button>
+          <button class="danger-button compact-button" data-crm-delete="${task.id}">Видалити</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderCrmView() {
+  if (!crmView) return;
+  const activeTasks = crmTasks.filter((task) => task.status !== "done");
+  const overdueTasks = crmTasks.filter((task) => crmDueTone(task) === "overdue");
+  const todayTasks = crmTasks.filter((task) => crmDueTone(task) === "today");
+  const visibleTasks = sortedCrmTasks(crmFilteredTasks());
+  const filterLabels = {
+    all: "Усі задачі",
+    active: "Активні задачі",
+    today: "Задачі на сьогодні",
+    overdue: "Прострочені задачі",
+    done: "Виконані задачі",
+  };
+
+  crmView.innerHTML = `
+    <section class="crm-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">CRM прототип</p>
+          <h2>Задачі, записи і нагадування</h2>
+        </div>
+        <button class="primary-button" id="newCrmTaskButton">+ Задача</button>
+      </div>
+      <div class="metric-grid compact">
+        <button class="metric-card crm-filter-card ${crmFilter === "active" ? "active" : ""}" data-crm-filter="active"><span>Активні</span><strong>${activeTasks.length}</strong></button>
+        <button class="metric-card crm-filter-card warning ${crmFilter === "today" ? "active" : ""}" data-crm-filter="today"><span>Сьогодні</span><strong>${todayTasks.length}</strong></button>
+        <button class="metric-card crm-filter-card danger ${crmFilter === "overdue" ? "active" : ""}" data-crm-filter="overdue"><span>Прострочені</span><strong>${overdueTasks.length}</strong></button>
+        <button class="metric-card crm-filter-card success ${crmFilter === "done" ? "active" : ""}" data-crm-filter="done"><span>Виконано</span><strong>${crmTasks.filter((task) => task.status === "done").length}</strong></button>
+      </div>
+      <div class="crm-filter-row">
+        <strong>${filterLabels[crmFilter] || "Усі задачі"}</strong>
+        ${crmFilter !== "all" ? `<button class="secondary-button compact-button" data-crm-filter="all">Показати всі</button>` : ""}
+      </div>
+      <div class="crm-list">
+        ${visibleTasks.length
+          ? visibleTasks.map(renderCrmTaskCard).join("")
+          : `<div class="empty-state"><strong>Немає задач у цьому фільтрі</strong><span>Зміни фільтр або додай нову задачу.</span></div>`}
+      </div>
+    </section>
+  `;
+}
+
+function renderOverdueTasksDialog() {
+  if (!overdueTasksView) return;
+  const overdueTasks = sortedCrmTasks(crmFilteredTasks("overdue"));
+  overdueTasksView.innerHTML = overdueTasks.length
+    ? overdueTasks.map(renderCrmTaskCard).join("")
+    : `<div class="empty-state"><strong>Прострочених задач немає</strong><span>Усі задачі виконані або ще не настали за часом.</span></div>`;
+}
+
+function fillCrmProjectOptions(selectedProject = "") {
+  crmProjectSelect.innerHTML = `
+    <option value="">Без прив'язки до об'єкта</option>
+    ${projects.map((project) => `
+      <option value="${project.id}" ${normalizeProjectId(project.id) === normalizeProjectId(selectedProject) ? "selected" : ""}>${project.title}</option>
+    `).join("")}
+  `;
+}
+
+function openCrmTaskDialog(task = null) {
+  crmTaskForm.reset();
+  crmTaskForm.id.value = task?.id || "";
+  crmTaskForm.title.value = task?.title || "";
+  crmTaskForm.type.value = task?.type || "task";
+  crmTaskForm.dueAt.value = task?.dueAt || "";
+  crmTaskForm.priority.value = task?.priority || "normal";
+  crmTaskForm.status.value = task?.status || "planned";
+  crmTaskForm.note.value = task?.note || "";
+  fillCrmProjectOptions(task?.projectId || "");
+  crmTaskDialog.querySelector("h2").textContent = task ? "Редагувати задачу" : "Нова задача";
+  crmTaskDialog.showModal();
+}
+
+function saveCrmTaskFromForm() {
+  const data = new FormData(crmTaskForm);
+  const id = data.get("id") || `crm-${Date.now()}`;
+  const task = {
+    id,
+    projectId: data.get("projectId") || "",
+    title: String(data.get("title") || "").trim(),
+    note: String(data.get("note") || "").trim(),
+    type: data.get("type") || "task",
+    dueAt: data.get("dueAt") || "",
+    priority: data.get("priority") || "normal",
+    status: data.get("status") || "planned",
+    createdAt: new Date().toISOString(),
+  };
+
+  const index = crmTasks.findIndex((item) => normalizeProjectId(item.id) === normalizeProjectId(id));
+  if (index >= 0) {
+    crmTasks[index] = { ...crmTasks[index], ...task };
+  } else {
+    crmTasks.unshift(task);
+  }
+
+  saveCrmTasks();
+  renderCrmView();
+}
+
 function renderServiceView() {
   if (!serviceView) return;
   const tickets = serviceTickets();
@@ -1860,10 +2286,12 @@ function render() {
   renderProjectList();
   renderDetail();
   renderPassport();
+  renderCrmView();
   renderMapView();
   renderServiceView();
   renderMonitoringView();
   renderProfileView();
+  renderCrmNotification();
   renderStats();
 }
 
@@ -1876,6 +2304,17 @@ document.addEventListener("click", (event) => {
   const quickAction = event.target.closest(".quick-action");
   if (quickAction?.dataset.section) {
     showSection(quickAction.dataset.section);
+  }
+
+  if (event.target.closest("#crmNotificationButton")) {
+    renderOverdueTasksDialog();
+    overdueTasksDialog.showModal();
+  }
+
+  const crmFilterButton = event.target.closest("[data-crm-filter]");
+  if (crmFilterButton) {
+    crmFilter = crmFilterButton.dataset.crmFilter || "all";
+    renderCrmView();
   }
 
   if (event.target.closest("#newProjectQuickButton")) {
@@ -1943,6 +2382,41 @@ document.addEventListener("click", (event) => {
     inviteForm.reset();
     inviteMessage.textContent = "Додай email і роль. Користувач зможе створити акаунт із цим email та автоматично приєднається до компанії.";
     inviteDialog.showModal();
+  }
+
+  if (event.target.closest("#newCrmTaskButton")) {
+    openCrmTaskDialog();
+  }
+
+  const crmEditButton = event.target.closest("[data-crm-edit]");
+  if (crmEditButton) {
+    const task = crmTasks.find((item) => normalizeProjectId(item.id) === normalizeProjectId(crmEditButton.dataset.crmEdit));
+    if (task) openCrmTaskDialog(task);
+  }
+
+  const crmDoneButton = event.target.closest("[data-crm-done]");
+  if (crmDoneButton) {
+    const task = crmTasks.find((item) => normalizeProjectId(item.id) === normalizeProjectId(crmDoneButton.dataset.crmDone));
+    if (task) {
+      task.status = "done";
+      saveCrmTasks();
+      renderCrmView();
+      renderOverdueTasksDialog();
+    }
+  }
+
+  const crmDeleteButton = event.target.closest("[data-crm-delete]");
+  if (crmDeleteButton) {
+    const taskId = normalizeProjectId(crmDeleteButton.dataset.crmDelete);
+    const task = crmTasks.find((item) => normalizeProjectId(item.id) === taskId);
+    if (task && confirm(`Видалити задачу "${task.title}"?`)) {
+      pendingCrmDeletes.push(taskId);
+      savePendingCrmDeletes();
+      crmTasks = crmTasks.filter((item) => normalizeProjectId(item.id) !== taskId);
+      saveCrmTasks();
+      renderCrmView();
+      renderOverdueTasksDialog();
+    }
   }
 
   const tab = event.target.closest("[data-tab]");
@@ -2058,6 +2532,27 @@ document.addEventListener("click", (event) => {
       });
     }
   }
+
+  const deleteFileButton = event.target.closest("[data-delete-file-index]");
+  if (deleteFileButton) {
+    const project = selectedProject();
+    if (!project) return;
+    const index = Number(deleteFileButton.dataset.deleteFileIndex);
+    const [removedFile] = project.files.splice(index, 1);
+    saveProjects();
+    render();
+    if (removedFile?.fileKey) {
+      deleteProjectFileBlob(removedFile.fileKey).catch(() => {});
+    }
+  }
+
+  const openFileButton = event.target.closest("[data-open-file-index]");
+  if (openFileButton) {
+    const project = selectedProject();
+    if (!project) return;
+    const file = project.files[Number(openFileButton.dataset.openFileIndex)];
+    openProjectFile(file).catch((error) => alert(`Не вдалося відкрити файл: ${error.message}`));
+  }
 });
 
 document.addEventListener("change", (event) => {
@@ -2097,6 +2592,12 @@ document.addEventListener("submit", (event) => {
   if (event.target.id === "photoForm") {
     event.preventDefault();
     addPhoto(event.target);
+    return;
+  }
+
+  if (event.target.id === "projectFileForm") {
+    event.preventDefault();
+    addProjectFile(event.target).catch((error) => alert(`Не вдалося додати файл: ${error.message}`));
     return;
   }
 
@@ -2215,6 +2716,59 @@ function addPhoto(formElement) {
     render();
   });
   reader.readAsDataURL(file);
+}
+
+async function openProjectFile(file) {
+  if (!file) return;
+  if (file.src) {
+    const link = document.createElement("a");
+    link.href = file.src;
+    link.download = file.fileName || "file";
+    link.target = "_blank";
+    link.click();
+    return;
+  }
+
+  const blob = await getProjectFileBlob(file.fileKey);
+  if (!blob) throw new Error("файл не знайдено у локальному сховищі");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.fileName || "file";
+  link.target = "_blank";
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+async function addProjectFile(formElement) {
+  const project = selectedProject();
+  if (!project) return;
+
+  const data = new FormData(formElement);
+  const file = data.get("file");
+  if (!file || !file.name) return;
+
+  const fileKey = `${normalizeProjectId(project.id)}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  try {
+    await putProjectFileBlob(fileKey, file);
+  } catch (error) {
+    alert(`Файл не вдалося зберегти локально: ${error.message}`);
+    return;
+  }
+
+  project.files.push({
+    category: data.get("category") || "other",
+    note: String(data.get("note") || "").trim(),
+    fileName: file.name,
+    type: file.type || "application/octet-stream",
+    size: file.size || 0,
+    fileKey,
+    createdAt: new Date().toISOString(),
+  });
+
+  saveProjects();
+  formElement.reset();
+  render();
 }
 
 async function inviteUser(email, role) {
@@ -2341,6 +2895,12 @@ inviteForm.addEventListener("submit", async (event) => {
   }
 });
 
+crmTaskForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveCrmTaskFromForm();
+  crmTaskDialog.close();
+});
+
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   const data = new FormData(form);
@@ -2380,6 +2940,7 @@ form.addEventListener("submit", (event) => {
     strings: [],
     materials: [],
     photos: [],
+    files: [],
   };
 
   projects.unshift(nextProject);
@@ -2533,3 +3094,9 @@ async function initApp() {
 }
 
 initApp();
+window.setInterval(() => {
+  renderCrmNotification();
+  if (document.querySelector("#crm")?.classList.contains("active")) {
+    renderCrmView();
+  }
+}, 60 * 1000);
