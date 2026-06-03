@@ -340,7 +340,15 @@ function queueCloudSync() {
 function queueCrmSync() {
   window.clearTimeout(crmSyncTimer);
   crmSyncTimer = window.setTimeout(() => {
-    renderProfileView();
+    if (!cloudState.ready) {
+      renderProfileView();
+      return;
+    }
+
+    syncCrmTasksToCloud().catch((error) => {
+      cloudState.message = `Помилка синхронізації CRM: ${error.message}`;
+      renderProfileView();
+    });
   }, 300);
 }
 
@@ -522,6 +530,7 @@ async function initCloud() {
 
   await loadCompanyContext();
   await loadProjectsFromCloud();
+  await loadCrmTasksFromCloud();
 }
 
 async function loadCompanyContext() {
@@ -582,6 +591,7 @@ async function retryAcceptInvitation() {
 
   await loadCompanyContext();
   await loadProjectsFromCloud();
+  await loadCrmTasksFromCloud();
   render();
 }
 
@@ -669,6 +679,58 @@ async function loadProjectFilesFromCloud() {
   projects.forEach((project) => {
     project.files = projectFilesFor(project.id);
   });
+}
+
+async function loadCrmTasksFromCloud() {
+  if (!cloudState.ready) return;
+
+  const { data, error } = await cloudState.client
+    .from("project_tasks")
+    .select("*")
+    .eq("company_id", cloudState.companyId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    cloudState.message = `CRM-задачі ще не підключені в Supabase: ${error.message}`;
+    renderProfileView();
+    return;
+  }
+
+  if (!(data || []).length && crmTasks.length) {
+    await syncCrmTasksToCloud();
+    return;
+  }
+
+  crmTasks = (data || []).map(dbCrmTaskToApp);
+  localStorage.setItem("solarObjectManager.crmTasks", JSON.stringify(crmTasks));
+  renderCrmNotification();
+}
+
+async function syncCrmTasksToCloud() {
+  if (!cloudState.ready) return;
+
+  if (pendingCrmDeletes.length) {
+    const idsToDelete = [...new Set(pendingCrmDeletes.map(normalizeProjectId))];
+    const { error } = await cloudState.client
+      .from("project_tasks")
+      .delete()
+      .eq("company_id", cloudState.companyId)
+      .in("client_task_id", idsToDelete);
+    if (error) throw error;
+
+    pendingCrmDeletes = pendingCrmDeletes.filter((id) => !idsToDelete.includes(normalizeProjectId(id)));
+    savePendingCrmDeletes();
+  }
+
+  if (crmTasks.length) {
+    const { error } = await cloudState.client
+      .from("project_tasks")
+      .upsert(crmTasks.map(crmTaskToDb), { onConflict: "company_id,client_task_id" });
+    if (error) throw error;
+  }
+
+  cloudState.message = `CRM синхронізовано ${new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}`;
+  renderProfileView();
 }
 
 async function syncProjectsToCloud() {
