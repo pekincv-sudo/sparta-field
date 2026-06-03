@@ -2148,6 +2148,7 @@ function splitCrmDueAt(dueAt) {
 
 function parseCrmDueDateInput(value) {
   const text = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
   const match = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if (!match) return "";
   const [, day, month, year] = match;
@@ -2163,11 +2164,61 @@ function parseCrmDueDateInput(value) {
   return `${year}-${month}-${day}`;
 }
 
+function formatCrmDateInput(value) {
+  const parsed = parseCrmDueDateInput(value);
+  if (!parsed) return "";
+  const [year, month, day] = parsed.split("-");
+  return `${day}.${month}.${year}`;
+}
+
 function combineCrmDueAt(date, time) {
   const dueDate = parseCrmDueDateInput(date);
   const dueTime = String(time || "").trim();
   if (!dueDate || !/^\d{2}:\d{2}$/.test(dueTime)) return "";
   return `${dueDate}T${dueTime}`;
+}
+
+function activateCrmDatePicker(input) {
+  const current = parseCrmDueDateInput(input.value);
+  input.type = "date";
+  input.value = current;
+  try {
+    input.showPicker?.();
+  } catch {
+  }
+}
+
+function activateCrmTimePicker(input) {
+  const current = String(input.value || "").trim();
+  input.type = "time";
+  input.value = /^\d{2}:\d{2}$/.test(current) ? current : "";
+  try {
+    input.showPicker?.();
+  } catch {
+  }
+}
+
+function restoreCrmPickerInput(input) {
+  if (input.dataset.picker === "date") {
+    const displayValue = formatCrmDateInput(input.value);
+    input.type = "text";
+    input.value = displayValue;
+  }
+  if (input.dataset.picker === "time") {
+    const displayValue = /^\d{2}:\d{2}$/.test(input.value) ? input.value : "";
+    input.type = "text";
+    input.value = displayValue;
+  }
+}
+
+function setupCrmDuePickerInputs() {
+  crmTaskForm?.querySelectorAll("[data-picker]").forEach((input) => {
+    input.addEventListener("focus", () => {
+      if (input.dataset.picker === "date") activateCrmDatePicker(input);
+      if (input.dataset.picker === "time") activateCrmTimePicker(input);
+    });
+    input.addEventListener("blur", () => restoreCrmPickerInput(input));
+  });
 }
 
 function isTodayDate(value) {
@@ -2315,6 +2366,8 @@ function fillCrmProjectOptions(selectedProject = "") {
 function openCrmTaskDialog(task = null) {
   const due = splitCrmDueAt(task?.dueAt || "");
   crmTaskForm.reset();
+  crmTaskForm.dueDate.type = "text";
+  crmTaskForm.dueTime.type = "text";
   crmTaskForm.id.value = task?.id || "";
   crmTaskForm.title.value = task?.title || "";
   crmTaskForm.type.value = task?.type || "task";
@@ -3389,6 +3442,7 @@ async function initApp() {
   render();
 }
 
+setupCrmDuePickerInputs();
 initApp();
 window.setInterval(() => {
   renderCrmNotification();
