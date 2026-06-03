@@ -2148,8 +2148,8 @@ function splitCrmDueAt(dueAt) {
 function combineCrmDueAt(date, time) {
   const dueDate = String(date || "").trim();
   const dueTime = String(time || "").trim();
-  if (!dueDate) return "";
-  return `${dueDate}T${dueTime || "09:00"}`;
+  if (!dueDate || !dueTime) return "";
+  return `${dueDate}T${dueTime}`;
 }
 
 function isTodayDate(value) {
@@ -3164,6 +3164,7 @@ inviteForm.addEventListener("submit", async (event) => {
 
 crmTaskForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (!crmTaskForm.reportValidity()) return;
   saveCrmTaskFromForm();
   crmTaskDialog.close();
 });
