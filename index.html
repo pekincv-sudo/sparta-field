@@ -215,7 +215,7 @@
     </dialog>
 
     <dialog id="crmTaskDialog">
-      <form method="dialog" class="modal-form" id="crmTaskForm">
+      <form method="dialog" class="modal-form" id="crmTaskForm" autocomplete="off">
         <div class="modal-head">
           <h2>Нова задача</h2>
           <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
@@ -234,8 +234,8 @@
               <option value="documents">Документи</option>
             </select>
           </label>
-          <label>Дата задачі<input name="dueDate" type="date" required /></label>
-          <label>Час задачі<input name="dueTime" type="time" required /></label>
+          <label>Дата задачі<input name="dueDate" type="date" required autocomplete="off" /></label>
+          <label>Час задачі<input name="dueTime" type="time" required autocomplete="off" /></label>
           <label>Пріоритет
             <select name="priority">
               <option value="normal">Звичайний</option>

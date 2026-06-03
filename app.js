@@ -2300,11 +2300,17 @@ function openCrmTaskDialog(task = null) {
   crmTaskForm.id.value = task?.id || "";
   crmTaskForm.title.value = task?.title || "";
   crmTaskForm.type.value = task?.type || "task";
+  crmTaskForm.dueDate.defaultValue = "";
+  crmTaskForm.dueTime.defaultValue = "";
   crmTaskForm.dueDate.value = due.date;
   crmTaskForm.dueTime.value = due.time;
   crmTaskForm.priority.value = task?.priority || "normal";
   crmTaskForm.status.value = task?.status || "planned";
   crmTaskForm.note.value = task?.note || "";
+  if (!task) {
+    crmTaskForm.dueDate.value = "";
+    crmTaskForm.dueTime.value = "";
+  }
   fillCrmProjectOptions(task?.projectId || "");
   crmTaskDialog.querySelector("h2").textContent = task ? "Редагувати задачу" : "Нова задача";
   crmTaskDialog.showModal();
