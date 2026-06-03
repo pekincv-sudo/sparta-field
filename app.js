@@ -2119,13 +2119,56 @@ function crmDueLabel(dueAt) {
   });
 }
 
+function crmDueDateLabel(dueAt) {
+  if (!dueAt) return "Без дати";
+  return new Date(dueAt).toLocaleDateString("uk-UA", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function crmDueTimeLabel(dueAt) {
+  if (!dueAt) return "Без часу";
+  return new Date(dueAt).toLocaleTimeString("uk-UA", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function splitCrmDueAt(dueAt) {
+  if (!dueAt) return { date: "", time: "" };
+  const [date = "", rawTime = ""] = String(dueAt).split("T");
+  return {
+    date,
+    time: rawTime.slice(0, 5),
+  };
+}
+
+function combineCrmDueAt(date, time) {
+  const dueDate = String(date || "").trim();
+  const dueTime = String(time || "").trim();
+  if (!dueDate) return "";
+  return `${dueDate}T${dueTime || "09:00"}`;
+}
+
+function isTodayDate(value) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const today = new Date();
+  return date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate();
+}
+
 function crmDueTone(task) {
   if (task.status === "done") return "done";
   if (!task.dueAt) return "muted";
   const due = new Date(task.dueAt).getTime();
   const now = Date.now();
   if (due < now) return "overdue";
-  if (due - now < 24 * 60 * 60 * 1000) return "today";
+  if (isTodayDate(task.dueAt)) return "today";
   return "planned";
 }
 
@@ -2147,7 +2190,7 @@ function renderCrmNotification() {
 
 function crmFilteredTasks(filter = crmFilter) {
   if (filter === "active") return crmTasks.filter((task) => task.status !== "done");
-  if (filter === "today") return crmTasks.filter((task) => crmDueTone(task) === "today");
+  if (filter === "today") return crmTasks.filter((task) => task.status !== "done" && isTodayDate(task.dueAt));
   if (filter === "overdue") return crmTasks.filter((task) => crmDueTone(task) === "overdue");
   if (filter === "done") return crmTasks.filter((task) => task.status === "done");
   return crmTasks;
@@ -2178,7 +2221,8 @@ function renderCrmTaskCard(task) {
         </div>
         <div class="crm-meta">
           <div><span>Об'єкт</span><strong>${crmProjectName(task.projectId)}</strong></div>
-          <div><span>Термін</span><strong>${crmDueLabel(task.dueAt)}</strong></div>
+          <div><span>Дата</span><strong>${crmDueDateLabel(task.dueAt)}</strong></div>
+          <div><span>Час</span><strong>${crmDueTimeLabel(task.dueAt)}</strong></div>
           <div><span>Пріоритет</span><strong>${crmPriorityLabels[task.priority] || "Звичайний"}</strong></div>
         </div>
         <div class="crm-actions">
@@ -2195,7 +2239,7 @@ function renderCrmView() {
   if (!crmView) return;
   const activeTasks = crmTasks.filter((task) => task.status !== "done");
   const overdueTasks = crmTasks.filter((task) => crmDueTone(task) === "overdue");
-  const todayTasks = crmTasks.filter((task) => crmDueTone(task) === "today");
+  const todayTasks = crmTasks.filter((task) => task.status !== "done" && isTodayDate(task.dueAt));
   const visibleTasks = sortedCrmTasks(crmFilteredTasks());
   const filterLabels = {
     all: "Усі задачі",
@@ -2251,11 +2295,13 @@ function fillCrmProjectOptions(selectedProject = "") {
 }
 
 function openCrmTaskDialog(task = null) {
+  const due = splitCrmDueAt(task?.dueAt || "");
   crmTaskForm.reset();
   crmTaskForm.id.value = task?.id || "";
   crmTaskForm.title.value = task?.title || "";
   crmTaskForm.type.value = task?.type || "task";
-  crmTaskForm.dueAt.value = task?.dueAt || "";
+  crmTaskForm.dueDate.value = due.date;
+  crmTaskForm.dueTime.value = due.time;
   crmTaskForm.priority.value = task?.priority || "normal";
   crmTaskForm.status.value = task?.status || "planned";
   crmTaskForm.note.value = task?.note || "";
@@ -2273,7 +2319,7 @@ function saveCrmTaskFromForm() {
     title: String(data.get("title") || "").trim(),
     note: String(data.get("note") || "").trim(),
     type: data.get("type") || "task",
-    dueAt: data.get("dueAt") || "",
+    dueAt: combineCrmDueAt(data.get("dueDate"), data.get("dueTime")),
     priority: data.get("priority") || "normal",
     status: data.get("status") || "planned",
     createdAt: new Date().toISOString(),
