@@ -2139,16 +2139,34 @@ function crmDueTimeLabel(dueAt) {
 function splitCrmDueAt(dueAt) {
   if (!dueAt) return { date: "", time: "" };
   const [date = "", rawTime = ""] = String(dueAt).split("T");
+  const [year = "", month = "", day = ""] = date.split("-");
   return {
-    date,
+    date: year && month && day ? `${day}.${month}.${year}` : "",
     time: rawTime.slice(0, 5),
   };
 }
 
+function parseCrmDueDateInput(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!match) return "";
+  const [, day, month, year] = match;
+  const date = new Date(`${year}-${month}-${day}T00:00`);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== Number(year) ||
+    date.getMonth() + 1 !== Number(month) ||
+    date.getDate() !== Number(day)
+  ) {
+    return "";
+  }
+  return `${year}-${month}-${day}`;
+}
+
 function combineCrmDueAt(date, time) {
-  const dueDate = String(date || "").trim();
+  const dueDate = parseCrmDueDateInput(date);
   const dueTime = String(time || "").trim();
-  if (!dueDate || !dueTime) return "";
+  if (!dueDate || !/^\d{2}:\d{2}$/.test(dueTime)) return "";
   return `${dueDate}T${dueTime}`;
 }
 

@@ -234,8 +234,8 @@
               <option value="documents">Документи</option>
             </select>
           </label>
-          <label>Дата задачі<input name="dueDate" type="date" required autocomplete="off" /></label>
-          <label>Час задачі<input name="dueTime" type="time" required autocomplete="off" /></label>
+          <label>Дата задачі<input name="dueDate" type="text" inputmode="numeric" required autocomplete="off" placeholder="дд.мм.рррр" pattern="\d{2}\.\d{2}\.\d{4}" /></label>
+          <label>Час задачі<input name="dueTime" type="text" inputmode="numeric" required autocomplete="off" placeholder="гг:хх" pattern="\d{2}:\d{2}" /></label>
           <label>Пріоритет
             <select name="priority">
               <option value="normal">Звичайний</option>
