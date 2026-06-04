@@ -24,6 +24,7 @@ begin
   into invitation_row
   from public.company_invitations
   where lower(email) = current_email
+    and accepted_at is null
   order by created_at desc
   limit 1;
 

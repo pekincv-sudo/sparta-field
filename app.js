@@ -2614,10 +2614,14 @@ function renderCompanyUsers() {
       ${invitations.length
         ? `<button type="button">Активні запрошення <span>${invitations.length}</span></button>
           ${invitations.map((invitation) => `
-            <button type="button">
-              ${invitation.full_name || invitation.email}
-              <span>Очікує: ${renderRoleLabel(invitation.role)}</span>
-            </button>
+            <div class="profile-row invitation-row">
+              <span>${invitation.full_name || invitation.email}</span>
+              <strong>Очікує: ${renderRoleLabel(invitation.role)}</strong>
+              <div class="row-actions">
+                <button class="secondary-button compact-button" data-resend-invitation="${invitation.email}" type="button">Надіслати повторно</button>
+                <button class="danger-button compact-button" data-cancel-invitation="${invitation.email}" type="button">Відмінити</button>
+              </div>
+            </div>
           `).join("")}`
         : ""}
     </div>
@@ -2826,6 +2830,22 @@ document.addEventListener("click", (event) => {
   const viewMemberButton = event.target.closest("[data-view-member]");
   if (viewMemberButton) {
     openCompanyUsersDialog(viewMemberButton.dataset.viewMember);
+  }
+
+  const resendInvitationButton = event.target.closest("[data-resend-invitation]");
+  if (resendInvitationButton) {
+    resendInvitation(resendInvitationButton.dataset.resendInvitation).catch((error) => {
+      cloudState.message = `Помилка повторного запрошення: ${error.message}`;
+      renderProfileView();
+    });
+  }
+
+  const cancelInvitationButton = event.target.closest("[data-cancel-invitation]");
+  if (cancelInvitationButton) {
+    cancelInvitation(cancelInvitationButton.dataset.cancelInvitation).catch((error) => {
+      cloudState.message = `Помилка відміни запрошення: ${error.message}`;
+      renderProfileView();
+    });
   }
 
   const removeMemberButton = event.target.closest("[data-remove-member]");
@@ -3299,6 +3319,7 @@ async function inviteUser(email, role, fullName = "") {
     email: normalizedEmail,
     full_name: normalizedName,
     role,
+    accepted_at: null,
     invited_by: cloudState.user.id,
   };
   let { error } = await cloudState.client.from("company_invitations").upsert(invitationPayload, { onConflict: "company_id,email" });
@@ -3316,6 +3337,72 @@ async function inviteUser(email, role, fullName = "") {
   } else if (!cloudState.message.startsWith("Запрошення збережено. Щоб")) {
     cloudState.message = `Запрошення для ${normalizedName || normalizedEmail} збережено. Створи цього користувача в Supabase Auth або дай йому увійти після реєстрації.`;
   }
+  if (!error) {
+    await sendInvitationEmail(normalizedEmail);
+  }
+  renderProfileView();
+}
+
+async function sendInvitationEmail(email) {
+  if (!cloudState.client || !email) return false;
+  const { error } = await cloudState.client.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: window.location.origin,
+    },
+  });
+  if (error) {
+    cloudState.message += ` Лист не відправлено: ${error.message}`;
+    return false;
+  }
+  cloudState.message += " Лист-запрошення відправлено на пошту.";
+  return true;
+}
+
+async function resendInvitation(email) {
+  if (!cloudState.ready || cloudState.memberRole !== "owner") {
+    alert("Повторно надсилати запрошення може тільки власник компанії.");
+    return;
+  }
+  const invitation = (cloudState.invitations || []).find((item) => item.email === email);
+  if (!invitation) {
+    alert("Запрошення не знайдено.");
+    return;
+  }
+
+  const { error } = await cloudState.client.from("company_invitations").upsert({
+    company_id: cloudState.companyId,
+    email: invitation.email,
+    full_name: invitation.full_name || "",
+    role: invitation.role || "installer",
+    accepted_at: null,
+    invited_by: cloudState.user.id,
+  }, { onConflict: "company_id,email" });
+  if (error) throw error;
+
+  cloudState.message = `Запрошення для ${invitation.full_name || invitation.email} активовано повторно.`;
+  await sendInvitationEmail(invitation.email);
+  await loadCompanyPeople();
+  renderProfileView();
+}
+
+async function cancelInvitation(email) {
+  if (!cloudState.ready || cloudState.memberRole !== "owner") {
+    alert("Відміняти запрошення може тільки власник компанії.");
+    return;
+  }
+  if (!email || !confirm(`Відмінити запрошення для ${email}?`)) return;
+
+  const { error } = await cloudState.client
+    .from("company_invitations")
+    .delete()
+    .eq("company_id", cloudState.companyId)
+    .eq("email", email)
+    .is("accepted_at", null);
+  if (error) throw error;
+
+  cloudState.message = `Запрошення для ${email} відмінено.`;
+  await loadCompanyPeople();
   renderProfileView();
 }
 
