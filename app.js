@@ -3444,6 +3444,11 @@ async function initApp() {
 
 setupCrmDuePickerInputs();
 initApp();
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
 window.setInterval(() => {
   renderCrmNotification();
   if (document.querySelector("#crm")?.classList.contains("active")) {

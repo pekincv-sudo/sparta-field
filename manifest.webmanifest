@@ -1,0 +1,27 @@
+{
+  "name": "SPARTA field",
+  "short_name": "SPARTA field",
+  "description": "Об'єкти, задачі, матеріали і паспорти СЕС SPARTA power.",
+  "lang": "uk",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05090b",
+  "theme_color": "#ffd21a",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/assets/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
