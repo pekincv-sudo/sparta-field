@@ -3346,18 +3346,25 @@ async function inviteUser(email, role, fullName = "") {
 
 async function sendInvitationEmail(email) {
   if (!cloudState.client || !email) return false;
+  const redirectTo = getInvitationRedirectUrl();
   const { error } = await cloudState.client.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: getInvitationRedirectUrl(),
+      emailRedirectTo: redirectTo,
       shouldCreateUser: true,
     },
   });
   if (error) {
-    cloudState.message += ` Лист не відправлено: ${error.message}`;
-    return false;
+    const resent = await resendSignupConfirmation(email, redirectTo);
+    if (!resent) {
+      cloudState.message += ` Лист не відправлено: ${error.message}`;
+      return false;
+    }
+    cloudState.message += " Повторний лист підтвердження відправлено на пошту.";
+    return true;
   }
-  cloudState.message += " Лист-запрошення відправлено на пошту.";
+  await resendSignupConfirmation(email, redirectTo);
+  cloudState.message += " Команда на відправку листа передана Supabase. Якщо лист не прийшов, перевір Спам або зачекай ліміт повторної відправки.";
   return true;
 }
 
@@ -3366,6 +3373,18 @@ function getInvitationRedirectUrl() {
     return PUBLIC_APP_URL;
   }
   return window.location.origin;
+}
+
+async function resendSignupConfirmation(email, redirectTo) {
+  if (!cloudState.client?.auth?.resend) return false;
+  const { error } = await cloudState.client.auth.resend({
+    type: "signup",
+    email,
+    options: {
+      emailRedirectTo: redirectTo,
+    },
+  });
+  return !error;
 }
 
 async function resendInvitation(email) {
