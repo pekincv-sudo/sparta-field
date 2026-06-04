@@ -1,4 +1,4 @@
-const CACHE_NAME = "sparta-field-v1";
+const CACHE_NAME = "sparta-field-v2";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -7,6 +7,7 @@ const APP_SHELL = [
   "/supabase-config.js",
   "/assets/solar-background.png",
   "/assets/sparta-logo.jpeg",
+  "/assets/pwa/apple-touch-icon.png",
   "/assets/pwa/icon-192.png",
   "/assets/pwa/icon-512.png",
   "/manifest.webmanifest"
@@ -33,9 +34,20 @@ self.addEventListener("fetch", (event) => {
 
   if (requestUrl.origin !== self.location.origin) return;
 
-  if (event.request.mode === "navigate") {
+  if (event.request.method !== "GET") return;
+
+  if (
+    event.request.mode === "navigate" ||
+    ["/", "/index.html", "/app.js", "/styles.css", "/supabase-config.js", "/manifest.webmanifest"].includes(requestUrl.pathname)
+  ) {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match("/index.html"))
+      fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/index.html")))
     );
     return;
   }
