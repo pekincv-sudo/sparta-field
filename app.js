@@ -3350,6 +3350,7 @@ async function sendInvitationEmail(email) {
     email,
     options: {
       emailRedirectTo: getInvitationRedirectUrl(),
+      shouldCreateUser: true,
     },
   });
   if (error) {
@@ -3378,14 +3379,19 @@ async function resendInvitation(email) {
     return;
   }
 
-  const { error } = await cloudState.client.from("company_invitations").upsert({
+  let invitationPayload = {
     company_id: cloudState.companyId,
     email: invitation.email,
     full_name: invitation.full_name || "",
     role: invitation.role || "installer",
     accepted_at: null,
     invited_by: cloudState.user.id,
-  }, { onConflict: "company_id,email" });
+  };
+  let { error } = await cloudState.client.from("company_invitations").upsert(invitationPayload, { onConflict: "company_id,email" });
+  if (error && /full_name/i.test(error.message || "")) {
+    delete invitationPayload.full_name;
+    ({ error } = await cloudState.client.from("company_invitations").upsert(invitationPayload, { onConflict: "company_id,email" }));
+  }
   if (error) throw error;
 
   cloudState.message = `Запрошення для ${invitation.full_name || invitation.email} активовано повторно.`;
