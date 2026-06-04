@@ -1357,7 +1357,7 @@ th {
 
 .crm-meta {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1435,6 +1435,81 @@ th {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.profile-row {
+  min-height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--panel-2);
+  color: var(--ink);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.profile-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-row strong {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.company-users-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+  gap: 14px;
+}
+
+.company-users-list {
+  display: grid;
+  gap: 10px;
+}
+
+.company-user-item {
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-left: 3px solid rgba(255, 210, 26, 0.85);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  color: var(--ink);
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+
+.company-user-item.active,
+.company-user-item:hover {
+  border-color: rgba(255, 210, 26, 0.85);
+  background: rgba(255, 210, 26, 0.08);
+}
+
+.company-user-item span {
+  font-weight: 800;
+}
+
+.company-user-item small {
+  color: var(--muted);
+}
+
+.member-profile-card {
+  display: grid;
+  gap: 14px;
+}
+
+.compact-profile {
+  padding: 14px;
+}
+
+.compact-profile .profile-avatar {
+  width: 62px;
+  height: 62px;
 }
 
 dialog {
@@ -1980,6 +2055,19 @@ dialog::backdrop {
   }
 
   .crm-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .profile-row .compact-button {
+    width: 100%;
+  }
+
+  .company-users-layout {
     grid-template-columns: 1fr;
   }
 

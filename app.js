@@ -212,9 +212,15 @@ const gateAuthMessage = document.querySelector("#gateAuthMessage");
 const inviteDialog = document.querySelector("#inviteDialog");
 const inviteForm = document.querySelector("#inviteForm");
 const inviteMessage = document.querySelector("#inviteMessage");
+const passwordDialog = document.querySelector("#passwordDialog");
+const passwordForm = document.querySelector("#passwordForm");
+const passwordMessage = document.querySelector("#passwordMessage");
+const companyUsersDialog = document.querySelector("#companyUsersDialog");
+const companyUsersDialogBody = document.querySelector("#companyUsersDialogBody");
 const crmTaskDialog = document.querySelector("#crmTaskDialog");
 const crmTaskForm = document.querySelector("#crmTaskForm");
 const crmProjectSelect = document.querySelector("#crmProjectSelect");
+const crmAssigneeSelect = document.querySelector("#crmAssigneeSelect");
 const overdueTasksDialog = document.querySelector("#overdueTasksDialog");
 const overdueTasksView = document.querySelector("#overdueTasksView");
 
@@ -491,6 +497,8 @@ function dbCrmTaskToApp(row) {
     status: row.status || "planned",
     priority: row.priority || "normal",
     dueAt: row.due_at ? row.due_at.slice(0, 16) : "",
+    assignedTo: row.assigned_to || "",
+    createdBy: row.created_by || "",
     createdAt: row.created_at || "",
   };
 }
@@ -506,7 +514,8 @@ function crmTaskToDb(task) {
     status: task.status || "planned",
     priority: task.priority || "normal",
     due_at: task.dueAt || null,
-    created_by: cloudState.user?.id || null,
+    assigned_to: task.assignedTo || cloudState.user?.id || null,
+    created_by: task.createdBy || cloudState.user?.id || null,
   };
 }
 
@@ -600,17 +609,24 @@ async function loadCompanyPeople() {
 
   const { data: members, error: membersError } = await cloudState.client
     .from("company_members")
-    .select("role, is_active, profiles(email, full_name, phone)")
+    .select("user_id, role, is_active, profiles(email, full_name, phone)")
     .eq("company_id", cloudState.companyId)
     .order("created_at", { ascending: true });
   if (!membersError) cloudState.members = members || [];
 
-  if (["owner", "admin"].includes(cloudState.memberRole)) {
-    const { data: invitations, error: invitationsError } = await cloudState.client
+  if (cloudState.memberRole === "owner") {
+    let { data: invitations, error: invitationsError } = await cloudState.client
       .from("company_invitations")
-      .select("email, role, accepted_at, created_at")
+      .select("email, full_name, role, accepted_at, created_at")
       .eq("company_id", cloudState.companyId)
       .order("created_at", { ascending: false });
+    if (invitationsError && /full_name|schema cache/i.test(invitationsError.message || "")) {
+      ({ data: invitations, error: invitationsError } = await cloudState.client
+        .from("company_invitations")
+        .select("email, role, accepted_at, created_at")
+        .eq("company_id", cloudState.companyId)
+        .order("created_at", { ascending: false }));
+    }
     if (!invitationsError) cloudState.invitations = invitations || [];
   } else {
     cloudState.invitations = [];
@@ -696,7 +712,7 @@ async function loadCrmTasksFromCloud() {
     return;
   }
 
-  if (!(data || []).length && crmTasks.length) {
+  if (!(data || []).length && crmTasks.length && canViewAllCrmTasks()) {
     await syncCrmTasksToCloud();
     return;
   }
@@ -2072,7 +2088,6 @@ function renderHome() {
         <button class="quick-action" data-section="projects"><span>▤</span>Об'єкти</button>
         <button class="quick-action" id="newProjectQuickButton"><span>＋</span>Новий об'єкт</button>
         <button class="quick-action" data-section="projects"><span>▣</span>Матеріали</button>
-        <button class="quick-action" data-section="map"><span>⌖</span>Навігація</button>
       </div>
     </section>
   `;
@@ -2107,6 +2122,34 @@ function renderMapView() {
 function crmProjectName(projectId) {
   if (!projectId) return "Без об'єкта";
   return projects.find((project) => normalizeProjectId(project.id) === normalizeProjectId(projectId))?.title || "Об'єкт не знайдено";
+}
+
+function canViewAllCrmTasks() {
+  return ["owner", "admin"].includes(cloudState.memberRole);
+}
+
+function canCreateCrmTasks() {
+  return ["owner", "admin", "engineer", "brigadier", "installer"].includes(cloudState.memberRole);
+}
+
+function canManageCrmTask(task) {
+  if (canViewAllCrmTasks()) return true;
+  const userId = cloudState.user?.id || "";
+  return Boolean(userId && (task.assignedTo === userId || task.createdBy === userId));
+}
+
+function crmVisibleTasks() {
+  if (!cloudState.ready || canViewAllCrmTasks()) return crmTasks;
+  const userId = cloudState.user?.id || "";
+  if (!userId) return [];
+  return crmTasks.filter((task) => task.assignedTo === userId || task.createdBy === userId);
+}
+
+function memberDisplayName(userId) {
+  if (!userId) return "Не призначено";
+  const member = (cloudState.members || []).find((item) => item.user_id === userId);
+  const profile = member?.profiles || {};
+  return profile.full_name || profile.email || (userId === cloudState.user?.id ? "Я" : "Користувач");
 }
 
 function crmDueLabel(dueAt) {
@@ -2243,7 +2286,7 @@ function crmDueTone(task) {
 
 function dueCrmTasksCount() {
   const now = Date.now();
-  return crmTasks.filter((task) => {
+  return crmVisibleTasks().filter((task) => {
     if (task.status === "done" || !task.dueAt) return false;
     return new Date(task.dueAt).getTime() <= now;
   }).length;
@@ -2258,11 +2301,12 @@ function renderCrmNotification() {
 }
 
 function crmFilteredTasks(filter = crmFilter) {
-  if (filter === "active") return crmTasks.filter((task) => task.status !== "done");
-  if (filter === "today") return crmTasks.filter((task) => task.status !== "done" && isTodayDate(task.dueAt));
-  if (filter === "overdue") return crmTasks.filter((task) => crmDueTone(task) === "overdue");
-  if (filter === "done") return crmTasks.filter((task) => task.status === "done");
-  return crmTasks;
+  const tasks = crmVisibleTasks();
+  if (filter === "active") return tasks.filter((task) => task.status !== "done");
+  if (filter === "today") return tasks.filter((task) => task.status !== "done" && isTodayDate(task.dueAt));
+  if (filter === "overdue") return tasks.filter((task) => crmDueTone(task) === "overdue");
+  if (filter === "done") return tasks.filter((task) => task.status === "done");
+  return tasks;
 }
 
 function sortedCrmTasks(tasks) {
@@ -2292,12 +2336,13 @@ function renderCrmTaskCard(task) {
           <div><span>Об'єкт</span><strong>${crmProjectName(task.projectId)}</strong></div>
           <div><span>Дата</span><strong>${crmDueDateLabel(task.dueAt)}</strong></div>
           <div><span>Час</span><strong>${crmDueTimeLabel(task.dueAt)}</strong></div>
+          <div><span>Виконавець</span><strong>${memberDisplayName(task.assignedTo)}</strong></div>
           <div><span>Пріоритет</span><strong>${crmPriorityLabels[task.priority] || "Звичайний"}</strong></div>
         </div>
         <div class="crm-actions">
           ${task.status !== "done" ? `<button class="secondary-button compact-button" data-crm-done="${task.id}">Готово</button>` : ""}
-          <button class="secondary-button compact-button" data-crm-edit="${task.id}">Редагувати</button>
-          <button class="danger-button compact-button" data-crm-delete="${task.id}">Видалити</button>
+          ${canManageCrmTask(task) ? `<button class="secondary-button compact-button" data-crm-edit="${task.id}">Редагувати</button>` : ""}
+          ${canViewAllCrmTasks() || task.createdBy === cloudState.user?.id ? `<button class="danger-button compact-button" data-crm-delete="${task.id}">Видалити</button>` : ""}
         </div>
       </div>
     </article>
@@ -2306,9 +2351,10 @@ function renderCrmTaskCard(task) {
 
 function renderCrmView() {
   if (!crmView) return;
-  const activeTasks = crmTasks.filter((task) => task.status !== "done");
-  const overdueTasks = crmTasks.filter((task) => crmDueTone(task) === "overdue");
-  const todayTasks = crmTasks.filter((task) => task.status !== "done" && isTodayDate(task.dueAt));
+  const tasks = crmVisibleTasks();
+  const activeTasks = tasks.filter((task) => task.status !== "done");
+  const overdueTasks = tasks.filter((task) => crmDueTone(task) === "overdue");
+  const todayTasks = tasks.filter((task) => task.status !== "done" && isTodayDate(task.dueAt));
   const visibleTasks = sortedCrmTasks(crmFilteredTasks());
   const filterLabels = {
     all: "Усі задачі",
@@ -2325,13 +2371,13 @@ function renderCrmView() {
           <p class="eyebrow">CRM прототип</p>
           <h2>Задачі, записи і нагадування</h2>
         </div>
-        <button class="primary-button" id="newCrmTaskButton">+ Задача</button>
+        ${canCreateCrmTasks() ? `<button class="primary-button" id="newCrmTaskButton">+ Задача</button>` : ""}
       </div>
       <div class="metric-grid compact">
         <button class="metric-card crm-filter-card ${crmFilter === "active" ? "active" : ""}" data-crm-filter="active"><span>Активні</span><strong>${activeTasks.length}</strong></button>
         <button class="metric-card crm-filter-card warning ${crmFilter === "today" ? "active" : ""}" data-crm-filter="today"><span>Сьогодні</span><strong>${todayTasks.length}</strong></button>
         <button class="metric-card crm-filter-card danger ${crmFilter === "overdue" ? "active" : ""}" data-crm-filter="overdue"><span>Прострочені</span><strong>${overdueTasks.length}</strong></button>
-        <button class="metric-card crm-filter-card success ${crmFilter === "done" ? "active" : ""}" data-crm-filter="done"><span>Виконано</span><strong>${crmTasks.filter((task) => task.status === "done").length}</strong></button>
+        <button class="metric-card crm-filter-card success ${crmFilter === "done" ? "active" : ""}" data-crm-filter="done"><span>Виконано</span><strong>${tasks.filter((task) => task.status === "done").length}</strong></button>
       </div>
       <div class="crm-filter-row">
         <strong>${filterLabels[crmFilter] || "Усі задачі"}</strong>
@@ -2363,6 +2409,23 @@ function fillCrmProjectOptions(selectedProject = "") {
   `;
 }
 
+function fillCrmAssigneeOptions(selectedUserId = "") {
+  const members = (cloudState.members || []).filter((member) => member.is_active !== false);
+  const fallbackUserId = cloudState.user?.id || "";
+  const options = members.length
+    ? members.map((member) => `
+      <option value="${member.user_id}" ${member.user_id === selectedUserId ? "selected" : ""}>${memberDisplayName(member.user_id)} · ${renderRoleLabel(member.role)}</option>
+    `).join("")
+    : `<option value="${fallbackUserId}">${cloudState.user?.email || "Я"}</option>`;
+
+  crmAssigneeSelect.innerHTML = options;
+  if (selectedUserId && [...crmAssigneeSelect.options].some((option) => option.value === selectedUserId)) {
+    crmAssigneeSelect.value = selectedUserId;
+  } else if (fallbackUserId && [...crmAssigneeSelect.options].some((option) => option.value === fallbackUserId)) {
+    crmAssigneeSelect.value = fallbackUserId;
+  }
+}
+
 function openCrmTaskDialog(task = null) {
   const due = splitCrmDueAt(task?.dueAt || "");
   crmTaskForm.reset();
@@ -2383,6 +2446,7 @@ function openCrmTaskDialog(task = null) {
     crmTaskForm.dueTime.value = "";
   }
   fillCrmProjectOptions(task?.projectId || "");
+  fillCrmAssigneeOptions(task?.assignedTo || cloudState.user?.id || "");
   crmTaskDialog.querySelector("h2").textContent = task ? "Редагувати задачу" : "Нова задача";
   crmTaskDialog.showModal();
 }
@@ -2390,16 +2454,19 @@ function openCrmTaskDialog(task = null) {
 function saveCrmTaskFromForm() {
   const data = new FormData(crmTaskForm);
   const id = data.get("id") || `crm-${Date.now()}`;
+  const existingTask = crmTasks.find((item) => normalizeProjectId(item.id) === normalizeProjectId(id));
   const task = {
     id,
     projectId: data.get("projectId") || "",
     title: String(data.get("title") || "").trim(),
     note: String(data.get("note") || "").trim(),
     type: data.get("type") || "task",
+    assignedTo: data.get("assignedTo") || cloudState.user?.id || "",
     dueAt: combineCrmDueAt(data.get("dueDate"), data.get("dueTime")),
     priority: data.get("priority") || "normal",
     status: data.get("status") || "planned",
-    createdAt: new Date().toISOString(),
+    createdBy: existingTask?.createdBy || cloudState.user?.id || "",
+    createdAt: existingTask?.createdAt || new Date().toISOString(),
   };
 
   const index = crmTasks.findIndex((item) => normalizeProjectId(item.id) === normalizeProjectId(id));
@@ -2475,8 +2542,9 @@ function renderProfileView() {
   if (!profileView) return;
   const email = cloudState.user?.email || "Користувач не увійшов";
   const mode = cloudState.enabled ? cloudState.message : "Локальне збереження в браузері";
-  const canManageUsers = ["owner", "admin"].includes(cloudState.memberRole);
+  const canManageUsers = cloudState.memberRole === "owner";
   const canAcceptInvitation = Boolean(cloudState.user && cloudState.enabled && !cloudState.ready);
+  const roleLabel = renderRoleLabel(cloudState.memberRole);
   profileView.innerHTML = `
     <section class="profile-panel">
       <div class="profile-card">
@@ -2484,21 +2552,19 @@ function renderProfileView() {
         <div>
           <h2>SPARTA power</h2>
           <span>${email}</span>
-          <small>${mode}</small>
+          <small>${cloudState.ready ? `Роль: ${roleLabel}` : mode}</small>
         </div>
       </div>
       <div class="profile-menu">
         ${
           cloudState.user
-            ? `<button id="logoutButton">Вийти з акаунта <span>›</span></button>`
+            ? `<button id="changePasswordButton">Змінити пароль <span>›</span></button>`
             : `<button id="loginButton">Увійти в акаунт <span>›</span></button>`
         }
         <button id="syncNowButton">Синхронізувати зараз <span>›</span></button>
         ${canAcceptInvitation ? `<button id="acceptInvitationButton">Прийняти запрошення <span>›</span></button>` : ""}
         ${canManageUsers ? `<button id="inviteUserButton">Додати користувача <span>›</span></button>` : ""}
-        <button>Моя бригада <span>›</span></button>
-        <button>Налаштування <span>›</span></button>
-        <button>Про додаток <span>›</span></button>
+        ${cloudState.user ? `<button id="logoutButton">Вийти з акаунта <span>›</span></button>` : ""}
       </div>
       ${renderCompanyUsers()}
     </section>
@@ -2538,31 +2604,93 @@ function setAuthMode(mode) {
 }
 
 function renderCompanyUsers() {
-  if (!cloudState.ready) return "";
-  const members = cloudState.members || [];
-  const invitations = cloudState.invitations || [];
+  if (!cloudState.ready || cloudState.memberRole !== "owner") return "";
+  const members = activeCompanyMembers();
+  const invitations = (cloudState.invitations || []).filter((item) => !item.accepted_at);
 
   return `
     <div class="profile-menu">
-      <button type="button">Користувачі компанії <span>${members.length}</span></button>
-      ${members.length
-        ? members.map((member) => `
-          <button type="button">
-            ${member.profiles?.full_name || member.profiles?.email || "Користувач"}
-            <span>${renderRoleLabel(member.role)}</span>
-          </button>
-        `).join("")
-        : `<button type="button">Користувачів ще не додано <span>0</span></button>`}
+      <button type="button" id="companyUsersButton">Користувачі компанії <span>${members.length}</span></button>
       ${invitations.length
-        ? `<button type="button">Запрошення <span>${invitations.filter((item) => !item.accepted_at).length}</span></button>
+        ? `<button type="button">Активні запрошення <span>${invitations.length}</span></button>
           ${invitations.map((invitation) => `
             <button type="button">
-              ${invitation.email}
-              <span>${invitation.accepted_at ? "Прийнято" : renderRoleLabel(invitation.role)}</span>
+              ${invitation.full_name || invitation.email}
+              <span>Очікує: ${renderRoleLabel(invitation.role)}</span>
             </button>
           `).join("")}`
         : ""}
     </div>
+  `;
+}
+
+function activeCompanyMembers() {
+  return (cloudState.members || []).filter((member) => member.is_active !== false);
+}
+
+function companyMemberName(member) {
+  return member?.profiles?.full_name || member?.profiles?.email || "Працівник";
+}
+
+function companyMemberEmail(member) {
+  return member?.profiles?.email || "Email не вказано";
+}
+
+function openCompanyUsersDialog(selectedUserId = "") {
+  if (!cloudState.ready || cloudState.memberRole !== "owner") {
+    alert("Переглядати список користувачів може тільки власник компанії.");
+    return;
+  }
+
+  const members = activeCompanyMembers();
+  const selectedMember = members.find((member) => member.user_id === selectedUserId) || null;
+  companyUsersDialogBody.innerHTML = `
+    <div class="company-users-layout">
+      <div class="company-users-list">
+        ${members.length
+          ? members.map((member) => `
+            <button class="company-user-item ${selectedMember?.user_id === member.user_id ? "active" : ""}" type="button" data-view-member="${member.user_id}">
+              <span>${companyMemberName(member)}</span>
+              <small>${renderRoleLabel(member.role)}</small>
+            </button>
+          `).join("")
+          : `<div class="empty-state"><strong>Користувачів ще немає</strong><span>Додай працівника через запрошення.</span></div>`}
+      </div>
+      <div class="company-user-profile">
+        ${selectedMember ? renderCompanyMemberProfile(selectedMember) : `
+          <div class="empty-state">
+            <strong>Вибери користувача</strong>
+            <span>Натисни на працівника у списку, щоб переглянути його профіль.</span>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+  if (!companyUsersDialog.open) companyUsersDialog.showModal();
+}
+
+function renderCompanyMemberProfile(member) {
+  const profile = member.profiles || {};
+  const canRemove = member.role !== "owner" && member.user_id !== cloudState.user?.id;
+  return `
+    <article class="member-profile-card">
+      <div class="profile-card compact-profile">
+        <img class="profile-avatar" src="./assets/sparta-logo.jpeg" alt="SPARTA power" />
+        <div>
+          <h3>${companyMemberName(member)}</h3>
+          <span>${companyMemberEmail(member)}</span>
+          <small>Роль: ${renderRoleLabel(member.role)}</small>
+        </div>
+      </div>
+      <div class="object-specs">
+        <div><span>Ім'я</span><strong>${profile.full_name || "Не вказано"}</strong></div>
+        <div><span>Email</span><strong>${profile.email || "Не вказано"}</strong></div>
+        <div><span>Телефон</span><strong>${profile.phone || "Не вказано"}</strong></div>
+        <div><span>Роль</span><strong>${renderRoleLabel(member.role)}</strong></div>
+        <div><span>Доступ</span><strong>${member.is_active === false ? "Вимкнено" : "Активний"}</strong></div>
+      </div>
+      ${canRemove ? `<button class="danger-button" data-remove-member="${member.user_id}" type="button">Видалити користувача з компанії</button>` : ""}
+    </article>
   `;
 }
 
@@ -2638,6 +2766,16 @@ document.addEventListener("click", (event) => {
     authDialog.showModal();
   }
 
+  if (event.target.closest("#changePasswordButton")) {
+    if (!cloudState.user || !cloudState.client) {
+      alert("Спочатку увійди в акаунт.");
+      return;
+    }
+    passwordForm.reset();
+    passwordMessage.textContent = "Пароль має містити щонайменше 6 символів.";
+    passwordDialog.showModal();
+  }
+
   const authModeButton = event.target.closest("[data-auth-mode]");
   if (authModeButton) {
     setAuthMode(authModeButton.dataset.authMode);
@@ -2672,8 +2810,8 @@ document.addEventListener("click", (event) => {
       alert("Спочатку налаштуй Supabase і увійди в акаунт власника або адміністратора.");
       return;
     }
-    if (!["owner", "admin"].includes(cloudState.memberRole)) {
-      alert("Додавати користувачів може тільки власник або адміністратор.");
+    if (cloudState.memberRole !== "owner") {
+      alert("Додавати користувачів може тільки власник компанії.");
       return;
     }
     inviteForm.reset();
@@ -2681,7 +2819,28 @@ document.addEventListener("click", (event) => {
     inviteDialog.showModal();
   }
 
+  if (event.target.closest("#companyUsersButton")) {
+    openCompanyUsersDialog();
+  }
+
+  const viewMemberButton = event.target.closest("[data-view-member]");
+  if (viewMemberButton) {
+    openCompanyUsersDialog(viewMemberButton.dataset.viewMember);
+  }
+
+  const removeMemberButton = event.target.closest("[data-remove-member]");
+  if (removeMemberButton) {
+    removeCompanyMember(removeMemberButton.dataset.removeMember).catch((error) => {
+      cloudState.message = `Помилка видалення користувача: ${error.message}`;
+      renderProfileView();
+    });
+  }
+
   if (event.target.closest("#newCrmTaskButton")) {
+    if (!canCreateCrmTasks()) {
+      alert("Створювати задачі можуть власник, адміністратор, інженер, бригадир або монтажник.");
+      return;
+    }
     openCrmTaskDialog();
   }
 
@@ -3115,13 +3274,13 @@ async function addProjectFile(formElement) {
   render();
 }
 
-async function inviteUser(email, role) {
+async function inviteUser(email, role, fullName = "") {
   if (!cloudState.ready) {
     alert("Спочатку налаштуй Supabase і увійди в акаунт власника або адміністратора.");
     return;
   }
-  if (!["owner", "admin"].includes(cloudState.memberRole)) {
-    alert("Додавати користувачів може тільки власник або адміністратор.");
+  if (cloudState.memberRole !== "owner") {
+    alert("Додавати користувачів може тільки власник компанії.");
     return;
   }
 
@@ -3134,18 +3293,65 @@ async function inviteUser(email, role) {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  const { error } = await cloudState.client.from("company_invitations").upsert({
+  const normalizedName = String(fullName || "").trim();
+  const invitationPayload = {
     company_id: cloudState.companyId,
     email: normalizedEmail,
+    full_name: normalizedName,
     role,
     invited_by: cloudState.user.id,
-  }, { onConflict: "company_id,email" });
+  };
+  let { error } = await cloudState.client.from("company_invitations").upsert(invitationPayload, { onConflict: "company_id,email" });
+  if (error && /full_name|schema cache/i.test(error.message || "")) {
+    delete invitationPayload.full_name;
+    ({ error } = await cloudState.client.from("company_invitations").upsert(invitationPayload, { onConflict: "company_id,email" }));
+    if (!error) {
+      cloudState.message = `Запрошення збережено. Щоб зберігати ім'я працівника, треба оновити SQL для запрошень.`;
+    }
+  }
 
   if (!error) await loadCompanyPeople();
-  cloudState.message = error
-    ? `Помилка запрошення: ${error.message}`
-    : `Запрошення для ${normalizedEmail} збережено. Створи цього користувача в Supabase Auth або дай йому увійти після реєстрації.`;
+  if (error) {
+    cloudState.message = `Помилка запрошення: ${error.message}`;
+  } else if (!cloudState.message.startsWith("Запрошення збережено. Щоб")) {
+    cloudState.message = `Запрошення для ${normalizedName || normalizedEmail} збережено. Створи цього користувача в Supabase Auth або дай йому увійти після реєстрації.`;
+  }
   renderProfileView();
+}
+
+async function removeCompanyMember(userId) {
+  if (!cloudState.ready || cloudState.memberRole !== "owner") {
+    alert("Видаляти користувачів може тільки власник компанії.");
+    return;
+  }
+  if (!userId || userId === cloudState.user?.id) {
+    alert("Не можна видалити власний акаунт із компанії.");
+    return;
+  }
+
+  const member = (cloudState.members || []).find((item) => item.user_id === userId);
+  if (!member || member.role === "owner") {
+    alert("Власника компанії не можна видалити з цього екрана.");
+    return;
+  }
+
+  const name = member.profiles?.full_name || member.profiles?.email || "цього користувача";
+  if (!confirm(`Видалити ${name} з компанії? Користувач втратить доступ до даних SPARTA power.`)) return;
+
+  const { error } = await cloudState.client
+    .from("company_members")
+    .update({ is_active: false })
+    .eq("company_id", cloudState.companyId)
+    .eq("user_id", userId);
+  if (error) throw error;
+
+  cloudState.members = (cloudState.members || []).filter((item) => item.user_id !== userId);
+  cloudState.message = `${name} видалено з компанії.`;
+  await loadCompanyPeople();
+  renderProfileView();
+  if (companyUsersDialog.open) {
+    openCompanyUsersDialog();
+  }
 }
 
 async function authenticateUser(email, password, mode, messageTarget) {
@@ -3194,6 +3400,35 @@ async function authenticateUser(email, password, mode, messageTarget) {
   return true;
 }
 
+async function changeCurrentUserPassword(password, passwordConfirm) {
+  if (!cloudState.client || !cloudState.user) {
+    passwordMessage.textContent = "Спочатку увійди в акаунт.";
+    return false;
+  }
+
+  const nextPassword = String(password || "");
+  const repeatedPassword = String(passwordConfirm || "");
+  if (nextPassword.length < 6) {
+    passwordMessage.textContent = "Пароль має містити щонайменше 6 символів.";
+    return false;
+  }
+  if (nextPassword !== repeatedPassword) {
+    passwordMessage.textContent = "Паролі не співпадають.";
+    return false;
+  }
+
+  passwordMessage.textContent = "Оновлюю пароль...";
+  const { error } = await cloudState.client.auth.updateUser({ password: nextPassword });
+  if (error) {
+    passwordMessage.textContent = `Помилка зміни пароля: ${error.message}`;
+    return false;
+  }
+
+  cloudState.message = "Пароль оновлено.";
+  renderProfileView();
+  return true;
+}
+
 searchInput.addEventListener("input", renderProjectList);
 statusFilter.addEventListener("change", renderProjectList);
 
@@ -3231,11 +3466,20 @@ inviteForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(inviteForm);
   inviteMessage.textContent = "Зберігаю запрошення...";
-  await inviteUser(data.get("email"), data.get("role"));
+  await inviteUser(data.get("email"), data.get("role"), data.get("fullName"));
   if (!cloudState.message.startsWith("Помилка")) {
     inviteDialog.close();
   } else {
     inviteMessage.textContent = cloudState.message;
+  }
+});
+
+passwordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = new FormData(passwordForm);
+  const success = await changeCurrentUserPassword(data.get("password"), data.get("passwordConfirm"));
+  if (success) {
+    passwordDialog.close();
   }
 });
 

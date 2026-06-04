@@ -52,9 +52,6 @@
           <button class="nav-item active" data-section="home"><span>⌂</span>Головна</button>
           <button class="nav-item" data-section="projects"><span>▤</span>Об'єкти</button>
           <button class="nav-item" data-section="crm"><span>☑</span>CRM</button>
-          <button class="nav-item" data-section="map"><span>⌖</span>Карта</button>
-          <button class="nav-item" data-section="service"><span>⚒</span>Сервіс</button>
-          <button class="nav-item" data-section="monitoring"><span>⌁</span>Моніторинг</button>
           <button class="nav-item" data-section="profile"><span>○</span>Профіль</button>
         </nav>
 
@@ -203,6 +200,7 @@
           <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
         </div>
         <div class="form-grid">
+          <label>Ім'я<input name="fullName" type="text" autocomplete="name" placeholder="Іван Петренко" /></label>
           <label>Email<input name="email" type="email" required autocomplete="email" /></label>
           <label>Роль
             <select name="role">
@@ -222,6 +220,37 @@
       </form>
     </dialog>
 
+    <dialog id="passwordDialog">
+      <form method="dialog" class="modal-form" id="passwordForm">
+        <div class="modal-head">
+          <h2>Зміна пароля</h2>
+          <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
+        </div>
+        <div class="form-grid">
+          <label>Новий пароль<input name="password" type="password" required minlength="6" autocomplete="new-password" /></label>
+          <label>Повторити пароль<input name="passwordConfirm" type="password" required minlength="6" autocomplete="new-password" /></label>
+        </div>
+        <p class="calculation-note" id="passwordMessage">Пароль має містити щонайменше 6 символів.</p>
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Скасувати</button>
+          <button type="submit" class="primary-button">Зберегти пароль</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="companyUsersDialog">
+      <div class="modal-form">
+        <div class="modal-head">
+          <h2>Користувачі компанії</h2>
+          <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
+        </div>
+        <div id="companyUsersDialogBody"></div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Закрити</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="crmTaskDialog">
       <form method="dialog" class="modal-form" id="crmTaskForm" autocomplete="off">
         <div class="modal-head">
@@ -232,6 +261,7 @@
         <div class="form-grid">
           <label class="full">Назва задачі<input name="title" required placeholder="Передзвонити клієнту, замовити кабель..." /></label>
           <label>Об'єкт (не обов'язково)<select name="projectId" id="crmProjectSelect"></select></label>
+          <label>Виконавець<select name="assignedTo" id="crmAssigneeSelect" required></select></label>
           <label>Тип
             <select name="type">
               <option value="task">Задача</option>
