@@ -18,6 +18,7 @@ const PHOTO_BUCKET = "project-photos";
 const PROJECT_FILE_BUCKET = "project-files";
 const PROJECT_FILE_DB = "sparta-project-files";
 const PROJECT_FILE_STORE = "files";
+const PUBLIC_APP_URL = "https://sparta-field.vercel.app/";
 
 const crmTypeLabels = {
   task: "Задача",
@@ -3348,7 +3349,7 @@ async function sendInvitationEmail(email) {
   const { error } = await cloudState.client.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: window.location.origin,
+      emailRedirectTo: getInvitationRedirectUrl(),
     },
   });
   if (error) {
@@ -3357,6 +3358,13 @@ async function sendInvitationEmail(email) {
   }
   cloudState.message += " Лист-запрошення відправлено на пошту.";
   return true;
+}
+
+function getInvitationRedirectUrl() {
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    return PUBLIC_APP_URL;
+  }
+  return window.location.origin;
 }
 
 async function resendInvitation(email) {
