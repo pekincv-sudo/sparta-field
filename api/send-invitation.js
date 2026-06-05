@@ -17,12 +17,12 @@ export default async function handler(request) {
   }
 
   if (!SUPABASE_SERVICE_ROLE_KEY) {
-    return json({ error: "–£ Vercel –љ–µ –Ј–∞–і–∞–љ–Њ SUPABASE_SERVICE_ROLE_KEY." }, 500);
+    return json({ error: "У Vercel не задано SUPABASE_SERVICE_ROLE_KEY." }, 500);
   }
 
   const token = getBearerToken(request.headers.get("authorization") || "");
   if (!token) {
-    return json({ error: "–Я–Њ—В—А—Ц–±–љ–Њ —Г–≤—Ц–є—В–Є –≤ –і–Њ–і–∞—В–Њ–Ї." }, 401);
+    return json({ error: "Потрібно увійти в додаток." }, 401);
   }
 
   let body = {};
@@ -38,12 +38,12 @@ export default async function handler(request) {
   const fullName = String(body.fullName || "").trim();
 
   if (!email) {
-    return json({ error: "Email –Ї–Њ—А–Є—Б—В—Г–≤–∞—З–∞ –љ–µ –≤–Ї–∞–Ј–∞–љ–Њ." }, 400);
+    return json({ error: "Email користувача не вказано." }, 400);
   }
 
   const currentUser = await getCurrentUser(token);
   if (!currentUser.ok) {
-    return json({ error: "–°–µ—Б—Ц—О –≤–ї–∞—Б–љ–Є–Ї–∞ –љ–µ –њ—Ц–і—В–≤–µ—А–і–ґ–µ–љ–Њ." }, 401);
+    return json({ error: "Сесію власника не підтверджено." }, 401);
   }
 
   const canInvite = await assertOwnerAccess(companyId, currentUser.user.id);
@@ -53,19 +53,19 @@ export default async function handler(request) {
 
   const invitationResult = await sendAdminInvite(email, fullName, companyId, redirectTo);
   if (invitationResult.ok) {
-    return json({ message: "–Ы–Є—Б—В-–Ј–∞–њ—А–Њ—И–µ–љ–љ—П –≤—Ц–і–њ—А–∞–≤–ї–µ–љ–Њ –љ–∞ –њ–Њ—И—В—Г.", mode: invitationResult.mode });
+    return json({ message: "Лист-запрошення відправлено на пошту.", mode: invitationResult.mode });
   }
 
   const recoveryResult = await sendPasswordRecovery(email, redirectTo);
   if (recoveryResult.ok) {
     return json({
-      message: "–Ъ–Њ—А–Є—Б—В—Г–≤–∞—З –≤–ґ–µ —Ц—Б–љ—Г—Ф. –Т—Ц–і–њ—А–∞–≤–ї–µ–љ–Њ –ї–Є—Б—В –і–ї—П –≤—Е–Њ–і—Г –∞–±–Њ –≤—Ц–і–љ–Њ–≤–ї–µ–љ–љ—П –њ–∞—А–Њ–ї—П.",
+      message: "Користувач вже існує. Відправлено лист для входу або відновлення пароля.",
       mode: "recovery",
     });
   }
 
   return json({
-    error: `Supabase –љ–µ –≤—Ц–і–њ—А–∞–≤–Є–≤ –ї–Є—Б—В. Invite: ${invitationResult.error}. Recovery: ${recoveryResult.error}`,
+    error: `Supabase не відправив лист. Invite: ${invitationResult.error}. Recovery: ${recoveryResult.error}`,
   }, 502);
 }
 
@@ -109,17 +109,12 @@ async function assertOwnerAccess(companyId, userId) {
     headers: serviceHeaders(),
   });
   if (!result.ok) {
-    const details = await safeErrorText(result);
-    return {
-      ok: false,
-      status: 500,
-      error: `–Э–µ –≤–і–∞–ї–Њ—Б—П –њ–µ—А–µ–≤—Ц—А–Є—В–Є –њ—А–∞–≤–∞ –≤–ї–∞—Б–љ–Є–Ї–∞. Supabase: ${result.status} ${details}`,
-    };
+    return { ok: false, status: 500, error: "Не вдалося перевірити права власника." };
   }
 
   const rows = await result.json();
   if (!rows.length) {
-    return { ok: false, status: 403, error: "–Э–∞–і—Б–Є–ї–∞—В–Є –Ј–∞–њ—А–Њ—И–µ–љ–љ—П –Љ–Њ–ґ–µ —В—Ц–ї—М–Ї–Є –≤–ї–∞—Б–љ–Є–Ї –Ї–Њ–Љ–њ–∞–љ—Ц—Ч." };
+    return { ok: false, status: 403, error: "Надсилати запрошення може тільки власник компанії." };
   }
   return { ok: true };
 }
