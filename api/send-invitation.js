@@ -1,80 +1,87 @@
+export const config = {
+  runtime: "edge",
+};
+
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://klltykfmbsobqumpolyd.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_8HG6jI0L1h9RKjOzq-mV4g_rNkiQy4s";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const DEFAULT_COMPANY_ID = process.env.SPARTA_COMPANY_ID || "e5301014-4985-44a8-8c36-842e6da25947";
 
-export default async function handler(request, response) {
-  setCorsHeaders(response);
-
+export default async function handler(request) {
   if (request.method === "OPTIONS") {
-    response.status(204).end();
-    return;
+    return json(null, 204);
   }
 
   if (request.method !== "POST") {
-    response.status(405).json({ error: "Method not allowed" });
-    return;
+    return json({ error: "Method not allowed" }, 405);
   }
 
   if (!SUPABASE_SERVICE_ROLE_KEY) {
-    response.status(500).json({ error: "У Vercel не задано SUPABASE_SERVICE_ROLE_KEY." });
-    return;
+    return json({ error: "У Vercel не задано SUPABASE_SERVICE_ROLE_KEY." }, 500);
   }
 
-  const token = getBearerToken(request);
+  const token = getBearerToken(request.headers.get("authorization") || "");
   if (!token) {
-    response.status(401).json({ error: "Потрібно увійти в додаток." });
-    return;
+    return json({ error: "Потрібно увійти в додаток." }, 401);
   }
 
-  const body = typeof request.body === "string" ? JSON.parse(request.body || "{}") : request.body || {};
+  let body = {};
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
   const email = String(body.email || "").trim().toLowerCase();
   const companyId = String(body.companyId || DEFAULT_COMPANY_ID);
   const redirectTo = sanitizeRedirectUrl(body.redirectTo);
   const fullName = String(body.fullName || "").trim();
 
   if (!email) {
-    response.status(400).json({ error: "Email користувача не вказано." });
-    return;
+    return json({ error: "Email користувача не вказано." }, 400);
   }
 
   const currentUser = await getCurrentUser(token);
   if (!currentUser.ok) {
-    response.status(401).json({ error: "Сесію власника не підтверджено." });
-    return;
+    return json({ error: "Сесію власника не підтверджено." }, 401);
   }
 
   const canInvite = await assertOwnerAccess(companyId, currentUser.user.id);
   if (!canInvite.ok) {
-    response.status(canInvite.status).json({ error: canInvite.error });
-    return;
+    return json({ error: canInvite.error }, canInvite.status);
   }
 
   const invitationResult = await sendAdminInvite(email, fullName, companyId, redirectTo);
   if (invitationResult.ok) {
-    response.status(200).json({ message: "Лист-запрошення відправлено на пошту.", mode: invitationResult.mode });
-    return;
+    return json({ message: "Лист-запрошення відправлено на пошту.", mode: invitationResult.mode });
   }
 
   const recoveryResult = await sendPasswordRecovery(email, redirectTo);
   if (recoveryResult.ok) {
-    response.status(200).json({ message: "Користувач вже існує. Відправлено лист для входу або відновлення пароля.", mode: "recovery" });
-    return;
+    return json({
+      message: "Користувач вже існує. Відправлено лист для входу або відновлення пароля.",
+      mode: "recovery",
+    });
   }
 
-  response.status(502).json({
+  return json({
     error: `Supabase не відправив лист. Invite: ${invitationResult.error}. Recovery: ${recoveryResult.error}`,
+  }, 502);
+}
+
+function json(payload, status = 200) {
+  return new Response(payload === null ? null : JSON.stringify(payload), {
+    status,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type",
+      "Content-Type": "application/json; charset=utf-8",
+    },
   });
 }
 
-function setCorsHeaders(response) {
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
-}
-
-function getBearerToken(request) {
-  const header = request.headers.authorization || request.headers.Authorization || "";
+function getBearerToken(header) {
   const match = header.match(/^Bearer\s+(.+)$/i);
   return match ? match[1] : "";
 }
@@ -97,3 +104,85 @@ async function assertOwnerAccess(companyId, userId) {
   url.searchParams.set("user_id", `eq.${userId}`);
   url.searchParams.set("is_active", "eq.true");
   url.searchParams.set("role", "eq.owner");
+
+  const result = await fetch(url, {
+    headers: serviceHeaders(),
+  });
+  if (!result.ok) {
+    return { ok: false, status: 500, error: "Не вдалося перевірити права власника." };
+  }
+
+  const rows = await result.json();
+  if (!rows.length) {
+    return { ok: false, status: 403, error: "Надсилати запрошення може тільки власник компанії." };
+  }
+  return { ok: true };
+}
+
+async function sendAdminInvite(email, fullName, companyId, redirectTo) {
+  const url = new URL(`${SUPABASE_URL}/auth/v1/invite`);
+  url.searchParams.set("redirect_to", redirectTo);
+
+  const result = await fetch(url, {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      email,
+      data: {
+        full_name: fullName,
+        company_id: companyId,
+      },
+    }),
+  });
+
+  if (result.ok) return { ok: true, mode: "invite" };
+  return { ok: false, error: await safeErrorText(result) };
+}
+
+async function sendPasswordRecovery(email, redirectTo) {
+  const url = new URL(`${SUPABASE_URL}/auth/v1/recover`);
+  url.searchParams.set("redirect_to", redirectTo);
+
+  const result = await fetch(url, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email }),
+  });
+
+  if (result.ok) return { ok: true };
+  return { ok: false, error: await safeErrorText(result) };
+}
+
+function serviceHeaders() {
+  return {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    "Content-Type": "application/json",
+  };
+}
+
+function sanitizeRedirectUrl(value) {
+  const fallback = "https://sparta-field.vercel.app/";
+  try {
+    const url = new URL(String(value || fallback));
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return fallback;
+    return url.origin + "/";
+  } catch {
+    return fallback;
+  }
+}
+
+async function safeErrorText(result) {
+  const text = await result.text().catch(() => "");
+  if (!text) return `${result.status} ${result.statusText}`;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed.msg || parsed.message || parsed.error_description || parsed.error || text;
+  } catch {
+    return text;
+  }
+}
