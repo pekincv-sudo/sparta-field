@@ -3347,6 +3347,12 @@ async function inviteUser(email, role, fullName = "") {
 async function sendInvitationEmail(email) {
   if (!cloudState.client || !email) return false;
   const redirectTo = getInvitationRedirectUrl();
+  const serverResult = await sendInvitationEmailByServer(email, redirectTo);
+  if (serverResult.handled) {
+    cloudState.message += ` ${serverResult.message}`;
+    return serverResult.ok;
+  }
+
   const { error } = await cloudState.client.auth.signInWithOtp({
     email,
     options: {
@@ -3366,6 +3372,51 @@ async function sendInvitationEmail(email) {
   await resendSignupConfirmation(email, redirectTo);
   cloudState.message += " Команда на відправку листа передана Supabase. Якщо лист не прийшов, перевір Спам або зачекай ліміт повторної відправки.";
   return true;
+}
+
+async function sendInvitationEmailByServer(email, redirectTo) {
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    return { handled: false, ok: false, message: "" };
+  }
+
+  const { data } = await cloudState.client.auth.getSession();
+  const token = data?.session?.access_token;
+  if (!token) return { handled: false, ok: false, message: "" };
+
+  try {
+    const response = await fetch("/api/send-invitation", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        companyId: cloudState.companyId,
+        email,
+        fullName: (cloudState.invitations || []).find((item) => item.email === email)?.full_name || "",
+        redirectTo,
+      }),
+    });
+
+    if (response.status === 404) return { handled: false, ok: false, message: "" };
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        handled: true,
+        ok: false,
+        message: payload.error || "Серверна відправка запрошення не вдалася.",
+      };
+    }
+
+    return {
+      handled: true,
+      ok: true,
+      message: payload.message || "Лист-запрошення відправлено на пошту.",
+    };
+  } catch (error) {
+    return { handled: false, ok: false, message: error.message };
+  }
 }
 
 function getInvitationRedirectUrl() {
