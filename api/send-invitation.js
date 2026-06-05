@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_8HG6j
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const DEFAULT_COMPANY_ID = process.env.SPARTA_COMPANY_ID || "e5301014-4985-44a8-8c36-842e6da25947";
 
-module.exports = async function handler(request, response) {
+export default async function handler(request, response) {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
@@ -65,7 +65,7 @@ module.exports = async function handler(request, response) {
   response.status(502).json({
     error: `Supabase не відправив лист. Invite: ${invitationResult.error}. Recovery: ${recoveryResult.error}`,
   });
-};
+}
 
 function setCorsHeaders(response) {
   response.setHeader("Access-Control-Allow-Origin", "*");
