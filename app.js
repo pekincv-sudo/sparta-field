@@ -1684,6 +1684,38 @@ function activeWarehouseProjects() {
   return projects.filter((project) => !["completed", "passport_issued"].includes(project.status));
 }
 
+function addWarehouseItemToProjectMaterials(project, item, qty) {
+  if (!project || !item || !qty) return;
+  ensureProjectCollections(project);
+  const itemSku = normalizeLookupValue(item.sku);
+  const itemName = normalizeLookupValue(item.name);
+  const existingMaterial = project.materials.find((material) => {
+    const materialSku = normalizeLookupValue(material.sku);
+    const materialName = normalizeLookupValue(material.name);
+    return (itemSku && materialSku === itemSku) || (itemName && materialName === itemName);
+  });
+
+  if (existingMaterial) {
+    existingMaterial.plannedQty = Number(existingMaterial.plannedQty || 0) + qty;
+    existingMaterial.issuedQty = Number(existingMaterial.issuedQty || 0) + qty;
+    existingMaterial.actualQty = Number(existingMaterial.actualQty || 0) + qty;
+    existingMaterial.unit = existingMaterial.unit || item.unit || "шт";
+    existingMaterial.category = existingMaterial.category || item.category || "Інше";
+    existingMaterial.sku = existingMaterial.sku || item.sku || "";
+    return;
+  }
+
+  project.materials.push({
+    name: item.name,
+    category: item.category || "Інше",
+    sku: item.sku || "",
+    actualQty: qty,
+    plannedQty: qty,
+    issuedQty: qty,
+    unit: item.unit || "шт",
+  });
+}
+
 function installerChecklistStats(project) {
   const checklist = ensureProjectCollections(project)?.workChecklist || emptyInstallerChecklist();
   const total = installerChecklistItemIds.length;
@@ -4193,14 +4225,16 @@ function addWarehouseMovement(formElement) {
   }
   const type = data.get("movementType") || "project";
   const projectId = data.get("projectId") || "";
+  let targetProject = null;
   if (type === "project") {
-    const project = projects.find((itemProject) => normalizeProjectId(itemProject.id) === normalizeProjectId(projectId));
-    if (!project || ["completed", "passport_issued"].includes(project.status)) {
+    targetProject = projects.find((itemProject) => normalizeProjectId(itemProject.id) === normalizeProjectId(projectId));
+    if (!targetProject || ["completed", "passport_issued"].includes(targetProject.status)) {
       alert("Для переміщення вибери активний об'єкт. Завершені об'єкти у списку не показуються.");
       return;
     }
   }
   item.qty = Number(item.qty || 0) - qty;
+  if (targetProject) addWarehouseItemToProjectMaterials(targetProject, item, qty);
   warehouseMovements.unshift({
     id: `wm-${Date.now()}`,
     type,
@@ -4217,6 +4251,7 @@ function addWarehouseMovement(formElement) {
     createdAt: new Date().toISOString(),
   });
   saveWarehouseMovements();
+  if (targetProject) saveProjects();
   saveWarehouseItems();
   formElement.reset();
   render();
