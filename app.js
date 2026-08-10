@@ -1680,6 +1680,10 @@ function warehouseMovementTarget(movement) {
   return movement.supplier || "Склад";
 }
 
+function activeWarehouseProjects() {
+  return projects.filter((project) => !["completed", "passport_issued"].includes(project.status));
+}
+
 function installerChecklistStats(project) {
   const checklist = ensureProjectCollections(project)?.workChecklist || emptyInstallerChecklist();
   const total = installerChecklistItemIds.length;
@@ -2812,6 +2816,7 @@ function renderWarehouseView() {
   const productOptions = warehouseProductsForCategory(selectedCategory);
   const movementDefaultItem = warehouseItems[0] || {};
   const movementDefaultPrice = Number(movementDefaultItem.installerPrice || movementDefaultItem.salePrice || 0);
+  const activeProjects = activeWarehouseProjects();
   warehouseView.innerHTML = `
     <section class="warehouse-panel">
       <div class="panel-heading">
@@ -2879,7 +2884,9 @@ function renderWarehouseView() {
         </label>
         <label class="warehouse-project-target">Об'єкт
           <select name="projectId">
-            ${projects.map((project) => `<option value="${escapeAttribute(project.id)}">${project.title}</option>`).join("")}
+            ${activeProjects.length
+              ? activeProjects.map((project) => `<option value="${escapeAttribute(project.id)}">${project.title} / ${statusLabels[project.status] || "Активний"}</option>`).join("")
+              : `<option value="">Немає активних об'єктів</option>`}
           </select>
         </label>
         <label class="warehouse-sale-target" hidden>Клієнт<input name="customer" placeholder="Ім'я або телефон клієнта" /></label>
@@ -4185,13 +4192,21 @@ function addWarehouseMovement(formElement) {
     return;
   }
   const type = data.get("movementType") || "project";
+  const projectId = data.get("projectId") || "";
+  if (type === "project") {
+    const project = projects.find((itemProject) => normalizeProjectId(itemProject.id) === normalizeProjectId(projectId));
+    if (!project || ["completed", "passport_issued"].includes(project.status)) {
+      alert("Для переміщення вибери активний об'єкт. Завершені об'єкти у списку не показуються.");
+      return;
+    }
+  }
   item.qty = Number(item.qty || 0) - qty;
   warehouseMovements.unshift({
     id: `wm-${Date.now()}`,
     type,
     itemId: item.id,
     itemName: item.name,
-    projectId: type === "project" ? data.get("projectId") || "" : "",
+    projectId: type === "project" ? projectId : "",
     customer: type === "sale" ? String(data.get("customer") || "").trim() : "",
     qty,
     unit: item.unit || "шт",
