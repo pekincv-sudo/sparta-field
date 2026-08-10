@@ -425,6 +425,7 @@ textarea::placeholder {
 .map-panel,
 .service-panel,
 .monitoring-panel,
+.warehouse-panel,
 .profile-panel,
 .detail-panel,
 .wide-panel,
@@ -884,6 +885,18 @@ button.metric-card:hover,
   grid-template-columns: minmax(160px, 220px) minmax(220px, 1fr) minmax(240px, 1fr);
 }
 
+.finance-form {
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+}
+
+.finance-line-form {
+  grid-template-columns: 1.5fr 92px 82px 120px 120px auto;
+}
+
+.warehouse-form {
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+}
+
 .form-submit-cell {
   grid-column: 1 / -1;
   display: flex;
@@ -947,6 +960,7 @@ th {
 .mppt-card,
 .summary-table,
 .checklist-group,
+.finance-panel,
 .ticket-card,
 .monitor-card {
   border: 1px solid var(--line);
@@ -993,9 +1007,12 @@ th {
 .task-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
+  gap: 10px;
   align-items: center;
-  min-height: 34px;
+  min-height: 42px;
   border-bottom: 1px solid var(--line);
+  color: #dfe7ea;
+  font-weight: 750;
 }
 
 .task-row input {
@@ -1008,6 +1025,22 @@ th {
   height: 14px;
   border: 1px solid var(--muted);
   border-radius: 50%;
+}
+
+.task-row.done {
+  color: #a9f2bd;
+}
+
+.task-row.done span {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: rgba(55, 201, 107, 0.65);
+}
+
+.task-row.done i {
+  border-color: rgba(55, 201, 107, 0.85);
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(55, 201, 107, 0.12);
 }
 
 .photo-grid {
@@ -1224,6 +1257,10 @@ th {
 
 .dot.muted {
   background: #66727a;
+}
+
+.warning-row {
+  background: rgba(255, 210, 26, 0.06);
 }
 
 .ticket-card,

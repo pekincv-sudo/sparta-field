@@ -41,6 +41,222 @@ const crmPriorityLabels = {
   urgent: "Терміново",
 };
 
+const installerChecklistGroups = [
+  {
+    title: "1. Конструкція",
+    items: [
+      { id: "marking", title: "Розмітка" },
+      { id: "mounting_system", title: "Монтаж кріплення" },
+      { id: "plane_check", title: "Перевірка площини" },
+    ],
+  },
+  {
+    title: "2. Панелі",
+    items: [
+      { id: "panels_install", title: "Монтаж панелей" },
+      { id: "torque_check", title: "Момент затяжки" },
+      { id: "string_labels", title: "Маркування стрінгів" },
+    ],
+  },
+  {
+    title: "3. Електрика",
+    items: [
+      { id: "cable_routing", title: "Прокладка кабелю" },
+      { id: "dc_connection", title: "Підключення DC" },
+      { id: "ac_connection", title: "Підключення AC" },
+      { id: "grounding", title: "Заземлення" },
+    ],
+  },
+  {
+    title: "4. Пусконалагодження",
+    items: [
+      { id: "inverter_setup", title: "Налаштування інвертора" },
+      { id: "parameter_check", title: "Перевірка параметрів" },
+      { id: "client_briefing", title: "Інструктаж клієнта" },
+    ],
+  },
+];
+
+const installerChecklistItemIds = installerChecklistGroups.flatMap((group) => group.items.map((item) => item.id));
+
+function emptyInstallerChecklist() {
+  return installerChecklistItemIds.reduce((result, id) => {
+    result[id] = false;
+    return result;
+  }, {});
+}
+
+function emptyProjectFinance() {
+  return {
+    contractPrice: 0,
+    installationPrice: 0,
+    advancePaid: 0,
+    crewPayroll: 0,
+    equipment: [],
+    expenses: [],
+  };
+}
+
+function defaultWarehouseItems() {
+  return [
+    {
+      id: "wh-panel-longi-580",
+      name: "Longi LR5-72HTH-580M",
+      category: "Панелі",
+      sku: "PV-LONGI-580",
+      unit: "шт",
+      qty: 48,
+      purchasePrice: 3200,
+      salePrice: 3900,
+      minQty: 20,
+      location: "Склад Чернівці",
+    },
+    {
+      id: "wh-inverter-deye-12",
+      name: "Deye SUN-12K-SG04LP3",
+      category: "Інвертори",
+      sku: "INV-DEYE-12",
+      unit: "шт",
+      qty: 3,
+      purchasePrice: 42000,
+      salePrice: 52000,
+      minQty: 1,
+      location: "Стелаж A2",
+    },
+    {
+      id: "wh-cable-6",
+      name: "Сонячний кабель 6 мм2",
+      category: "Кабель",
+      sku: "CAB-PV-6",
+      unit: "м",
+      qty: 620,
+      purchasePrice: 28,
+      salePrice: 42,
+      minQty: 200,
+      location: "Бухти",
+    },
+    {
+      id: "wh-tool-crimper",
+      name: "Кримпер MC4",
+      category: "Інструмент",
+      sku: "TOOL-MC4",
+      unit: "шт",
+      qty: 4,
+      purchasePrice: 1850,
+      salePrice: 0,
+      minQty: 2,
+      location: "Інструментальна",
+    },
+  ];
+}
+
+function seedDemoCrmTasks(tasks) {
+  const seedKey = "solarObjectManager.demoCrmTasksAdded";
+  if (localStorage.getItem(seedKey) === "true") return tasks;
+
+  const formatLocalDateTime = (date) => {
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+  const dueIn = (minutes) => formatLocalDateTime(new Date(Date.now() + minutes * 60 * 1000));
+  const nowIso = new Date().toISOString();
+  const demoTasks = [
+    {
+      id: "crm-demo-active-1",
+      projectId: "",
+      title: "Уточнити адресу нового клієнта",
+      note: "Активна тестова задача без прив'язки до об'єкта.",
+      type: "call",
+      dueAt: dueIn(48 * 60),
+      priority: "normal",
+      status: "planned",
+      createdAt: nowIso,
+    },
+    {
+      id: "crm-demo-active-2",
+      projectId: "",
+      title: "Підготувати список матеріалів",
+      note: "Активна тестова задача в роботі.",
+      type: "materials",
+      dueAt: dueIn(72 * 60),
+      priority: "high",
+      status: "in_progress",
+      createdAt: nowIso,
+    },
+    {
+      id: "crm-demo-today-1",
+      projectId: "",
+      title: "Передзвонити клієнту сьогодні",
+      note: "Перевірка фільтра Сьогодні.",
+      type: "call",
+      dueAt: dueIn(90),
+      priority: "high",
+      status: "planned",
+      createdAt: nowIso,
+    },
+    {
+      id: "crm-demo-today-2",
+      projectId: "",
+      title: "Перевірити готовність бригади",
+      note: "Друга задача на сьогодні.",
+      type: "task",
+      dueAt: dueIn(180),
+      priority: "normal",
+      status: "in_progress",
+      createdAt: nowIso,
+    },
+    {
+      id: "crm-demo-overdue-1",
+      projectId: "",
+      title: "Прострочено: надіслати паспорт об'єкта",
+      note: "Тест червоного нагадування.",
+      type: "documents",
+      dueAt: dueIn(-180),
+      priority: "urgent",
+      status: "planned",
+      createdAt: nowIso,
+    },
+    {
+      id: "crm-demo-overdue-2",
+      projectId: "",
+      title: "Прострочено: перевірити оплату",
+      note: "Друга прострочена задача.",
+      type: "call",
+      dueAt: dueIn(-60),
+      priority: "high",
+      status: "in_progress",
+      createdAt: nowIso,
+    },
+    {
+      id: "crm-demo-done-1",
+      projectId: "",
+      title: "Виконано: замовити кріплення",
+      note: "Тест фільтра виконаних задач.",
+      type: "materials",
+      dueAt: dueIn(-24 * 60),
+      priority: "normal",
+      status: "done",
+      createdAt: nowIso,
+    },
+    {
+      id: "crm-demo-done-2",
+      projectId: "",
+      title: "Виконано: погодити дату монтажу",
+      note: "Друга виконана задача.",
+      type: "task",
+      dueAt: dueIn(-6 * 60),
+      priority: "high",
+      status: "done",
+      createdAt: nowIso,
+    },
+  ];
+  const demoIds = new Set(demoTasks.map((task) => task.id));
+  const nextTasks = [...demoTasks, ...tasks.filter((task) => !demoIds.has(task.id))];
+  localStorage.setItem("solarObjectManager.crmTasks", JSON.stringify(nextTasks));
+  localStorage.setItem(seedKey, "true");
+  return nextTasks;
+}
+
 const defaultProjects = [
   {
     id: 1,
@@ -92,6 +308,31 @@ const defaultProjects = [
       { name: "Заземлення", category: "Заземлення", plannedQty: 1, issuedQty: 1, actualQty: 1, unit: "компл" },
     ],
     photos: ["Дах до монтажу", "Панелі", "Інвертор", "Готовий об'єкт"],
+    finance: {
+      contractPrice: 182000,
+      installationPrice: 28000,
+      advancePaid: 90000,
+      crewPayroll: 18000,
+      equipment: [
+        { name: "Longi LR5-72HTH-580M", qty: 24, unit: "шт", purchasePrice: 3200, salePrice: 3900 },
+        { name: "Deye SUN-12K-SG04LP3", qty: 1, unit: "шт", purchasePrice: 42000, salePrice: 52000 },
+        { name: "Кабель PV 6 мм2", qty: 200, unit: "м", purchasePrice: 28, salePrice: 42 },
+      ],
+      expenses: [
+        { name: "Доставка обладнання", amount: 3500 },
+        { name: "Кріплення / дрібні матеріали", amount: 7200 },
+      ],
+    },
+    workChecklist: {
+      marking: true,
+      mounting_system: true,
+      plane_check: true,
+      panels_install: true,
+      torque_check: true,
+      string_labels: true,
+      cable_routing: true,
+      dc_connection: true,
+    },
   },
   {
     id: 2,
@@ -135,6 +376,20 @@ const defaultProjects = [
       { name: "Інвертор Huawei 30K", category: "Обладнання", plannedQty: 1, issuedQty: 0, actualQty: 0, unit: "шт" },
     ],
     photos: [],
+    finance: {
+      contractPrice: 0,
+      installationPrice: 42000,
+      advancePaid: 0,
+      crewPayroll: 0,
+      equipment: [
+        { name: "Панель Jinko 575W", qty: 52, unit: "шт", purchasePrice: 3150, salePrice: 3800 },
+        { name: "Інвертор Huawei 30K", qty: 1, unit: "шт", purchasePrice: 76000, salePrice: 89000 },
+      ],
+      expenses: [],
+    },
+    workChecklist: {
+      marking: true,
+    },
   },
 ];
 
@@ -148,7 +403,9 @@ const savedProjects = hasCloudConfig ? null : localStorage.getItem("solarObjectM
 let projects = savedProjects ? JSON.parse(savedProjects) : hasCloudConfig ? [] : defaultProjects;
 const savedCrmTasks = localStorage.getItem("solarObjectManager.crmTasks");
 let crmTasks = savedCrmTasks ? JSON.parse(savedCrmTasks) : [];
+crmTasks = seedDemoCrmTasks(crmTasks);
 let projectFilesByProjectId = JSON.parse(localStorage.getItem("solarObjectManager.projectFiles") || "{}");
+let warehouseItems = JSON.parse(localStorage.getItem("solarObjectManager.warehouseItems") || "null") || defaultWarehouseItems();
 
 let selectedProjectId = String(projects[0]?.id ?? "");
 let selectedTab = "summary";
@@ -158,15 +415,20 @@ let authMode = "signin";
 let crmFilter = "today";
 let cloudSyncTimer = null;
 let crmSyncTimer = null;
+let warehouseSyncTimer = null;
 let cloudLoading = false;
 let pendingCloudDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingDeletes") || "[]");
 let pendingCrmDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingCrmDeletes") || "[]");
+let pendingWarehouseDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingWarehouseDeletes") || "[]");
 
 const cloudState = {
   client: null,
   user: null,
   companyId: null,
   memberRole: null,
+  supportsProjectChecklist: true,
+  supportsProjectFinance: true,
+  supportsWarehouse: true,
   enabled: false,
   ready: false,
   message: "Локальний режим",
@@ -189,6 +451,7 @@ const statsGrid = document.querySelector("#statsGrid");
 const crmNotificationButton = document.querySelector("#crmNotificationButton");
 const homeView = document.querySelector("#homeView");
 const crmView = document.querySelector("#crmView");
+const warehouseView = document.querySelector("#warehouseView");
 const mapView = document.querySelector("#mapView");
 const serviceView = document.querySelector("#serviceView");
 const monitoringView = document.querySelector("#monitoringView");
@@ -238,10 +501,19 @@ function savePendingCrmDeletes() {
   localStorage.setItem("solarObjectManager.pendingCrmDeletes", JSON.stringify(pendingCrmDeletes));
 }
 
+function savePendingWarehouseDeletes() {
+  localStorage.setItem("solarObjectManager.pendingWarehouseDeletes", JSON.stringify(pendingWarehouseDeletes));
+}
+
 function saveCrmTasks() {
   localStorage.setItem("solarObjectManager.crmTasks", JSON.stringify(crmTasks));
   renderCrmNotification();
   queueCrmSync();
+}
+
+function saveWarehouseItems() {
+  localStorage.setItem("solarObjectManager.warehouseItems", JSON.stringify(warehouseItems));
+  queueWarehouseSync();
 }
 
 function projectFilesFor(projectId) {
@@ -359,6 +631,21 @@ function queueCrmSync() {
   }, 300);
 }
 
+function queueWarehouseSync() {
+  window.clearTimeout(warehouseSyncTimer);
+  warehouseSyncTimer = window.setTimeout(() => {
+    if (!cloudState.ready || !cloudState.supportsWarehouse) {
+      renderProfileView();
+      return;
+    }
+
+    syncWarehouseItemsToCloud().catch((error) => {
+      cloudState.message = `Помилка синхронізації складу: ${error.message}`;
+      renderProfileView();
+    });
+  }, 400);
+}
+
 function updateAccessMode() {
   const locked = cloudState.enabled && !cloudState.user;
   document.body.classList.toggle("auth-locked", locked);
@@ -374,8 +661,8 @@ function supabaseConfig() {
   };
 }
 
-function projectToDb(project) {
-  return {
+function projectToDb(project, includeChecklist = true) {
+  const row = {
     client_id: normalizeProjectId(project.id),
     company_id: cloudState.companyId,
     title: project.title || "",
@@ -389,6 +676,10 @@ function projectToDb(project) {
     comment: project.comment || "",
     created_by: cloudState.user?.id || null,
   };
+
+  if (includeChecklist) row.work_checklist = project.workChecklist || emptyInstallerChecklist();
+  if (cloudState.supportsProjectFinance) row.finance = project.finance || emptyProjectFinance();
+  return row;
 }
 
 function technicalToDb(project) {
@@ -440,6 +731,8 @@ function dbProjectToApp(row) {
     installationDate: row.installation_date || "",
     teamName: row.team_name || "",
     comment: row.comment || "",
+    workChecklist: row.work_checklist || emptyInstallerChecklist(),
+    finance: row.finance || emptyProjectFinance(),
     technical: {
       panelManufacturer: row.project_technical?.panel_manufacturer || "",
       panelModel: row.project_technical?.panel_model || "",
@@ -520,6 +813,38 @@ function crmTaskToDb(task) {
   };
 }
 
+function dbWarehouseItemToApp(row) {
+  return {
+    id: row.client_item_id || row.id,
+    name: row.name || "",
+    category: row.category || "Інше",
+    sku: row.sku || "",
+    unit: row.unit || "шт",
+    qty: Number(row.quantity || 0),
+    purchasePrice: Number(row.purchase_price || 0),
+    salePrice: Number(row.sale_price || 0),
+    minQty: Number(row.min_quantity || 0),
+    location: row.location || "",
+  };
+}
+
+function warehouseItemToDb(item) {
+  return {
+    client_item_id: normalizeProjectId(item.id),
+    company_id: cloudState.companyId,
+    category: item.category || "Інше",
+    name: item.name || "",
+    sku: item.sku || "",
+    unit: item.unit || "шт",
+    quantity: Number(item.qty || 0),
+    purchase_price: Number(item.purchasePrice || 0),
+    sale_price: Number(item.salePrice || 0),
+    min_quantity: Number(item.minQty || 0),
+    location: item.location || "",
+    created_by: cloudState.user?.id || null,
+  };
+}
+
 async function initCloud() {
   const config = supabaseConfig();
   if (!config || !window.supabase?.createClient) {
@@ -541,6 +866,7 @@ async function initCloud() {
   await loadCompanyContext();
   await loadProjectsFromCloud();
   await loadCrmTasksFromCloud();
+  await loadWarehouseItemsFromCloud();
 }
 
 async function loadCompanyContext() {
@@ -723,6 +1049,58 @@ async function loadCrmTasksFromCloud() {
   renderCrmNotification();
 }
 
+async function loadWarehouseItemsFromCloud() {
+  if (!cloudState.ready || !cloudState.supportsWarehouse) return;
+
+  const { data, error } = await cloudState.client
+    .from("warehouse_items")
+    .select("*")
+    .eq("company_id", cloudState.companyId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    cloudState.supportsWarehouse = false;
+    cloudState.message = `Склад ще не підключений у Supabase: ${error.message}`;
+    renderProfileView();
+    return;
+  }
+
+  if (!(data || []).length && warehouseItems.length && ["owner", "admin", "warehouse"].includes(cloudState.memberRole)) {
+    await syncWarehouseItemsToCloud();
+    return;
+  }
+
+  warehouseItems = (data || []).map(dbWarehouseItemToApp);
+  localStorage.setItem("solarObjectManager.warehouseItems", JSON.stringify(warehouseItems));
+}
+
+async function syncWarehouseItemsToCloud() {
+  if (!cloudState.ready || !cloudState.supportsWarehouse) return;
+
+  if (pendingWarehouseDeletes.length) {
+    const idsToDelete = [...new Set(pendingWarehouseDeletes.map(normalizeProjectId))];
+    const { error } = await cloudState.client
+      .from("warehouse_items")
+      .delete()
+      .eq("company_id", cloudState.companyId)
+      .in("client_item_id", idsToDelete);
+    if (error) throw error;
+
+    pendingWarehouseDeletes = pendingWarehouseDeletes.filter((id) => !idsToDelete.includes(normalizeProjectId(id)));
+    savePendingWarehouseDeletes();
+  }
+
+  if (warehouseItems.length) {
+    const { error } = await cloudState.client
+      .from("warehouse_items")
+      .upsert(warehouseItems.map(warehouseItemToDb), { onConflict: "company_id,client_item_id" });
+    if (error) throw error;
+  }
+
+  cloudState.message = `Склад синхронізовано ${new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}`;
+  renderProfileView();
+}
+
 async function syncCrmTasksToCloud() {
   if (!cloudState.ready) return;
 
@@ -767,11 +1145,22 @@ async function syncProjectsToCloud() {
   }
 
   for (const project of projects) {
-    const { data: savedProject, error: projectError } = await cloudState.client
+    let { data: savedProject, error: projectError } = await cloudState.client
       .from("projects")
-      .upsert(projectToDb(project), { onConflict: "company_id,client_id" })
+      .upsert(projectToDb(project, cloudState.supportsProjectChecklist), { onConflict: "company_id,client_id" })
       .select("id")
       .single();
+    if (projectError && /finance|work_checklist|schema cache/i.test(projectError.message || "")) {
+      if (/work_checklist|schema cache/i.test(projectError.message || "")) cloudState.supportsProjectChecklist = false;
+      if (/finance|schema cache/i.test(projectError.message || "")) cloudState.supportsProjectFinance = false;
+      ({ data: savedProject, error: projectError } = await cloudState.client
+        .from("projects")
+        .upsert(projectToDb(project, false), { onConflict: "company_id,client_id" })
+        .select("id")
+        .single());
+      cloudState.message = "Об'єкт синхронізовано без нових полів. Додай SQL-міграцію finance/work_checklist у Supabase.";
+      renderProfileView();
+    }
     if (projectError) throw projectError;
 
     const projectId = savedProject.id;
@@ -1070,11 +1459,88 @@ function ensureProjectCollections(project) {
   project.strings ||= [];
   project.materials ||= [];
   project.photos ||= [];
+  project.workChecklist = {
+    ...emptyInstallerChecklist(),
+    ...(project.workChecklist || project.checklist || {}),
+  };
+  project.finance = normalizeProjectFinance(project.finance);
   const storedFiles = projectFilesFor(project.id);
   if (!Array.isArray(project.files) || (!project.files.length && storedFiles.length)) {
     project.files = storedFiles;
   }
   return project;
+}
+
+function normalizeProjectFinance(finance = {}) {
+  return {
+    ...emptyProjectFinance(),
+    ...finance,
+    contractPrice: Number(finance.contractPrice || finance.contract_price || 0),
+    installationPrice: Number(finance.installationPrice || finance.installation_price || 0),
+    advancePaid: Number(finance.advancePaid || finance.advance_paid || 0),
+    crewPayroll: Number(finance.crewPayroll || finance.crew_payroll || 0),
+    equipment: Array.isArray(finance.equipment) ? finance.equipment.map((item) => ({
+      name: item.name || "",
+      qty: Number(item.qty || 0),
+      unit: item.unit || "шт",
+      purchasePrice: Number(item.purchasePrice || item.purchase_price || 0),
+      salePrice: Number(item.salePrice || item.sale_price || 0),
+    })) : [],
+    expenses: Array.isArray(finance.expenses) ? finance.expenses.map((item) => ({
+      name: item.name || "",
+      amount: Number(item.amount || 0),
+    })) : [],
+  };
+}
+
+function money(value) {
+  return `${Number(value || 0).toLocaleString("uk-UA", { maximumFractionDigits: 0 })} грн`;
+}
+
+function projectFinanceTotals(project) {
+  const finance = normalizeProjectFinance(project?.finance || {});
+  const equipmentPurchase = finance.equipment.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
+  const equipmentSale = finance.equipment.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
+  const otherExpenses = finance.expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const revenue = Number(finance.contractPrice || 0) || equipmentSale + Number(finance.installationPrice || 0);
+  const balanceDue = revenue - Number(finance.advancePaid || 0);
+  const cost = equipmentPurchase + Number(finance.crewPayroll || 0) + otherExpenses;
+  const profit = revenue - cost;
+  const margin = revenue ? Math.round((profit / revenue) * 100) : 0;
+  return {
+    ...finance,
+    equipmentPurchase,
+    equipmentSale,
+    otherExpenses,
+    revenue,
+    balanceDue,
+    cost,
+    profit,
+    margin,
+  };
+}
+
+function warehouseTotals() {
+  const purchaseValue = warehouseItems.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
+  const saleValue = warehouseItems.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
+  const lowStock = warehouseItems.filter((item) => Number(item.qty || 0) <= Number(item.minQty || 0)).length;
+  return {
+    purchaseValue,
+    saleValue,
+    potentialProfit: saleValue - purchaseValue,
+    lowStock,
+  };
+}
+
+function installerChecklistStats(project) {
+  const checklist = ensureProjectCollections(project)?.workChecklist || emptyInstallerChecklist();
+  const total = installerChecklistItemIds.length;
+  const done = installerChecklistItemIds.filter((id) => Boolean(checklist[id])).length;
+  return {
+    total,
+    done,
+    percent: total ? Math.round((done / total) * 100) : 0,
+  };
 }
 
 function selectedProject() {
@@ -1107,7 +1573,8 @@ function statusProgress(project) {
   };
 
   const passportScore = passportChecklist(project).filter(([, ready]) => ready).length * 10;
-  return Math.min(100, Math.max(statusProgressMap[project.status] || 15, passportScore));
+  const checklistScore = installerChecklistStats(project).percent;
+  return Math.min(100, Math.max(statusProgressMap[project.status] || 15, passportScore, checklistScore));
 }
 
 function statusTone(status) {
@@ -1261,9 +1728,11 @@ function renderDetail() {
     <div class="tabs">
       ${[
         ["summary", "Інформація"],
+        ["checklist", "Чеклист"],
         ["technical", "Техдані"],
         ["strings", "MPPT"],
         ["materials", "Матеріали"],
+        ["finance", "Фінанси"],
         ["photos", "Фото"],
         ["files", "Файли"],
         ["passport", "Паспорт об'єкта"],
@@ -1319,28 +1788,33 @@ function renderTab(project, isValid, stringsTotal, expected) {
   }
 
   if (selectedTab === "checklist") {
-    const checklistGroups = [
-      ["1. Конструкція", ["Розмітка", "Монтаж кріплення", "Перевірка площини"]],
-      ["2. Панелі", ["Монтаж панелей", "Момент затяжки", "Маркування стрінгів"]],
-      ["3. Електрика", ["Прокладка кабелю", "Підключення DC", "Підключення AC", "Заземлення"]],
-      ["4. Пусконалагодження", ["Налаштування інвертора", "Перевірка параметрів", "Інструктаж клієнта"]],
-    ];
+    const stats = installerChecklistStats(project);
 
     return `
       <div class="checklist-head">
         <div>
-          <span class="muted-text">Загальний прогрес</span>
-          <strong>${statusProgress(project)}%</strong>
+          <span class="muted-text">Виконано робіт</span>
+          <strong>${stats.done}/${stats.total} · ${stats.percent}%</strong>
         </div>
-        <div class="progress-line"><span style="width: ${statusProgress(project)}%"></span></div>
+        <div class="progress-line"><span style="width: ${stats.percent}%"></span></div>
+        <div class="section-actions">
+          <button class="secondary-button compact-button" data-checklist-action="clear">Очистити</button>
+          <button class="primary-button compact-button" data-checklist-action="complete">Позначити все</button>
+        </div>
       </div>
       <div class="checklist-board">
-        ${checklistGroups.map((group, groupIndex) => `
+        ${installerChecklistGroups.map((group) => `
           <section class="checklist-group">
-            <h3>${group[0]}</h3>
-            ${group[1].map((item, itemIndex) => {
-              const checked = groupIndex < 2 || (groupIndex === 2 && itemIndex < Math.min(2, project.strings.length));
-              return `<label class="task-row"><input type="checkbox" ${checked ? "checked" : ""} /> <span>${item}</span><i></i></label>`;
+            <h3>${group.title}</h3>
+            ${group.items.map((item) => {
+              const checked = Boolean(project.workChecklist?.[item.id]);
+              return `
+                <label class="task-row ${checked ? "done" : ""}">
+                  <input type="checkbox" data-work-checklist-item="${item.id}" ${checked ? "checked" : ""} />
+                  <span>${item.title}</span>
+                  <i></i>
+                </label>
+              `;
             }).join("")}
           </section>
         `).join("")}
@@ -1410,6 +1884,96 @@ function renderTab(project, isValid, stringsTotal, expected) {
               : `<tr><td colspan="${materialsEditing ? 5 : 4}">Матеріали ще не додано.</td></tr>`}
           </tbody>
         </table>
+      </div>
+    `;
+  }
+
+  if (selectedTab === "finance") {
+    const totals = projectFinanceTotals(project);
+    return `
+      <div class="metric-grid compact">
+        <div class="metric-card"><span>Сума об'єкта</span><strong>${money(totals.revenue)}</strong></div>
+        <div class="metric-card warning"><span>Залишок клієнта</span><strong>${money(totals.balanceDue)}</strong></div>
+        <div class="metric-card ${totals.profit >= 0 ? "success" : "danger"}"><span>Заробіток</span><strong>${money(totals.profit)}</strong></div>
+        <div class="metric-card"><span>Маржа</span><strong>${totals.margin}%</strong></div>
+      </div>
+
+      <form class="inline-form finance-form" id="projectFinanceForm">
+        <label>Сума договору<input name="contractPrice" type="number" min="0" step="1" value="${escapeAttribute(totals.contractPrice)}" /></label>
+        <label>Вартість монтажу<input name="installationPrice" type="number" min="0" step="1" value="${escapeAttribute(totals.installationPrice)}" /></label>
+        <label>Аванс<input name="advancePaid" type="number" min="0" step="1" value="${escapeAttribute(totals.advancePaid)}" /></label>
+        <label>ЗП бригади<input name="crewPayroll" type="number" min="0" step="1" value="${escapeAttribute(totals.crewPayroll)}" /></label>
+        <div class="form-submit-cell"><button class="primary-button">Зберегти фінанси</button></div>
+      </form>
+
+      <div class="two-column">
+        <section class="finance-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Обладнання</p>
+              <h3>Перелік і ціни</h3>
+            </div>
+            <span class="chip">Продаж: ${money(totals.equipmentSale)}</span>
+          </div>
+          <form class="inline-form finance-line-form" id="projectEquipmentForm">
+            <label>Назва<input name="name" required placeholder="Панель, інвертор, АКБ..." /></label>
+            <label>К-сть<input name="qty" type="number" min="0" step="0.01" required /></label>
+            <label>Од.<input name="unit" value="шт" required /></label>
+            <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" /></label>
+            <label>Продаж<input name="salePrice" type="number" min="0" step="1" /></label>
+            <button class="primary-button">Додати</button>
+          </form>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Обладнання</th><th>К-сть</th><th>Закупка</th><th>Продаж</th><th>Разом</th><th></th></tr></thead>
+              <tbody>
+                ${totals.equipment.length
+                  ? totals.equipment.map((item, index) => `
+                    <tr>
+                      <td>${item.name}</td>
+                      <td>${item.qty} ${item.unit}</td>
+                      <td>${money(item.purchasePrice)}</td>
+                      <td>${money(item.salePrice)}</td>
+                      <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0))}</td>
+                      <td><button class="table-button danger-text" data-delete-equipment-index="${index}">Видалити</button></td>
+                    </tr>
+                  `).join("")
+                  : `<tr><td colspan="6">Обладнання ще не додано.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="finance-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Витрати</p>
+              <h3>Додаткові витрати</h3>
+            </div>
+            <span class="chip">Разом: ${money(totals.otherExpenses)}</span>
+          </div>
+          <form class="inline-form finance-line-form" id="projectExpenseForm">
+            <label>Назва<input name="name" required placeholder="Доставка, проживання, пальне..." /></label>
+            <label>Сума<input name="amount" type="number" min="0" step="1" required /></label>
+            <button class="primary-button">Додати</button>
+          </form>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Витрата</th><th>Сума</th><th></th></tr></thead>
+              <tbody>
+                ${totals.expenses.length
+                  ? totals.expenses.map((item, index) => `
+                    <tr>
+                      <td>${item.name}</td>
+                      <td>${money(item.amount)}</td>
+                      <td><button class="table-button danger-text" data-delete-expense-index="${index}">Видалити</button></td>
+                    </tr>
+                  `).join("")
+                  : `<tr><td colspan="3">Додаткові витрати ще не додано.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     `;
   }
@@ -2028,6 +2592,13 @@ function renderHome() {
   const inWork = projects.filter((project) => project.status === "in_progress").length;
   const planned = projects.filter((project) => project.status === "planned").length;
   const completed = projects.filter((project) => project.status === "completed" || project.status === "passport_issued").length;
+  const financeTotals = projects.reduce((result, project) => {
+    const totals = projectFinanceTotals(project);
+    result.revenue += totals.revenue;
+    result.profit += totals.profit;
+    result.balanceDue += totals.balanceDue;
+    return result;
+  }, { revenue: 0, profit: 0, balanceDue: 0 });
   const activeProjects = projects
     .filter((project) => ["in_progress", "planned", "waiting_review", "new"].includes(project.status))
     .slice(0, 4);
@@ -2055,6 +2626,9 @@ function renderHome() {
       <div class="metric-card"><span>Заплановано</span><strong>${planned}</strong></div>
       <div class="metric-card"><span>Завершено</span><strong>${completed}</strong></div>
       <div class="metric-card"><span>кВт у базі</span><strong>${projects.reduce((sum, project) => sum + Number(totalPower(project)), 0).toFixed(1)}</strong></div>
+      <div class="metric-card"><span>Сума об'єктів</span><strong>${money(financeTotals.revenue)}</strong></div>
+      <div class="metric-card warning"><span>Залишок оплат</span><strong>${money(financeTotals.balanceDue)}</strong></div>
+      <div class="metric-card success"><span>Заробіток</span><strong>${money(financeTotals.profit)}</strong></div>
     </div>
 
     <section class="quick-panel">
@@ -2087,6 +2661,7 @@ function renderHome() {
       <h2>Швидкі дії</h2>
       <div class="quick-grid">
         <button class="quick-action" data-section="projects"><span>▤</span>Об'єкти</button>
+        <button class="quick-action" data-section="warehouse"><span>▦</span>Склад</button>
         <button class="quick-action" id="newProjectQuickButton"><span>＋</span>Новий об'єкт</button>
         <button class="quick-action" data-section="projects"><span>▣</span>Матеріали</button>
       </div>
@@ -2115,6 +2690,80 @@ function renderMapView() {
         <span><i class="dot warning"></i>В роботі / заплановано</span>
         <span><i class="dot blue"></i>Перевірка</span>
         <span><i class="dot muted"></i>Новий</span>
+      </div>
+    </section>
+  `;
+}
+
+function renderWarehouseView() {
+  if (!warehouseView) return;
+  const totals = warehouseTotals();
+  warehouseView.innerHTML = `
+    <section class="warehouse-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Склад</p>
+          <h2>Матеріали, обладнання та інструменти</h2>
+        </div>
+        <span class="chip">${warehouseItems.length} позицій</span>
+      </div>
+
+      <div class="metric-grid compact">
+        <div class="metric-card"><span>Закупівельна вартість</span><strong>${money(totals.purchaseValue)}</strong></div>
+        <div class="metric-card"><span>Потенційний продаж</span><strong>${money(totals.saleValue)}</strong></div>
+        <div class="metric-card success"><span>Потенційна маржа</span><strong>${money(totals.potentialProfit)}</strong></div>
+        <div class="metric-card warning"><span>Мінімальний залишок</span><strong>${totals.lowStock}</strong></div>
+      </div>
+
+      <form class="inline-form warehouse-form" id="warehouseItemForm">
+        <label>Категорія
+          <select name="category">
+            <option value="Панелі">Панелі</option>
+            <option value="Інвертори">Інвертори</option>
+            <option value="АКБ">АКБ</option>
+            <option value="Кріплення">Кріплення</option>
+            <option value="Кабель">Кабель</option>
+            <option value="Захист">Захист</option>
+            <option value="Інструмент">Інструмент</option>
+            <option value="Інше">Інше</option>
+          </select>
+        </label>
+        <label>Назва<input name="name" required placeholder="Назва позиції" /></label>
+        <label>Артикул<input name="sku" placeholder="SKU" /></label>
+        <label>К-сть<input name="qty" type="number" min="0" step="0.01" required /></label>
+        <label>Од.<input name="unit" value="шт" required /></label>
+        <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" /></label>
+        <label>Продаж<input name="salePrice" type="number" min="0" step="1" /></label>
+        <label>Мін. залишок<input name="minQty" type="number" min="0" step="0.01" /></label>
+        <label>Місце<input name="location" placeholder="Стелаж, склад, авто" /></label>
+        <div class="form-submit-cell"><button class="primary-button">Додати на склад</button></div>
+      </form>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Позиція</th><th>Категорія</th><th>Залишок</th><th>Закупка</th><th>Продаж</th><th>Вартість складу</th><th>Місце</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${warehouseItems.length
+              ? warehouseItems.map((item, index) => {
+                const isLow = Number(item.qty || 0) <= Number(item.minQty || 0);
+                return `
+                  <tr class="${isLow ? "warning-row" : ""}">
+                    <td><strong>${item.name}</strong><span class="muted-text">${item.sku || "Без артикулу"}</span></td>
+                    <td>${item.category}</td>
+                    <td>${item.qty} ${item.unit}${isLow ? ` <span class="chip amber">докупити</span>` : ""}</td>
+                    <td>${money(item.purchasePrice)}</td>
+                    <td>${Number(item.salePrice || 0) ? money(item.salePrice) : "-"}</td>
+                    <td>${money(Number(item.qty || 0) * Number(item.purchasePrice || 0))}</td>
+                    <td>${item.location || "-"}</td>
+                    <td><button class="table-button danger-text" data-delete-warehouse-index="${index}">Видалити</button></td>
+                  </tr>
+                `;
+              }).join("")
+              : `<tr><td colspan="8">Склад ще порожній.</td></tr>`}
+          </tbody>
+        </table>
       </div>
     </section>
   `;
@@ -2577,6 +3226,7 @@ function renderRoleLabel(role) {
     owner: "Власник",
     admin: "Адмін",
     engineer: "Інженер",
+    warehouse: "Склад",
     brigadier: "Бригадир",
     installer: "Монтажник",
     viewer: "Перегляд",
@@ -2717,6 +3367,7 @@ function render() {
   renderDetail();
   renderPassport();
   renderCrmView();
+  renderWarehouseView();
   renderMapView();
   renderServiceView();
   renderMonitoringView();
@@ -2797,7 +3448,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (event.target.closest("#syncNowButton")) {
-    syncProjectsToCloud().then(render).catch((error) => {
+    Promise.all([syncProjectsToCloud(), syncWarehouseItemsToCloud()]).then(render).catch((error) => {
       cloudState.message = `Помилка синхронізації: ${error.message}`;
       renderProfileView();
     });
@@ -2944,6 +3595,20 @@ document.addEventListener("click", (event) => {
     saveMaterialEdits();
   }
 
+  const checklistAction = event.target.closest("[data-checklist-action]");
+  if (checklistAction) {
+    const project = selectedProject();
+    if (!project) return;
+    const checked = checklistAction.dataset.checklistAction === "complete";
+    project.workChecklist = installerChecklistItemIds.reduce((result, id) => {
+      result[id] = checked;
+      return result;
+    }, {});
+    saveProjects();
+    render();
+    showSection("objectDetail");
+  }
+
   if (event.target.closest("#passportPreviewButton")) {
     renderPassport();
     passportPreview.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2994,6 +3659,40 @@ document.addEventListener("click", (event) => {
     render();
   }
 
+  const deleteEquipmentButton = event.target.closest("[data-delete-equipment-index]");
+  if (deleteEquipmentButton) {
+    const project = selectedProject();
+    if (!project) return;
+    project.finance = normalizeProjectFinance(project.finance);
+    project.finance.equipment.splice(Number(deleteEquipmentButton.dataset.deleteEquipmentIndex), 1);
+    saveProjects();
+    render();
+    showSection("objectDetail");
+  }
+
+  const deleteExpenseButton = event.target.closest("[data-delete-expense-index]");
+  if (deleteExpenseButton) {
+    const project = selectedProject();
+    if (!project) return;
+    project.finance = normalizeProjectFinance(project.finance);
+    project.finance.expenses.splice(Number(deleteExpenseButton.dataset.deleteExpenseIndex), 1);
+    saveProjects();
+    render();
+    showSection("objectDetail");
+  }
+
+  const deleteWarehouseButton = event.target.closest("[data-delete-warehouse-index]");
+  if (deleteWarehouseButton) {
+    const [removedItem] = warehouseItems.splice(Number(deleteWarehouseButton.dataset.deleteWarehouseIndex), 1);
+    if (removedItem?.id) {
+      pendingWarehouseDeletes.push(normalizeProjectId(removedItem.id));
+      savePendingWarehouseDeletes();
+    }
+    saveWarehouseItems();
+    render();
+    showSection("warehouse");
+  }
+
   const deletePhotoButton = event.target.closest("[data-delete-photo-index]");
   if (deletePhotoButton) {
     const project = selectedProject();
@@ -3040,6 +3739,17 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-work-checklist-item]")) {
+    const project = selectedProject();
+    if (!project) return;
+    project.workChecklist ||= emptyInstallerChecklist();
+    project.workChecklist[event.target.dataset.workChecklistItem] = event.target.checked;
+    saveProjects();
+    render();
+    showSection("objectDetail");
+    return;
+  }
+
   if (event.target.id === "projectStatusSelect") {
     const project = selectedProject();
     if (!project) return;
@@ -3073,6 +3783,30 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.id === "warehouseItemForm") {
+    event.preventDefault();
+    addWarehouseItem(event.target);
+    return;
+  }
+
+  if (event.target.id === "projectFinanceForm") {
+    event.preventDefault();
+    saveProjectFinance(event.target);
+    return;
+  }
+
+  if (event.target.id === "projectEquipmentForm") {
+    event.preventDefault();
+    addProjectEquipment(event.target);
+    return;
+  }
+
+  if (event.target.id === "projectExpenseForm") {
+    event.preventDefault();
+    addProjectExpense(event.target);
+    return;
+  }
+
   if (event.target.id === "photoForm") {
     event.preventDefault();
     addPhoto(event.target);
@@ -3114,6 +3848,75 @@ document.addEventListener("submit", (event) => {
   event.target.reset();
   render();
 });
+
+function addWarehouseItem(formElement) {
+  const data = new FormData(formElement);
+  warehouseItems.unshift({
+    id: `wh-${Date.now()}`,
+    name: String(data.get("name") || "").trim(),
+    category: data.get("category") || "Інше",
+    sku: String(data.get("sku") || "").trim(),
+    qty: Number(data.get("qty") || 0),
+    unit: String(data.get("unit") || "шт").trim(),
+    purchasePrice: Number(data.get("purchasePrice") || 0),
+    salePrice: Number(data.get("salePrice") || 0),
+    minQty: Number(data.get("minQty") || 0),
+    location: String(data.get("location") || "").trim(),
+  });
+  saveWarehouseItems();
+  formElement.reset();
+  render();
+  showSection("warehouse");
+}
+
+function saveProjectFinance(formElement) {
+  const project = selectedProject();
+  if (!project) return;
+  const data = new FormData(formElement);
+  project.finance = normalizeProjectFinance({
+    ...project.finance,
+    contractPrice: Number(data.get("contractPrice") || 0),
+    installationPrice: Number(data.get("installationPrice") || 0),
+    advancePaid: Number(data.get("advancePaid") || 0),
+    crewPayroll: Number(data.get("crewPayroll") || 0),
+  });
+  saveProjects();
+  render();
+  showSection("objectDetail");
+}
+
+function addProjectEquipment(formElement) {
+  const project = selectedProject();
+  if (!project) return;
+  const data = new FormData(formElement);
+  project.finance = normalizeProjectFinance(project.finance);
+  project.finance.equipment.push({
+    name: String(data.get("name") || "").trim(),
+    qty: Number(data.get("qty") || 0),
+    unit: String(data.get("unit") || "шт").trim(),
+    purchasePrice: Number(data.get("purchasePrice") || 0),
+    salePrice: Number(data.get("salePrice") || 0),
+  });
+  saveProjects();
+  formElement.reset();
+  render();
+  showSection("objectDetail");
+}
+
+function addProjectExpense(formElement) {
+  const project = selectedProject();
+  if (!project) return;
+  const data = new FormData(formElement);
+  project.finance = normalizeProjectFinance(project.finance);
+  project.finance.expenses.push({
+    name: String(data.get("name") || "").trim(),
+    amount: Number(data.get("amount") || 0),
+  });
+  saveProjects();
+  formElement.reset();
+  render();
+  showSection("objectDetail");
+}
 
 function addMaterial(formElement) {
   const project = selectedProject();
@@ -3566,6 +4369,7 @@ async function authenticateUser(email, password, mode, messageTarget) {
   cloudState.user = authData.user;
   await loadCompanyContext();
   await loadProjectsFromCloud();
+  await loadWarehouseItemsFromCloud();
   updateAccessMode();
   render();
   return true;
@@ -3701,6 +4505,8 @@ form.addEventListener("submit", (event) => {
     materials: [],
     photos: [],
     files: [],
+    finance: emptyProjectFinance(),
+    workChecklist: emptyInstallerChecklist(),
   };
 
   projects.unshift(nextProject);

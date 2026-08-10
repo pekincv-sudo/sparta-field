@@ -51,6 +51,7 @@
         <nav class="nav" aria-label="Головна навігація">
           <button class="nav-item active" data-section="home"><span>⌂</span>Головна</button>
           <button class="nav-item" data-section="projects"><span>▤</span>Об'єкти</button>
+          <button class="nav-item" data-section="warehouse"><span>▦</span>Склад</button>
           <button class="nav-item" data-section="crm"><span>☑</span>CRM</button>
           <button class="nav-item" data-section="profile"><span>○</span>Профіль</button>
         </nav>
@@ -107,6 +108,10 @@
 
         <section class="section" id="crm">
           <div id="crmView"></div>
+        </section>
+
+        <section class="section" id="warehouse">
+          <div id="warehouseView"></div>
         </section>
 
         <section class="section" id="map">
@@ -205,6 +210,7 @@
           <label>Роль
             <select name="role">
               <option value="installer">Монтажник</option>
+              <option value="warehouse">Склад</option>
               <option value="brigadier">Бригадир</option>
               <option value="engineer">Інженер</option>
               <option value="viewer">Тільки перегляд</option>
