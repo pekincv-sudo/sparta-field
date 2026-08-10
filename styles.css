@@ -904,6 +904,7 @@ button.metric-card:hover,
 }
 
 .table-wrap {
+  max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--line);
   border-left: 3px solid rgba(255, 210, 26, 0.85);
@@ -963,6 +964,7 @@ th {
 .finance-panel,
 .ticket-card,
 .monitor-card {
+  min-width: 0;
   border: 1px solid var(--line);
   border-left: 3px solid rgba(255, 210, 26, 0.85);
   border-radius: 8px;
