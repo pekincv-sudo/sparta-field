@@ -416,6 +416,7 @@ let crmFilter = "today";
 let cloudSyncTimer = null;
 let crmSyncTimer = null;
 let warehouseSyncTimer = null;
+let editingWarehouseIndex = null;
 let cloudLoading = false;
 let pendingCloudDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingDeletes") || "[]");
 let pendingCrmDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingCrmDeletes") || "[]");
@@ -1572,6 +1573,14 @@ function warehouseTotals() {
   };
 }
 
+function warehouseItemFormState() {
+  const item = Number.isInteger(editingWarehouseIndex) ? warehouseItems[editingWarehouseIndex] : null;
+  return {
+    item,
+    isEditing: Boolean(item),
+  };
+}
+
 function installerChecklistStats(project) {
   const checklist = ensureProjectCollections(project)?.workChecklist || emptyInstallerChecklist();
   const total = installerChecklistItemIds.length;
@@ -2698,6 +2707,8 @@ function renderMapView() {
 function renderWarehouseView() {
   if (!warehouseView) return;
   const totals = warehouseTotals();
+  const formState = warehouseItemFormState();
+  const formItem = formState.item || {};
   warehouseView.innerHTML = `
     <section class="warehouse-panel">
       <div class="panel-heading">
@@ -2718,25 +2729,23 @@ function renderWarehouseView() {
       <form class="inline-form warehouse-form" id="warehouseItemForm">
         <label>Категорія
           <select name="category">
-            <option value="Панелі">Панелі</option>
-            <option value="Інвертори">Інвертори</option>
-            <option value="АКБ">АКБ</option>
-            <option value="Кріплення">Кріплення</option>
-            <option value="Кабель">Кабель</option>
-            <option value="Захист">Захист</option>
-            <option value="Інструмент">Інструмент</option>
-            <option value="Інше">Інше</option>
+            ${["Панелі", "Інвертори", "АКБ", "Кріплення", "Кабель", "Захист", "Інструмент", "Інше"]
+              .map((category) => `<option value="${category}" ${formItem.category === category ? "selected" : ""}>${category}</option>`)
+              .join("")}
           </select>
         </label>
-        <label>Назва<input name="name" required placeholder="Назва позиції" /></label>
-        <label>Артикул<input name="sku" placeholder="SKU" /></label>
-        <label>К-сть<input name="qty" type="number" min="0" step="0.01" required /></label>
-        <label>Од.<input name="unit" value="шт" required /></label>
-        <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" /></label>
-        <label>Продаж<input name="salePrice" type="number" min="0" step="1" /></label>
-        <label>Мін. залишок<input name="minQty" type="number" min="0" step="0.01" /></label>
-        <label>Місце<input name="location" placeholder="Стелаж, склад, авто" /></label>
-        <div class="form-submit-cell"><button class="primary-button">Додати на склад</button></div>
+        <label>Назва<input name="name" required placeholder="Назва позиції" value="${escapeAttribute(formItem.name || "")}" /></label>
+        <label>Артикул<input name="sku" placeholder="SKU" value="${escapeAttribute(formItem.sku || "")}" /></label>
+        <label>К-сть<input name="qty" type="number" min="0" step="0.01" required value="${escapeAttribute(formItem.qty ?? "")}" /></label>
+        <label>Од.<input name="unit" value="${escapeAttribute(formItem.unit || "шт")}" required /></label>
+        <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.purchasePrice ?? "")}" /></label>
+        <label>Продаж<input name="salePrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.salePrice ?? "")}" /></label>
+        <label>Мін. залишок<input name="minQty" type="number" min="0" step="0.01" value="${escapeAttribute(formItem.minQty ?? "")}" /></label>
+        <label>Місце<input name="location" placeholder="Стелаж, склад, авто" value="${escapeAttribute(formItem.location || "")}" /></label>
+        <div class="form-submit-cell">
+          ${formState.isEditing ? `<button class="secondary-button" type="button" data-cancel-warehouse-edit>Скасувати</button>` : ""}
+          <button class="primary-button">${formState.isEditing ? "Зберегти позицію" : "Додати на склад"}</button>
+        </div>
       </form>
 
       <div class="table-wrap warehouse-table-wrap">
@@ -2757,7 +2766,10 @@ function renderWarehouseView() {
                     <td data-label="Продаж">${Number(item.salePrice || 0) ? money(item.salePrice) : "-"}</td>
                     <td data-label="Вартість складу">${money(Number(item.qty || 0) * Number(item.purchasePrice || 0))}</td>
                     <td data-label="Місце">${item.location || "-"}</td>
-                    <td class="warehouse-actions"><button class="table-button danger-text" data-delete-warehouse-index="${index}">Видалити</button></td>
+                    <td class="warehouse-actions">
+                      <button class="table-button" data-edit-warehouse-index="${index}">Редагувати</button>
+                      <button class="table-button danger-text" data-delete-warehouse-index="${index}">Видалити</button>
+                    </td>
                   </tr>
                 `;
               }).join("")
@@ -3672,12 +3684,28 @@ document.addEventListener("click", (event) => {
 
   const deleteWarehouseButton = event.target.closest("[data-delete-warehouse-index]");
   if (deleteWarehouseButton) {
-    const [removedItem] = warehouseItems.splice(Number(deleteWarehouseButton.dataset.deleteWarehouseIndex), 1);
+    const deleteIndex = Number(deleteWarehouseButton.dataset.deleteWarehouseIndex);
+    const [removedItem] = warehouseItems.splice(deleteIndex, 1);
     if (removedItem?.id) {
       pendingWarehouseDeletes.push(normalizeProjectId(removedItem.id));
       savePendingWarehouseDeletes();
     }
+    if (editingWarehouseIndex === deleteIndex) editingWarehouseIndex = null;
+    if (Number.isInteger(editingWarehouseIndex) && editingWarehouseIndex > deleteIndex) editingWarehouseIndex -= 1;
     saveWarehouseItems();
+    render();
+    showSection("warehouse");
+  }
+
+  const editWarehouseButton = event.target.closest("[data-edit-warehouse-index]");
+  if (editWarehouseButton) {
+    editingWarehouseIndex = Number(editWarehouseButton.dataset.editWarehouseIndex);
+    render();
+    showSection("warehouse");
+  }
+
+  if (event.target.closest("[data-cancel-warehouse-edit]")) {
+    editingWarehouseIndex = null;
     render();
     showSection("warehouse");
   }
@@ -3834,8 +3862,9 @@ document.addEventListener("submit", (event) => {
 
 function addWarehouseItem(formElement) {
   const data = new FormData(formElement);
-  warehouseItems.unshift({
-    id: `wh-${Date.now()}`,
+  const currentItem = Number.isInteger(editingWarehouseIndex) ? warehouseItems[editingWarehouseIndex] : null;
+  const nextItem = {
+    id: currentItem?.id || `wh-${Date.now()}`,
     name: String(data.get("name") || "").trim(),
     category: data.get("category") || "Інше",
     sku: String(data.get("sku") || "").trim(),
@@ -3845,7 +3874,13 @@ function addWarehouseItem(formElement) {
     salePrice: Number(data.get("salePrice") || 0),
     minQty: Number(data.get("minQty") || 0),
     location: String(data.get("location") || "").trim(),
-  });
+  };
+  if (currentItem) {
+    warehouseItems[editingWarehouseIndex] = nextItem;
+    editingWarehouseIndex = null;
+  } else {
+    warehouseItems.unshift(nextItem);
+  }
   saveWarehouseItems();
   formElement.reset();
   render();

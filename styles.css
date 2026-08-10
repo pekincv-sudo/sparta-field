@@ -900,6 +900,7 @@ button.metric-card:hover,
 .form-submit-cell {
   grid-column: 1 / -1;
   display: flex;
+  gap: 10px;
   justify-content: flex-end;
 }
 
@@ -2159,8 +2160,13 @@ dialog::backdrop {
   }
 
   .warehouse-form .form-submit-cell,
+  .warehouse-form .secondary-button,
   .warehouse-form .primary-button {
     width: 100%;
+  }
+
+  .warehouse-form .form-submit-cell {
+    flex-direction: column;
   }
 
   .warehouse-table-wrap {
@@ -2225,7 +2231,9 @@ dialog::backdrop {
   }
 
   .warehouse-actions {
-    display: block;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .warehouse-actions .table-button {
