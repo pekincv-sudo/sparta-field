@@ -17,12 +17,12 @@ export default async function handler(request) {
   }
 
   if (!SUPABASE_SERVICE_ROLE_KEY) {
-    return json({ error: "У Vercel не задано SUPABASE_SERVICE_ROLE_KEY." }, 500);
+    return json({ error: "Vercel env SUPABASE_SERVICE_ROLE_KEY is missing." }, 500);
   }
 
   const token = getBearerToken(request.headers.get("authorization") || "");
   if (!token) {
-    return json({ error: "Потрібно увійти в додаток." }, 401);
+    return json({ error: "Login is required." }, 401);
   }
 
   let body = {};
@@ -38,12 +38,12 @@ export default async function handler(request) {
   const fullName = String(body.fullName || "").trim();
 
   if (!email) {
-    return json({ error: "Email користувача не вказано." }, 400);
+    return json({ error: "User email is required." }, 400);
   }
 
   const currentUser = await getCurrentUser(token);
   if (!currentUser.ok) {
-    return json({ error: "Сесію власника не підтверджено." }, 401);
+    return json({ error: "Owner session could not be verified." }, 401);
   }
 
   const canInvite = await assertOwnerAccess(companyId, currentUser.user.id);
@@ -53,19 +53,19 @@ export default async function handler(request) {
 
   const invitationResult = await sendAdminInvite(email, fullName, companyId, redirectTo);
   if (invitationResult.ok) {
-    return json({ message: "Лист-запрошення відправлено на пошту.", mode: invitationResult.mode });
+    return json({ message: "Invitation email was sent.", mode: invitationResult.mode });
   }
 
   const recoveryResult = await sendPasswordRecovery(email, redirectTo);
   if (recoveryResult.ok) {
     return json({
-      message: "Користувач вже існує. Відправлено лист для входу або відновлення пароля.",
+      message: "User already exists. Sign-in or password recovery email was sent.",
       mode: "recovery",
     });
   }
 
   return json({
-    error: `Supabase не відправив лист. Invite: ${invitationResult.error}. Recovery: ${recoveryResult.error}`,
+    error: `Supabase did not send email. Invite: ${invitationResult.error}. Recovery: ${recoveryResult.error}`,
   }, 502);
 }
 
@@ -109,12 +109,17 @@ async function assertOwnerAccess(companyId, userId) {
     headers: serviceHeaders(),
   });
   if (!result.ok) {
-    return { ok: false, status: 500, error: "Не вдалося перевірити права власника." };
+    const details = await safeErrorText(result);
+    return {
+      ok: false,
+      status: 500,
+      error: `Owner access check failed. Supabase: ${result.status} ${details}`,
+    };
   }
 
   const rows = await result.json();
   if (!rows.length) {
-    return { ok: false, status: 403, error: "Надсилати запрошення може тільки власник компанії." };
+    return { ok: false, status: 403, error: "Only company owner can send invitations." };
   }
   return { ok: true };
 }
