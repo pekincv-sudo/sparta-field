@@ -1497,10 +1497,49 @@ function money(value) {
   return `${Number(value || 0).toLocaleString("uk-UA", { maximumFractionDigits: 0 })} грн`;
 }
 
+function normalizeLookupValue(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function materialQuantity(material) {
+  return Number(material.actualQty || material.issuedQty || material.plannedQty || 0);
+}
+
+function warehouseItemForMaterial(material) {
+  const materialName = normalizeLookupValue(material?.name);
+  if (!materialName) return null;
+  return warehouseItems.find((item) => {
+    const itemName = normalizeLookupValue(item.name);
+    const itemSku = normalizeLookupValue(item.sku);
+    return itemName === materialName || itemSku === materialName;
+  }) || warehouseItems.find((item) => {
+    const itemName = normalizeLookupValue(item.name);
+    return itemName.length > 4 && (itemName.includes(materialName) || materialName.includes(itemName));
+  }) || null;
+}
+
+function projectMaterialsWithWarehousePrices(project) {
+  return (project?.materials || []).map((material) => {
+    const warehouseItem = warehouseItemForMaterial(material);
+    const qty = materialQuantity(material);
+    return {
+      name: material.name || "",
+      category: material.category || warehouseItem?.category || "Інше",
+      qty,
+      unit: material.unit || warehouseItem?.unit || "шт",
+      warehouseName: warehouseItem?.name || "",
+      purchasePrice: Number(warehouseItem?.purchasePrice || 0),
+      salePrice: Number(warehouseItem?.salePrice || 0),
+      hasWarehousePrice: Boolean(warehouseItem),
+    };
+  });
+}
+
 function projectFinanceTotals(project) {
   const finance = normalizeProjectFinance(project?.finance || {});
-  const equipmentPurchase = finance.equipment.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
-  const equipmentSale = finance.equipment.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
+  const materialLines = projectMaterialsWithWarehousePrices(project);
+  const equipmentPurchase = materialLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
+  const equipmentSale = materialLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
   const otherExpenses = finance.expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const revenue = Number(finance.contractPrice || 0) || equipmentSale + Number(finance.installationPrice || 0);
   const balanceDue = revenue - Number(finance.advancePaid || 0);
@@ -1509,6 +1548,7 @@ function projectFinanceTotals(project) {
   const margin = revenue ? Math.round((profit / revenue) * 100) : 0;
   return {
     ...finance,
+    equipment: materialLines,
     equipmentPurchase,
     equipmentSale,
     otherExpenses,
@@ -1878,35 +1918,27 @@ function renderTab(project, isValid, stringsTotal, expected) {
         <section class="finance-panel">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">Обладнання</p>
-              <h3>Перелік і ціни</h3>
+              <p class="eyebrow">Матеріали</p>
+              <h3>З проєкту + ціни зі складу</h3>
             </div>
             <span class="chip">Продаж: ${money(totals.equipmentSale)}</span>
           </div>
-          <form class="inline-form finance-line-form" id="projectEquipmentForm">
-            <label>Назва<input name="name" required placeholder="Панель, інвертор, АКБ..." /></label>
-            <label>К-сть<input name="qty" type="number" min="0" step="0.01" required /></label>
-            <label>Од.<input name="unit" value="шт" required /></label>
-            <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" /></label>
-            <label>Продаж<input name="salePrice" type="number" min="0" step="1" /></label>
-            <button class="primary-button">Додати</button>
-          </form>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Обладнання</th><th>К-сть</th><th>Закупка</th><th>Продаж</th><th>Разом</th><th></th></tr></thead>
+              <thead><tr><th>Матеріал</th><th>К-сть</th><th>Склад</th><th>Закупка</th><th>Продаж</th><th>Разом</th></tr></thead>
               <tbody>
                 ${totals.equipment.length
                   ? totals.equipment.map((item, index) => `
                     <tr>
                       <td>${item.name}</td>
                       <td>${item.qty} ${item.unit}</td>
-                      <td>${money(item.purchasePrice)}</td>
-                      <td>${money(item.salePrice)}</td>
+                      <td>${item.hasWarehousePrice ? item.warehouseName : `<span class="chip amber">Немає на складі</span>`}</td>
+                      <td>${item.hasWarehousePrice ? money(item.purchasePrice) : "-"}</td>
+                      <td>${item.hasWarehousePrice ? money(item.salePrice) : "-"}</td>
                       <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0))}</td>
-                      <td><button class="table-button danger-text" data-delete-equipment-index="${index}">Видалити</button></td>
                     </tr>
                   `).join("")
-                  : `<tr><td colspan="6">Обладнання ще не додано.</td></tr>`}
+                  : `<tr><td colspan="6">Матеріали ще не додано у вкладці “Матеріали”.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -3627,17 +3659,6 @@ document.addEventListener("click", (event) => {
     render();
   }
 
-  const deleteEquipmentButton = event.target.closest("[data-delete-equipment-index]");
-  if (deleteEquipmentButton) {
-    const project = selectedProject();
-    if (!project) return;
-    project.finance = normalizeProjectFinance(project.finance);
-    project.finance.equipment.splice(Number(deleteEquipmentButton.dataset.deleteEquipmentIndex), 1);
-    saveProjects();
-    render();
-    showSection("objectDetail");
-  }
-
   const deleteExpenseButton = event.target.closest("[data-delete-expense-index]");
   if (deleteExpenseButton) {
     const project = selectedProject();
@@ -3763,12 +3784,6 @@ document.addEventListener("submit", (event) => {
     return;
   }
 
-  if (event.target.id === "projectEquipmentForm") {
-    event.preventDefault();
-    addProjectEquipment(event.target);
-    return;
-  }
-
   if (event.target.id === "projectExpenseForm") {
     event.preventDefault();
     addProjectExpense(event.target);
@@ -3849,24 +3864,6 @@ function saveProjectFinance(formElement) {
     crewPayroll: Number(data.get("crewPayroll") || 0),
   });
   saveProjects();
-  render();
-  showSection("objectDetail");
-}
-
-function addProjectEquipment(formElement) {
-  const project = selectedProject();
-  if (!project) return;
-  const data = new FormData(formElement);
-  project.finance = normalizeProjectFinance(project.finance);
-  project.finance.equipment.push({
-    name: String(data.get("name") || "").trim(),
-    qty: Number(data.get("qty") || 0),
-    unit: String(data.get("unit") || "шт").trim(),
-    purchasePrice: Number(data.get("purchasePrice") || 0),
-    salePrice: Number(data.get("salePrice") || 0),
-  });
-  saveProjects();
-  formElement.reset();
   render();
   showSection("objectDetail");
 }
