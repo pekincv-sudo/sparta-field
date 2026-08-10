@@ -1728,7 +1728,6 @@ function renderDetail() {
     <div class="tabs">
       ${[
         ["summary", "Інформація"],
-        ["checklist", "Чеклист"],
         ["technical", "Техдані"],
         ["strings", "MPPT"],
         ["materials", "Матеріали"],
@@ -1746,6 +1745,10 @@ function renderDetail() {
 }
 
 function renderTab(project, isValid, stringsTotal, expected) {
+  if (selectedTab === "checklist") {
+    selectedTab = "summary";
+  }
+
   if (selectedTab === "technical") {
     return `
       <div class="section-actions">
@@ -1784,41 +1787,6 @@ function renderTab(project, isValid, stringsTotal, expected) {
         ${isValid ? "Схема збігається з технічними даними." : `У схемі ${stringsTotal} панелей із ${expected}. Різниця: ${expected - stringsTotal}.`}
       </p>
       ${renderMpptBlocks(project, stringsEditing)}
-    `;
-  }
-
-  if (selectedTab === "checklist") {
-    const stats = installerChecklistStats(project);
-
-    return `
-      <div class="checklist-head">
-        <div>
-          <span class="muted-text">Виконано робіт</span>
-          <strong>${stats.done}/${stats.total} · ${stats.percent}%</strong>
-        </div>
-        <div class="progress-line"><span style="width: ${stats.percent}%"></span></div>
-        <div class="section-actions">
-          <button class="secondary-button compact-button" data-checklist-action="clear">Очистити</button>
-          <button class="primary-button compact-button" data-checklist-action="complete">Позначити все</button>
-        </div>
-      </div>
-      <div class="checklist-board">
-        ${installerChecklistGroups.map((group) => `
-          <section class="checklist-group">
-            <h3>${group.title}</h3>
-            ${group.items.map((item) => {
-              const checked = Boolean(project.workChecklist?.[item.id]);
-              return `
-                <label class="task-row ${checked ? "done" : ""}">
-                  <input type="checkbox" data-work-checklist-item="${item.id}" ${checked ? "checked" : ""} />
-                  <span>${item.title}</span>
-                  <i></i>
-                </label>
-              `;
-            }).join("")}
-          </section>
-        `).join("")}
-      </div>
     `;
   }
 
@@ -4110,7 +4078,7 @@ async function inviteUser(email, role, fullName = "") {
 
   if (!email?.trim()) return;
   role = (role || "installer").trim();
-  const allowedRoles = ["engineer", "brigadier", "installer", "viewer", "admin"];
+  const allowedRoles = ["engineer", "brigadier", "installer", "warehouse", "viewer", "admin"];
   if (!allowedRoles.includes(role)) {
     alert("Невідома роль. Доступні ролі: admin, engineer, brigadier, installer, viewer.");
     return;
