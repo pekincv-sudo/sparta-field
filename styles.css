@@ -897,6 +897,15 @@ button.metric-card:hover,
   grid-template-columns: repeat(5, minmax(130px, 1fr));
 }
 
+.warehouse-movement-form {
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  margin-top: 14px;
+}
+
+.wide-field {
+  grid-column: span 2;
+}
+
 .form-submit-cell {
   grid-column: 1 / -1;
   display: flex;
@@ -938,6 +947,70 @@ th {
   background: transparent;
   font-weight: 850;
   padding: 6px 8px;
+}
+
+.warehouse-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.warehouse-item-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid rgba(255, 210, 26, 0.85);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 14px;
+  min-width: 0;
+}
+
+.warehouse-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.warehouse-card-head h3 {
+  margin: 3px 0;
+  font-size: 18px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.warehouse-card-specs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.warehouse-card-specs span {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.warehouse-card-specs b {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.warehouse-characteristics {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
+.warehouse-history-panel {
+  margin-top: 16px;
 }
 
 .danger-text {
@@ -2156,12 +2229,23 @@ dialog::backdrop {
   }
 
   .warehouse-form {
+    grid-template-columns: 1fr;
     gap: 10px;
   }
 
+  .warehouse-movement-form {
+    grid-template-columns: 1fr;
+  }
+
+  .wide-field {
+    grid-column: 1;
+  }
+
   .warehouse-form .form-submit-cell,
+  .warehouse-movement-form .form-submit-cell,
   .warehouse-form .secondary-button,
-  .warehouse-form .primary-button {
+  .warehouse-form .primary-button,
+  .warehouse-movement-form .primary-button {
     width: 100%;
   }
 
@@ -2241,6 +2325,19 @@ dialog::backdrop {
     text-align: center;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
+  }
+
+  .warehouse-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .warehouse-card-head {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .warehouse-card-specs {
+    grid-template-columns: 1fr;
   }
 
   .hero-card {

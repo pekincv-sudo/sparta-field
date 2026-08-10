@@ -108,8 +108,15 @@ function defaultWarehouseItems() {
       qty: 48,
       purchasePrice: 3200,
       salePrice: 3900,
+      installerPrice: 3700,
+      retailPrice: 4100,
+      deliveryCost: 120,
+      extraCost: 80,
       minQty: 20,
       location: "Склад Чернівці",
+      serialNumber: "Партія L580-08",
+      supplier: "LONGi Україна",
+      characteristics: "580W, mono, half-cell",
     },
     {
       id: "wh-inverter-deye-12",
@@ -120,8 +127,15 @@ function defaultWarehouseItems() {
       qty: 3,
       purchasePrice: 42000,
       salePrice: 52000,
+      installerPrice: 49500,
+      retailPrice: 54000,
+      deliveryCost: 900,
+      extraCost: 600,
       minQty: 1,
       location: "Стелаж A2",
+      serialNumber: "SN-DEYE-12-001",
+      supplier: "Deye Partner",
+      characteristics: "12 кВт, 3 фази, hybrid",
     },
     {
       id: "wh-cable-6",
@@ -132,8 +146,15 @@ function defaultWarehouseItems() {
       qty: 620,
       purchasePrice: 28,
       salePrice: 42,
+      installerPrice: 38,
+      retailPrice: 45,
+      deliveryCost: 2,
+      extraCost: 1,
       minQty: 200,
       location: "Бухти",
+      serialNumber: "Партія CAB-6",
+      supplier: "KBE",
+      characteristics: "6 мм2, PV1-F, чорний",
     },
     {
       id: "wh-tool-crimper",
@@ -144,8 +165,15 @@ function defaultWarehouseItems() {
       qty: 4,
       purchasePrice: 1850,
       salePrice: 0,
+      installerPrice: 0,
+      retailPrice: 0,
+      deliveryCost: 0,
+      extraCost: 0,
       minQty: 2,
       location: "Інструментальна",
+      serialNumber: "TOOL-MC4-01",
+      supplier: "Інструмент сервіс",
+      characteristics: "MC4, професійний",
     },
   ];
 }
@@ -405,7 +433,8 @@ const savedCrmTasks = localStorage.getItem("solarObjectManager.crmTasks");
 let crmTasks = savedCrmTasks ? JSON.parse(savedCrmTasks) : [];
 crmTasks = seedDemoCrmTasks(crmTasks);
 let projectFilesByProjectId = JSON.parse(localStorage.getItem("solarObjectManager.projectFiles") || "{}");
-let warehouseItems = JSON.parse(localStorage.getItem("solarObjectManager.warehouseItems") || "null") || defaultWarehouseItems();
+let warehouseItems = (JSON.parse(localStorage.getItem("solarObjectManager.warehouseItems") || "null") || defaultWarehouseItems()).map(normalizeWarehouseItem);
+let warehouseMovements = JSON.parse(localStorage.getItem("solarObjectManager.warehouseMovements") || "[]");
 
 let selectedProjectId = String(projects[0]?.id ?? "");
 let selectedTab = "summary";
@@ -515,6 +544,10 @@ function saveCrmTasks() {
 function saveWarehouseItems() {
   localStorage.setItem("solarObjectManager.warehouseItems", JSON.stringify(warehouseItems));
   queueWarehouseSync();
+}
+
+function saveWarehouseMovements() {
+  localStorage.setItem("solarObjectManager.warehouseMovements", JSON.stringify(warehouseMovements));
 }
 
 function projectFilesFor(projectId) {
@@ -814,8 +847,31 @@ function crmTaskToDb(task) {
   };
 }
 
-function dbWarehouseItemToApp(row) {
+function normalizeWarehouseItem(item) {
+  const salePrice = Number(item?.salePrice || item?.retailPrice || 0);
   return {
+    id: item?.id || `wh-${Date.now()}`,
+    name: item?.name || "",
+    category: item?.category || "Інше",
+    sku: item?.sku || "",
+    unit: item?.unit || "шт",
+    qty: Number(item?.qty || 0),
+    purchasePrice: Number(item?.purchasePrice || 0),
+    salePrice,
+    installerPrice: Number(item?.installerPrice || salePrice || 0),
+    retailPrice: Number(item?.retailPrice || salePrice || 0),
+    deliveryCost: Number(item?.deliveryCost || 0),
+    extraCost: Number(item?.extraCost || 0),
+    minQty: Number(item?.minQty || 0),
+    location: item?.location || "",
+    serialNumber: item?.serialNumber || "",
+    supplier: item?.supplier || "",
+    characteristics: item?.characteristics || "",
+  };
+}
+
+function dbWarehouseItemToApp(row) {
+  return normalizeWarehouseItem({
     id: row.client_item_id || row.id,
     name: row.name || "",
     category: row.category || "Інше",
@@ -824,9 +880,16 @@ function dbWarehouseItemToApp(row) {
     qty: Number(row.quantity || 0),
     purchasePrice: Number(row.purchase_price || 0),
     salePrice: Number(row.sale_price || 0),
+    installerPrice: Number(row.sale_price || 0),
+    retailPrice: Number(row.sale_price || 0),
+    deliveryCost: 0,
+    extraCost: 0,
     minQty: Number(row.min_quantity || 0),
     location: row.location || "",
-  };
+    serialNumber: "",
+    supplier: "",
+    characteristics: "",
+  });
 }
 
 function warehouseItemToDb(item) {
@@ -839,7 +902,7 @@ function warehouseItemToDb(item) {
     unit: item.unit || "шт",
     quantity: Number(item.qty || 0),
     purchase_price: Number(item.purchasePrice || 0),
-    sale_price: Number(item.salePrice || 0),
+    sale_price: Number(item.retailPrice || item.salePrice || 0),
     min_quantity: Number(item.minQty || 0),
     location: item.location || "",
     created_by: cloudState.user?.id || null,
@@ -1529,8 +1592,8 @@ function projectMaterialsWithWarehousePrices(project) {
       qty,
       unit: material.unit || warehouseItem?.unit || "шт",
       warehouseName: warehouseItem?.name || "",
-      purchasePrice: Number(warehouseItem?.purchasePrice || 0),
-      salePrice: Number(warehouseItem?.salePrice || 0),
+      purchasePrice: warehouseItem ? warehouseUnitCost(warehouseItem) : 0,
+      salePrice: Number(warehouseItem?.installerPrice || warehouseItem?.salePrice || 0),
       hasWarehousePrice: Boolean(warehouseItem),
     };
   });
@@ -1562,14 +1625,16 @@ function projectFinanceTotals(project) {
 }
 
 function warehouseTotals() {
-  const purchaseValue = warehouseItems.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
-  const saleValue = warehouseItems.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
+  const purchaseValue = warehouseItems.reduce((sum, item) => sum + Number(item.qty || 0) * warehouseUnitCost(item), 0);
+  const saleValue = warehouseItems.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.retailPrice || item.salePrice || 0), 0);
   const lowStock = warehouseItems.filter((item) => Number(item.qty || 0) <= Number(item.minQty || 0)).length;
+  const movedToday = warehouseMovements.filter((movement) => (movement.createdAt || "").slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
   return {
     purchaseValue,
     saleValue,
     potentialProfit: saleValue - purchaseValue,
     lowStock,
+    movedToday,
   };
 }
 
@@ -1579,6 +1644,40 @@ function warehouseItemFormState() {
     item,
     isEditing: Boolean(item),
   };
+}
+
+function warehouseBaseCategories() {
+  return ["Панелі", "Інвертори", "АКБ", "Кріплення", "Кабель", "Захист", "Інструмент", "Інше"];
+}
+
+function warehouseCategories() {
+  return [...new Set([...warehouseBaseCategories(), ...warehouseItems.map((item) => item.category || "Інше")])];
+}
+
+function warehouseProductsForCategory(category) {
+  return warehouseItems.filter((item) => !category || category === "__new" || item.category === category);
+}
+
+function warehouseUnitCost(item) {
+  return Number(item.purchasePrice || 0) + Number(item.deliveryCost || 0) + Number(item.extraCost || 0);
+}
+
+function warehouseItemById(itemId) {
+  return warehouseItems.find((item) => normalizeProjectId(item.id) === normalizeProjectId(itemId));
+}
+
+function warehouseMovementTypeLabel(type) {
+  return {
+    purchase: "Прихід",
+    project: "На об'єкт",
+    sale: "Прямий продаж",
+  }[type] || "Рух";
+}
+
+function warehouseMovementTarget(movement) {
+  if (movement.type === "project") return projects.find((project) => normalizeProjectId(project.id) === normalizeProjectId(movement.projectId))?.title || "Об'єкт";
+  if (movement.type === "sale") return movement.customer || "Клієнт";
+  return movement.supplier || "Склад";
 }
 
 function installerChecklistStats(project) {
@@ -2709,6 +2808,10 @@ function renderWarehouseView() {
   const totals = warehouseTotals();
   const formState = warehouseItemFormState();
   const formItem = formState.item || {};
+  const selectedCategory = formItem.category || warehouseCategories()[0] || "Інше";
+  const productOptions = warehouseProductsForCategory(selectedCategory);
+  const movementDefaultItem = warehouseItems[0] || {};
+  const movementDefaultPrice = Number(movementDefaultItem.installerPrice || movementDefaultItem.salePrice || 0);
   warehouseView.innerHTML = `
     <section class="warehouse-panel">
       <div class="panel-heading">
@@ -2720,63 +2823,138 @@ function renderWarehouseView() {
       </div>
 
       <div class="metric-grid compact">
-        <div class="metric-card"><span>Закупівельна вартість</span><strong>${money(totals.purchaseValue)}</strong></div>
+        <div class="metric-card"><span>Собівартість складу</span><strong>${money(totals.purchaseValue)}</strong></div>
         <div class="metric-card"><span>Потенційний продаж</span><strong>${money(totals.saleValue)}</strong></div>
         <div class="metric-card success"><span>Потенційна маржа</span><strong>${money(totals.potentialProfit)}</strong></div>
-        <div class="metric-card warning"><span>Мінімальний залишок</span><strong>${totals.lowStock}</strong></div>
+        <div class="metric-card warning"><span>Рухів сьогодні</span><strong>${totals.movedToday}</strong></div>
       </div>
 
       <form class="inline-form warehouse-form" id="warehouseItemForm">
         <label>Категорія
-          <select name="category">
-            ${["Панелі", "Інвертори", "АКБ", "Кріплення", "Кабель", "Захист", "Інструмент", "Інше"]
+          <select name="category" id="warehouseCategorySelect">
+            ${warehouseCategories()
               .map((category) => `<option value="${category}" ${formItem.category === category ? "selected" : ""}>${category}</option>`)
               .join("")}
+            <option value="__new">+ Додати категорію</option>
           </select>
         </label>
-        <label>Назва<input name="name" required placeholder="Назва позиції" value="${escapeAttribute(formItem.name || "")}" /></label>
+        <label class="warehouse-custom-category" ${formState.isEditing ? "hidden" : "hidden"}>Нова категорія<input name="customCategory" placeholder="Наприклад: Оптимізатори" /></label>
+        <label>Товар
+          <select name="catalogItem" id="warehouseProductSelect">
+            ${productOptions.map((item) => `<option value="${escapeAttribute(item.id)}" ${formItem.id === item.id ? "selected" : ""}>${item.name}</option>`).join("")}
+            <option value="__new" ${formState.isEditing || !productOptions.length ? "selected" : ""}>+ Додати товар</option>
+          </select>
+        </label>
+        <label class="warehouse-custom-product" ${formState.isEditing ? "" : productOptions.length ? "hidden" : ""}>Назва<input name="name" placeholder="Назва позиції" value="${escapeAttribute(formItem.name || "")}" /></label>
         <label>Артикул<input name="sku" placeholder="SKU" value="${escapeAttribute(formItem.sku || "")}" /></label>
         <label>К-сть<input name="qty" type="number" min="0" step="0.01" required value="${escapeAttribute(formItem.qty ?? "")}" /></label>
         <label>Од.<input name="unit" value="${escapeAttribute(formItem.unit || "шт")}" required /></label>
         <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.purchasePrice ?? "")}" /></label>
-        <label>Продаж<input name="salePrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.salePrice ?? "")}" /></label>
+        <label>Доставка / од.<input name="deliveryCost" type="number" min="0" step="1" value="${escapeAttribute(formItem.deliveryCost ?? "")}" /></label>
+        <label>Дод. витрати / од.<input name="extraCost" type="number" min="0" step="1" value="${escapeAttribute(formItem.extraCost ?? "")}" /></label>
+        <label>Монтажникам<input name="installerPrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.installerPrice ?? formItem.salePrice ?? "")}" /></label>
+        <label>Розниця<input name="retailPrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.retailPrice ?? formItem.salePrice ?? "")}" /></label>
         <label>Мін. залишок<input name="minQty" type="number" min="0" step="0.01" value="${escapeAttribute(formItem.minQty ?? "")}" /></label>
         <label>Місце<input name="location" placeholder="Стелаж, склад, авто" value="${escapeAttribute(formItem.location || "")}" /></label>
+        <label>Серійний номер<input name="serialNumber" placeholder="SN / партія" value="${escapeAttribute(formItem.serialNumber || "")}" /></label>
+        <label>Постачальник<input name="supplier" placeholder="Назва постачальника" value="${escapeAttribute(formItem.supplier || "")}" /></label>
+        <label class="wide-field">Характеристики<input name="characteristics" placeholder="Потужність, тип, колір, розмір..." value="${escapeAttribute(formItem.characteristics || "")}" /></label>
         <div class="form-submit-cell">
           ${formState.isEditing ? `<button class="secondary-button" type="button" data-cancel-warehouse-edit>Скасувати</button>` : ""}
-          <button class="primary-button">${formState.isEditing ? "Зберегти позицію" : "Додати на склад"}</button>
+          <button class="primary-button">${formState.isEditing ? "Зберегти позицію" : "Додати прихід"}</button>
         </div>
       </form>
 
-      <div class="table-wrap warehouse-table-wrap">
-        <table class="warehouse-table">
-          <thead>
-            <tr><th>Позиція</th><th>Категорія</th><th>Залишок</th><th>Закупка</th><th>Продаж</th><th>Вартість складу</th><th>Місце</th><th></th></tr>
-          </thead>
-          <tbody>
-            ${warehouseItems.length
-              ? warehouseItems.map((item, index) => {
-                const isLow = Number(item.qty || 0) <= Number(item.minQty || 0);
-                return `
-                  <tr class="${isLow ? "warning-row" : ""}">
-                    <td data-label="Позиція"><strong>${item.name}</strong><span class="muted-text">${item.sku || "Без артикулу"}</span></td>
-                    <td data-label="Категорія">${item.category}</td>
-                    <td data-label="Залишок">${item.qty} ${item.unit}${isLow ? ` <span class="chip amber">докупити</span>` : ""}</td>
-                    <td data-label="Закупка">${money(item.purchasePrice)}</td>
-                    <td data-label="Продаж">${Number(item.salePrice || 0) ? money(item.salePrice) : "-"}</td>
-                    <td data-label="Вартість складу">${money(Number(item.qty || 0) * Number(item.purchasePrice || 0))}</td>
-                    <td data-label="Місце">${item.location || "-"}</td>
-                    <td class="warehouse-actions">
-                      <button class="table-button" data-edit-warehouse-index="${index}">Редагувати</button>
-                      <button class="table-button danger-text" data-delete-warehouse-index="${index}">Видалити</button>
-                    </td>
-                  </tr>
-                `;
-              }).join("")
-              : `<tr><td colspan="8">Склад ще порожній.</td></tr>`}
-          </tbody>
-        </table>
+      <form class="inline-form warehouse-movement-form" id="warehouseMovementForm">
+        <label>Товар
+          <select name="itemId" id="warehouseMovementItemSelect">
+            ${warehouseItems.map((item) => `<option value="${escapeAttribute(item.id)}">${item.name} / ${item.qty} ${item.unit}</option>`).join("")}
+          </select>
+        </label>
+        <label>Тип руху
+          <select name="movementType" id="warehouseMovementTypeSelect">
+            <option value="project">Переміщення на об'єкт</option>
+            <option value="sale">Прямий продаж клієнту</option>
+          </select>
+        </label>
+        <label class="warehouse-project-target">Об'єкт
+          <select name="projectId">
+            ${projects.map((project) => `<option value="${escapeAttribute(project.id)}">${project.title}</option>`).join("")}
+          </select>
+        </label>
+        <label class="warehouse-sale-target" hidden>Клієнт<input name="customer" placeholder="Ім'я або телефон клієнта" /></label>
+        <label>К-сть<input name="qty" type="number" min="0.01" step="0.01" required /></label>
+        <label>Ціна продажу<input name="salePrice" type="number" min="0" step="1" value="${escapeAttribute(movementDefaultPrice)}" /></label>
+        <label class="wide-field">Коментар<input name="note" placeholder="Накладна, хто забрав, умови..." /></label>
+        <div class="form-submit-cell"><button class="primary-button">Провести рух</button></div>
+      </form>
+
+      <div class="warehouse-card-grid">
+        ${warehouseItems.length
+          ? warehouseItems.map((item, index) => {
+            const isLow = Number(item.qty || 0) <= Number(item.minQty || 0);
+            const unitCost = warehouseUnitCost(item);
+            return `
+              <article class="warehouse-item-card ${isLow ? "warning-row" : ""}">
+                <div class="warehouse-card-head">
+                  <div>
+                    <p class="eyebrow">${item.category}</p>
+                    <h3>${item.name}</h3>
+                    <span class="muted-text">${item.sku || "Без артикулу"}</span>
+                  </div>
+                  <span class="chip ${isLow ? "amber" : ""}">${item.qty} ${item.unit}</span>
+                </div>
+                <div class="warehouse-card-specs">
+                  <span><b>Собівартість</b>${money(unitCost)}</span>
+                  <span><b>Закупка</b>${money(item.purchasePrice)}</span>
+                  <span><b>Доставка</b>${money(item.deliveryCost)}</span>
+                  <span><b>Дод. витрати</b>${money(item.extraCost)}</span>
+                  <span><b>Монтажникам</b>${Number(item.installerPrice || 0) ? money(item.installerPrice) : "-"}</span>
+                  <span><b>Розниця</b>${Number(item.retailPrice || item.salePrice || 0) ? money(item.retailPrice || item.salePrice) : "-"}</span>
+                  <span><b>Серійний</b>${item.serialNumber || "-"}</span>
+                  <span><b>Постачальник</b>${item.supplier || "-"}</span>
+                  <span><b>Місце</b>${item.location || "-"}</span>
+                  <span><b>Мін. залишок</b>${item.minQty || 0} ${item.unit}</span>
+                </div>
+                ${item.characteristics ? `<p class="warehouse-characteristics">${item.characteristics}</p>` : ""}
+                <div class="warehouse-actions">
+                  <button class="table-button" data-edit-warehouse-index="${index}">Редагувати</button>
+                  <button class="table-button danger-text" data-delete-warehouse-index="${index}">Видалити</button>
+                </div>
+              </article>
+            `;
+          }).join("")
+          : `<p class="empty-state">Склад ще порожній.</p>`}
       </div>
+
+      <section class="finance-panel warehouse-history-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Рух товарів</p>
+            <h3>Прихід, об'єкти і прямі продажі</h3>
+          </div>
+          <span class="chip">${warehouseMovements.length} записів</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Дата</th><th>Тип</th><th>Товар</th><th>К-сть</th><th>Куди / від кого</th><th>Сума</th></tr></thead>
+            <tbody>
+              ${warehouseMovements.length
+                ? warehouseMovements.slice(0, 12).map((movement) => `
+                  <tr>
+                    <td>${new Date(movement.createdAt).toLocaleDateString("uk-UA")}</td>
+                    <td>${warehouseMovementTypeLabel(movement.type)}</td>
+                    <td>${movement.itemName}</td>
+                    <td>${movement.qty} ${movement.unit}</td>
+                    <td>${warehouseMovementTarget(movement)}</td>
+                    <td>${money(Number(movement.qty || 0) * Number(movement.salePrice || movement.unitCost || 0))}</td>
+                  </tr>
+                `).join("")
+                : `<tr><td colspan="6">Рухів складу ще немає.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </section>
   `;
 }
@@ -3797,12 +3975,56 @@ document.addEventListener("change", (event) => {
       formElement.elements.name.focus();
     }
   }
+
+  if (event.target.id === "warehouseCategorySelect") {
+    const formElement = event.target.closest("#warehouseItemForm");
+    const customCategory = formElement.querySelector(".warehouse-custom-category");
+    const productField = formElement.querySelector(".warehouse-custom-product");
+    const productSelect = formElement.elements.catalogItem;
+    const isNewCategory = event.target.value === "__new";
+    customCategory.hidden = !isNewCategory;
+    productSelect.innerHTML = isNewCategory
+      ? `<option value="__new" selected>+ Додати товар</option>`
+      : `${warehouseProductsForCategory(event.target.value).map((item) => `<option value="${escapeAttribute(item.id)}">${item.name}</option>`).join("")}<option value="__new">+ Додати товар</option>`;
+    productField.hidden = false;
+    formElement.elements.name.value = "";
+    if (!isNewCategory && productSelect.value && productSelect.value !== "__new") fillWarehouseFormFromItem(formElement, warehouseItemById(productSelect.value));
+  }
+
+  if (event.target.id === "warehouseProductSelect") {
+    const formElement = event.target.closest("#warehouseItemForm");
+    const productField = formElement.querySelector(".warehouse-custom-product");
+    const selectedItem = warehouseItemById(event.target.value);
+    productField.hidden = Boolean(selectedItem);
+    if (selectedItem) fillWarehouseFormFromItem(formElement, selectedItem);
+    if (event.target.value === "__new") {
+      formElement.elements.name.value = "";
+      formElement.elements.name.focus();
+    }
+  }
+
+  if (event.target.id === "warehouseMovementTypeSelect") {
+    const formElement = event.target.closest("#warehouseMovementForm");
+    formElement.querySelector(".warehouse-project-target").hidden = event.target.value !== "project";
+    formElement.querySelector(".warehouse-sale-target").hidden = event.target.value !== "sale";
+    fillWarehouseMovementPrice(formElement);
+  }
+
+  if (event.target.id === "warehouseMovementItemSelect") {
+    fillWarehouseMovementPrice(event.target.closest("#warehouseMovementForm"));
+  }
 });
 
 document.addEventListener("submit", (event) => {
   if (event.target.id === "warehouseItemForm") {
     event.preventDefault();
     addWarehouseItem(event.target);
+    return;
+  }
+
+  if (event.target.id === "warehouseMovementForm") {
+    event.preventDefault();
+    addWarehouseMovement(event.target);
     return;
   }
 
@@ -3860,27 +4082,126 @@ document.addEventListener("submit", (event) => {
   render();
 });
 
+function fillWarehouseFormFromItem(formElement, item) {
+  if (!formElement || !item) return;
+  formElement.elements.name.value = item.name || "";
+  formElement.elements.sku.value = item.sku || "";
+  formElement.elements.unit.value = item.unit || "шт";
+  formElement.elements.purchasePrice.value = Number(item.purchasePrice || 0);
+  formElement.elements.deliveryCost.value = Number(item.deliveryCost || 0);
+  formElement.elements.extraCost.value = Number(item.extraCost || 0);
+  formElement.elements.installerPrice.value = Number(item.installerPrice || item.salePrice || 0);
+  formElement.elements.retailPrice.value = Number(item.retailPrice || item.salePrice || 0);
+  formElement.elements.minQty.value = Number(item.minQty || 0);
+  formElement.elements.location.value = item.location || "";
+  formElement.elements.serialNumber.value = item.serialNumber || "";
+  formElement.elements.supplier.value = item.supplier || "";
+  formElement.elements.characteristics.value = item.characteristics || "";
+}
+
+function fillWarehouseMovementPrice(formElement) {
+  if (!formElement) return;
+  const item = warehouseItemById(formElement.elements.itemId?.value);
+  if (!item) return;
+  const type = formElement.elements.movementType?.value || "project";
+  formElement.elements.salePrice.value = Number(type === "sale" ? item.retailPrice || item.salePrice || 0 : item.installerPrice || item.salePrice || 0);
+}
+
+function warehouseItemFromForm(formElement, currentItem = null) {
+  const data = new FormData(formElement);
+  const selectedCategory = data.get("category");
+  const selectedCatalogItem = data.get("catalogItem");
+  const catalogItem = selectedCatalogItem && selectedCatalogItem !== "__new" ? warehouseItemById(selectedCatalogItem) : null;
+  const category = selectedCategory === "__new" ? String(data.get("customCategory") || "").trim() : selectedCategory;
+  const retailPrice = Number(data.get("retailPrice") || data.get("salePrice") || catalogItem?.retailPrice || catalogItem?.salePrice || 0);
+  return {
+    id: currentItem?.id || catalogItem?.id || `wh-${Date.now()}`,
+    name: String(data.get("name") || catalogItem?.name || "").trim(),
+    category: category || catalogItem?.category || "Інше",
+    sku: String(data.get("sku") || catalogItem?.sku || "").trim(),
+    qty: Number(data.get("qty") || 0),
+    unit: String(data.get("unit") || catalogItem?.unit || "шт").trim(),
+    purchasePrice: Number(data.get("purchasePrice") || catalogItem?.purchasePrice || 0),
+    deliveryCost: Number(data.get("deliveryCost") || catalogItem?.deliveryCost || 0),
+    extraCost: Number(data.get("extraCost") || catalogItem?.extraCost || 0),
+    installerPrice: Number(data.get("installerPrice") || catalogItem?.installerPrice || catalogItem?.salePrice || 0),
+    retailPrice,
+    salePrice: retailPrice,
+    minQty: Number(data.get("minQty") || catalogItem?.minQty || 0),
+    location: String(data.get("location") || catalogItem?.location || "").trim(),
+    serialNumber: String(data.get("serialNumber") || catalogItem?.serialNumber || "").trim(),
+    supplier: String(data.get("supplier") || catalogItem?.supplier || "").trim(),
+    characteristics: String(data.get("characteristics") || catalogItem?.characteristics || "").trim(),
+  };
+}
+
 function addWarehouseItem(formElement) {
   const data = new FormData(formElement);
   const currentItem = Number.isInteger(editingWarehouseIndex) ? warehouseItems[editingWarehouseIndex] : null;
-  const nextItem = {
-    id: currentItem?.id || `wh-${Date.now()}`,
-    name: String(data.get("name") || "").trim(),
-    category: data.get("category") || "Інше",
-    sku: String(data.get("sku") || "").trim(),
-    qty: Number(data.get("qty") || 0),
-    unit: String(data.get("unit") || "шт").trim(),
-    purchasePrice: Number(data.get("purchasePrice") || 0),
-    salePrice: Number(data.get("salePrice") || 0),
-    minQty: Number(data.get("minQty") || 0),
-    location: String(data.get("location") || "").trim(),
-  };
+  const catalogItem = data.get("catalogItem") && data.get("catalogItem") !== "__new" ? warehouseItemById(data.get("catalogItem")) : null;
+  const nextItem = warehouseItemFromForm(formElement, currentItem);
+  if (!nextItem.name) return;
   if (currentItem) {
     warehouseItems[editingWarehouseIndex] = nextItem;
     editingWarehouseIndex = null;
+  } else if (catalogItem) {
+    Object.assign(catalogItem, {
+      ...nextItem,
+      id: catalogItem.id,
+      qty: Number(catalogItem.qty || 0) + Number(nextItem.qty || 0),
+    });
   } else {
     warehouseItems.unshift(nextItem);
   }
+  if (!currentItem) {
+    warehouseMovements.unshift({
+      id: `wm-${Date.now()}`,
+      type: "purchase",
+      itemId: nextItem.id,
+      itemName: nextItem.name,
+      qty: Number(nextItem.qty || 0),
+      unit: nextItem.unit || "шт",
+      unitCost: warehouseUnitCost(nextItem),
+      supplier: nextItem.supplier || "",
+      note: "Прихід на склад",
+      createdAt: new Date().toISOString(),
+    });
+    saveWarehouseMovements();
+  }
+  saveWarehouseItems();
+  formElement.reset();
+  render();
+  showSection("warehouse");
+}
+
+function addWarehouseMovement(formElement) {
+  const data = new FormData(formElement);
+  const item = warehouseItemById(data.get("itemId"));
+  if (!item) return;
+  const qty = Number(data.get("qty") || 0);
+  if (!qty || qty <= 0) return;
+  if (qty > Number(item.qty || 0)) {
+    alert(`На складі доступно тільки ${item.qty} ${item.unit}.`);
+    return;
+  }
+  const type = data.get("movementType") || "project";
+  item.qty = Number(item.qty || 0) - qty;
+  warehouseMovements.unshift({
+    id: `wm-${Date.now()}`,
+    type,
+    itemId: item.id,
+    itemName: item.name,
+    projectId: type === "project" ? data.get("projectId") || "" : "",
+    customer: type === "sale" ? String(data.get("customer") || "").trim() : "",
+    qty,
+    unit: item.unit || "шт",
+    unitCost: warehouseUnitCost(item),
+    salePrice: Number(data.get("salePrice") || 0),
+    supplier: item.supplier || "",
+    note: String(data.get("note") || "").trim(),
+    createdAt: new Date().toISOString(),
+  });
+  saveWarehouseMovements();
   saveWarehouseItems();
   formElement.reset();
   render();
