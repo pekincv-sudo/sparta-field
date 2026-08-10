@@ -2045,7 +2045,7 @@ function renderTab(project, isValid, stringsTotal, expected) {
     return `
       <div class="metric-grid compact finance-metrics">
         <div class="metric-card"><span>Сума об'єкта</span><strong>${money(totals.revenue)}</strong></div>
-        <div class="metric-card warning"><span>Залишок клієнта</span><strong>${money(totals.balanceDue)}</strong></div>
+        <div class="metric-card warning"><span>До оплати клієнтом</span><strong>${money(totals.balanceDue)}</strong></div>
         <div class="metric-card ${totals.profit >= 0 ? "success" : "danger"}"><span>Заробіток</span><strong>${money(totals.profit)}</strong></div>
         <div class="metric-card"><span>Маржа</span><strong>${totals.margin}%</strong></div>
       </div>
@@ -2057,6 +2057,27 @@ function renderTab(project, isValid, stringsTotal, expected) {
         <label>ЗП бригади<input name="crewPayroll" type="number" min="0" step="1" value="${escapeAttribute(totals.crewPayroll)}" /></label>
         <div class="form-submit-cell"><button class="primary-button">Зберегти фінанси</button></div>
       </form>
+
+      <section class="finance-panel finance-summary-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Розрахунок</p>
+            <h3>Заробіток по об'єкту</h3>
+          </div>
+          <span class="chip">${money(totals.revenue)} − ${money(totals.cost)}</span>
+        </div>
+        <div class="data-grid">
+          <div class="data-item"><span>Сума об'єкта</span><strong>${money(totals.revenue)}</strong></div>
+          <div class="data-item"><span>Вартість обладнання</span><strong>${money(totals.equipmentPurchase)}</strong></div>
+          <div class="data-item"><span>Додаткові витрати</span><strong>${money(totals.otherExpenses)}</strong></div>
+          <div class="data-item"><span>ЗП монтажників</span><strong>${money(totals.crewPayroll)}</strong></div>
+          <div class="data-item"><span>Всі витрати</span><strong>${money(totals.cost)}</strong></div>
+          <div class="data-item"><span>Аванс клієнта</span><strong>${money(totals.advancePaid)}</strong></div>
+          <div class="data-item"><span>До оплати клієнтом</span><strong>${money(totals.balanceDue)}</strong></div>
+          <div class="data-item"><span>Заробіток</span><strong>${money(totals.profit)}</strong></div>
+        </div>
+        <p class="calculation-note">Заробіток = сума об'єкта − вартість обладнання − додаткові витрати − ЗП монтажників. До оплати клієнтом = сума об'єкта − аванс.</p>
+      </section>
 
       <div class="two-column">
         <section class="finance-panel">
@@ -2771,7 +2792,7 @@ function renderHome() {
       <div class="metric-card"><span>Завершено</span><strong>${completed}</strong></div>
       <div class="metric-card"><span>кВт у базі</span><strong>${projects.reduce((sum, project) => sum + Number(totalPower(project)), 0).toFixed(1)}</strong></div>
       <div class="metric-card"><span>Сума об'єктів</span><strong>${money(financeTotals.revenue)}</strong></div>
-      <div class="metric-card warning"><span>Залишок оплат</span><strong>${money(financeTotals.balanceDue)}</strong></div>
+      <div class="metric-card warning"><span>До оплати</span><strong>${money(financeTotals.balanceDue)}</strong></div>
       <div class="metric-card success"><span>Заробіток</span><strong>${money(financeTotals.profit)}</strong></div>
     </div>
 
