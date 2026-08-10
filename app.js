@@ -2707,8 +2707,8 @@ function renderWarehouseView() {
         <div class="form-submit-cell"><button class="primary-button">Додати на склад</button></div>
       </form>
 
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap warehouse-table-wrap">
+        <table class="warehouse-table">
           <thead>
             <tr><th>Позиція</th><th>Категорія</th><th>Залишок</th><th>Закупка</th><th>Продаж</th><th>Вартість складу</th><th>Місце</th><th></th></tr>
           </thead>
@@ -2718,14 +2718,14 @@ function renderWarehouseView() {
                 const isLow = Number(item.qty || 0) <= Number(item.minQty || 0);
                 return `
                   <tr class="${isLow ? "warning-row" : ""}">
-                    <td><strong>${item.name}</strong><span class="muted-text">${item.sku || "Без артикулу"}</span></td>
-                    <td>${item.category}</td>
-                    <td>${item.qty} ${item.unit}${isLow ? ` <span class="chip amber">докупити</span>` : ""}</td>
-                    <td>${money(item.purchasePrice)}</td>
-                    <td>${Number(item.salePrice || 0) ? money(item.salePrice) : "-"}</td>
-                    <td>${money(Number(item.qty || 0) * Number(item.purchasePrice || 0))}</td>
-                    <td>${item.location || "-"}</td>
-                    <td><button class="table-button danger-text" data-delete-warehouse-index="${index}">Видалити</button></td>
+                    <td data-label="Позиція"><strong>${item.name}</strong><span class="muted-text">${item.sku || "Без артикулу"}</span></td>
+                    <td data-label="Категорія">${item.category}</td>
+                    <td data-label="Залишок">${item.qty} ${item.unit}${isLow ? ` <span class="chip amber">докупити</span>` : ""}</td>
+                    <td data-label="Закупка">${money(item.purchasePrice)}</td>
+                    <td data-label="Продаж">${Number(item.salePrice || 0) ? money(item.salePrice) : "-"}</td>
+                    <td data-label="Вартість складу">${money(Number(item.qty || 0) * Number(item.purchasePrice || 0))}</td>
+                    <td data-label="Місце">${item.location || "-"}</td>
+                    <td class="warehouse-actions"><button class="table-button danger-text" data-delete-warehouse-index="${index}">Видалити</button></td>
                   </tr>
                 `;
               }).join("")

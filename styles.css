@@ -1994,7 +1994,7 @@ dialog::backdrop {
 
   .nav {
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
     gap: 4px;
   }
 
@@ -2121,6 +2121,95 @@ dialog::backdrop {
 
   .company-users-layout {
     grid-template-columns: 1fr;
+  }
+
+  .warehouse-panel {
+    padding: 14px;
+  }
+
+  .warehouse-panel .metric-grid.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .warehouse-form {
+    gap: 10px;
+  }
+
+  .warehouse-form .form-submit-cell,
+  .warehouse-form .primary-button {
+    width: 100%;
+  }
+
+  .warehouse-table-wrap {
+    overflow-x: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .warehouse-table,
+  .warehouse-table thead,
+  .warehouse-table tbody,
+  .warehouse-table tr,
+  .warehouse-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .warehouse-table {
+    min-width: 0;
+    border-collapse: separate;
+    border-spacing: 0 10px;
+  }
+
+  .warehouse-table thead {
+    display: none;
+  }
+
+  .warehouse-table tr {
+    border: 1px solid var(--line);
+    border-left: 3px solid rgba(255, 210, 26, 0.85);
+    border-radius: 8px;
+    background: var(--panel-2);
+    overflow: hidden;
+  }
+
+  .warehouse-table td {
+    display: grid;
+    grid-template-columns: minmax(96px, 42%) minmax(0, 1fr);
+    gap: 10px;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+
+  .warehouse-table td:first-child {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding-top: 12px;
+  }
+
+  .warehouse-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 850;
+    text-transform: uppercase;
+  }
+
+  .warehouse-table td:first-child::before,
+  .warehouse-table td.warehouse-actions::before {
+    display: none;
+  }
+
+  .warehouse-actions {
+    display: block;
+  }
+
+  .warehouse-actions .table-button {
+    width: 100%;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
   }
 
   .hero-card {
