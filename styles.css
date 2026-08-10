@@ -2133,6 +2133,27 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
 
+  .metric-grid.compact.finance-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .finance-metrics .metric-card {
+    min-width: 0;
+    padding: 12px;
+  }
+
+  .finance-metrics .metric-card strong {
+    font-size: clamp(24px, 7vw, 30px);
+    line-height: 1.12;
+    overflow-wrap: anywhere;
+  }
+
+  .finance-metrics .metric-card span {
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
   .warehouse-form {
     gap: 10px;
   }

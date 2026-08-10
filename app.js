@@ -1859,7 +1859,7 @@ function renderTab(project, isValid, stringsTotal, expected) {
   if (selectedTab === "finance") {
     const totals = projectFinanceTotals(project);
     return `
-      <div class="metric-grid compact">
+      <div class="metric-grid compact finance-metrics">
         <div class="metric-card"><span>Сума об'єкта</span><strong>${money(totals.revenue)}</strong></div>
         <div class="metric-card warning"><span>Залишок клієнта</span><strong>${money(totals.balanceDue)}</strong></div>
         <div class="metric-card ${totals.profit >= 0 ? "success" : "danger"}"><span>Заробіток</span><strong>${money(totals.profit)}</strong></div>
