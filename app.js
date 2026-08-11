@@ -97,85 +97,103 @@ function emptyProjectFinance() {
   };
 }
 
-function defaultWarehouseItems() {
+function warehouseNomenclatureRows() {
   return [
-    {
-      id: "wh-panel-longi-580",
-      name: "Longi LR5-72HTH-580M",
-      category: "Панелі",
-      sku: "PV-LONGI-580",
-      unit: "шт",
-      qty: 48,
-      purchasePrice: 3200,
-      salePrice: 3900,
-      installerPrice: 3700,
-      retailPrice: 4100,
-      deliveryCost: 120,
-      extraCost: 80,
-      minQty: 20,
-      location: "Склад Чернівці",
-      serialNumber: "Партія L580-08",
-      supplier: "LONGi Україна",
-      characteristics: "580W, mono, half-cell",
-    },
-    {
-      id: "wh-inverter-deye-12",
-      name: "Deye SUN-12K-SG04LP3",
-      category: "Інвертори",
-      sku: "INV-DEYE-12",
-      unit: "шт",
-      qty: 3,
-      purchasePrice: 42000,
-      salePrice: 52000,
-      installerPrice: 49500,
-      retailPrice: 54000,
-      deliveryCost: 900,
-      extraCost: 600,
-      minQty: 1,
-      location: "Стелаж A2",
-      serialNumber: "SN-DEYE-12-001",
-      supplier: "Deye Partner",
-      characteristics: "12 кВт, 3 фази, hybrid",
-    },
-    {
-      id: "wh-cable-6",
-      name: "Сонячний кабель 6 мм2",
-      category: "Кабель",
-      sku: "CAB-PV-6",
-      unit: "м",
-      qty: 620,
-      purchasePrice: 28,
-      salePrice: 42,
-      installerPrice: 38,
-      retailPrice: 45,
-      deliveryCost: 2,
-      extraCost: 1,
-      minQty: 200,
-      location: "Бухти",
-      serialNumber: "Партія CAB-6",
-      supplier: "KBE",
-      characteristics: "6 мм2, PV1-F, чорний",
-    },
-    {
-      id: "wh-tool-crimper",
-      name: "Кримпер MC4",
-      category: "Інструмент",
-      sku: "TOOL-MC4",
-      unit: "шт",
-      qty: 4,
-      purchasePrice: 1850,
-      salePrice: 0,
-      installerPrice: 0,
-      retailPrice: 0,
+    ["Авт.вимикач ETIMAT 6 1p C 40A (6kA)", "Захист", "", "шт", 195.03, 250, 275],
+    ["Авт.вимикач ETIMAT 6 2p C 32A (6kA)", "Захист", "", "шт", 0, 0, 0],
+    ["Авт.вимикач ETIMAT 6 3p C 63A (6kA)", "Захист", "", "шт", 934.26, 1190, 1310],
+    ["Блок безпрофільної системи 250мм", "Кріплення", "", "шт", 111.5, 125, 150],
+    ["Блок безпрофільної системи 300мм", "Кріплення", "", "шт", 0, 160, 190],
+    ["Болт цинк 10*20", "Кріплення", "", "шт", 3.06, 5.4, 7.7],
+    ["Болт цинк 10*25", "Кріплення", "", "шт", 3.52, 6.2, 8.8],
+    ["Болт цинк 8*100", "Кріплення", "", "шт", 6.94, 8.2, 0],
+    ["Болт цинк 8*20", "Кріплення", "", "шт", 2.29, 3.21, 4.58],
+    ["Болт цинк 8*25", "Кріплення", "", "шт", 2.47, 4.32, 6.18],
+    ["Болт цинк 8*30", "Кріплення", "", "шт", 3.37, 5.9, 8.43],
+    ["Болт цинк 8*35", "Кріплення", "", "шт", 3.57, 6.25, 8.93],
+    ["Болт цинк 8*40", "Кріплення", "", "шт", 3.26, 5.7, 8.15],
+    ["Болт цинк 8*45", "Кріплення", "", "шт", 3.75, 6.56, 9.38],
+    ["Вимикач навантаження LS 25 SMA  A2 2p \"1-0\" 25A 1000v DC", "Захист", "", "шт", 1830.51, 2105, 2325],
+    ["Вимикач навантаження LS 25 SMA  A4 4p \"1-0\" 25A 1000v DC", "Захист", "", "шт", 2318.65, 2665, 2945],
+    ["Вимикач навантаження LS 32 SMA  A2 2p \"1-0\" 32A 1000v DC", "Захист", "", "шт", 2176.96, 2505, 2765],
+    ["Вимикач навантаження LS 32 SMA  A4 4p \"1-0\" 32A 1000v DC", "Захист", "", "шт", 2562.72, 2950, 3255],
+    ["Гайка зубчаста цинк М10", "Кріплення", "", "шт", 2.71, 4.8, 6.8],
+    ["Гайка зубчаста цинк М8", "Кріплення", "", "шт", 2.02, 3.54, 5.05],
+    ["Гайка М8 з пластиковим фіксатором", "Кріплення", "", "шт", 5.29, 7, 11],
+    ["Гвинт-шуруп 10*200", "Кріплення", "", "шт", 38.22, 51, 72],
+    ["Гвинт-шуруп 10*250", "Кріплення", "", "шт", 48.92, 65, 92],
+    ["З\"єднувач для профілю 41*41*41", "Кріплення", "", "шт", 30, 35, 40],
+    ["З\"єднувач кут", "Кріплення", "", "шт", 30, 15, 0],
+    ["Заклепка пелюсткова відривна 7,5*17,5", "Кріплення", "", "шт", 3.95, 8, 10],
+    ["Запобіжник СН 10*38 gPV 25A 1000V (30kA)", "Захист", "", "шт", 156.68, 180, 199],
+    ["Запобіжник СН 14*51 gPV 36A 1000V (30kA)", "Захист", "", "шт", 402.69, 460, 510],
+    ["Кабель KBE DB 6 mm2", "Кабель", "", "м", 56, 62, 65],
+    ["Кронштейн L-подібний 45*45", "Кріплення", "", "шт", 1, 19, 24],
+    ["Кронштейн Т-подібний 108*104*50", "Кріплення", "", "шт", 0, 52, 0],
+    ["Конектор МС 4 *пара)", "Конектори", "", "шт", 36, 45, 60],
+    ["Конектор для паралельного підключення", "Конектори", "", "шт", 240, 300, 340],
+    ["Монтажні роботи 50дол", "Роботи", "", "шт", 1660, 0, 2905],
+    ["Обмежувач перенапруги ETITEC EM T2 PV 1100/20 (для PV систем)", "Захист", "", "шт", 2940.82, 3380, 3735],
+    ["Перемикач навантаження SSQ 140 \"1-0-2\", 1p 40A", "Захист", "", "шт", 209.75, 265, 295],
+    ["Перемикач навантаження SSQ 240 \"1-0-2\", 2p 40A", "Захист", "", "шт", 370, 470, 520],
+    ["Перемикач навантаження SSQ 363 \"1-0-2\", 3p 63A", "Захист", "", "шт", 2016.53, 2560, 2800],
+    ["Пластиковий щит ECH 12PT", "Щити", "", "шт", 845, 1015, 1140],
+    ["Пластиковий щит ECH 18PT", "Щити", "", "шт", 1150, 1380, 1550],
+    ["Пластиковий щит ECH 24PT", "Щити", "", "шт", 1305, 1560, 1760],
+    ["Пластиковий щит ECH 36PT", "Щити", "", "шт", 1380, 1650, 1860],
+    ["Пластиковий щит ECH 48PT", "Щити", "", "шт", 2070, 2490, 2795],
+    ["Пластиковий щит ECH 4G", "Щити", "", "шт", 540, 650, 730],
+    ["Пластиковий щит ECH 6PT", "Щити", "", "шт", 615, 780, 860],
+    ["Пластиковий щит ECH 8G (8мод.зовн.встан.IP65)", "Щити", "", "шт", 690, 830, 930],
+    ["Пластина монтажна для шпильки ZNH", "Кріплення", "", "шт", 16, 22, 30],
+    ["Притиск міжпанельний L50", "Кріплення", "П2420-50.8", "шт", 14.2, 20, 28.4],
+    ["Притиск міжпанельний L50 H20", "Кріплення", "", "шт", 19.55, 27, 33],
+    ["Притиск міжпанельний L50 чорний", "Кріплення", "П2420-50.8", "шт", 23.26, 33, 40],
+    ["Притиск торцевий H30 L50", "Кріплення", "Z3019-50.8", "шт", 16, 22, 27],
+    ["Притиск торцевий H30 L50 чорний", "Кріплення", "Z3019-50.8", "шт", 18.76, 27, 35],
+    ["Притиск торцевий універсальний", "Кріплення", "Z3019-50.8", "шт", 23.7, 28, 35],
+    ["Прокладка-композит 60*60*3 з отвором", "Кріплення", "", "шт", 7, 10, 14],
+    ["Тримач EFN 10 1P 25A 1000V DC", "Захист", "", "шт", 134.19, 155, 170],
+    ["Тримач EFN 14 1P 50A 1000V DC", "Захист", "", "шт", 267.78, 300, 340],
+    ["Шайба цинк М10", "Кріплення", "", "шт", 1.22, 2.15, 3.05],
+    ["Шайба цинк М8", "Кріплення", "", "шт", 0.61, 1.15, 1.7],
+  ];
+}
+
+function warehouseNomenclatureItems() {
+  return warehouseNomenclatureRows().map(([name, category, sku, unit, purchasePrice, installerPrice, retailPrice], index) => {
+    const salePrice = Number(retailPrice || installerPrice || purchasePrice || 0);
+    return normalizeWarehouseItem({
+      id: `nom-${String(index + 1).padStart(3, "0")}`,
+      name,
+      category,
+      sku,
+      unit,
+      qty: 2,
+      purchasePrice,
+      salePrice,
+      installerPrice: Number(installerPrice || salePrice || 0),
+      retailPrice: Number(retailPrice || salePrice || 0),
       deliveryCost: 0,
       extraCost: 0,
-      minQty: 2,
-      location: "Інструментальна",
-      serialNumber: "TOOL-MC4-01",
-      supplier: "Інструмент сервіс",
-      characteristics: "MC4, професійний",
-    },
-  ];
+      minQty: 0,
+      location: "Склад",
+      serialNumber: "",
+      supplier: "",
+      characteristics: "",
+    });
+  });
+}
+
+function defaultWarehouseItems() {
+  return warehouseNomenclatureItems();
+}
+
+function mergeWarehouseNomenclature(items) {
+  const itemKey = (item) => normalizeLookupValue(item?.name || item?.sku || "");
+  const existingKeys = new Set(items.map(itemKey).filter(Boolean));
+  const missingItems = warehouseNomenclatureItems().filter((item) => !existingKeys.has(itemKey(item)));
+  return [...items, ...missingItems];
 }
 
 function seedDemoCrmTasks(tasks) {
@@ -433,7 +451,13 @@ const savedCrmTasks = localStorage.getItem("solarObjectManager.crmTasks");
 let crmTasks = savedCrmTasks ? JSON.parse(savedCrmTasks) : [];
 crmTasks = seedDemoCrmTasks(crmTasks);
 let projectFilesByProjectId = JSON.parse(localStorage.getItem("solarObjectManager.projectFiles") || "{}");
-let warehouseItems = (JSON.parse(localStorage.getItem("solarObjectManager.warehouseItems") || "null") || defaultWarehouseItems()).map(normalizeWarehouseItem);
+const savedWarehouseItems = JSON.parse(localStorage.getItem("solarObjectManager.warehouseItems") || "null");
+let warehouseItems = (savedWarehouseItems || defaultWarehouseItems()).map(normalizeWarehouseItem);
+if (savedWarehouseItems && localStorage.getItem("solarObjectManager.nomenclatureImported.v1") !== "true") {
+  warehouseItems = mergeWarehouseNomenclature(warehouseItems);
+  localStorage.setItem("solarObjectManager.warehouseItems", JSON.stringify(warehouseItems));
+  localStorage.setItem("solarObjectManager.nomenclatureImported.v1", "true");
+}
 let warehouseMovements = JSON.parse(localStorage.getItem("solarObjectManager.warehouseMovements") || "[]");
 
 let selectedProjectId = String(projects[0]?.id ?? "");
@@ -1647,7 +1671,7 @@ function warehouseItemFormState() {
 }
 
 function warehouseBaseCategories() {
-  return ["Панелі", "Інвертори", "АКБ", "Кріплення", "Кабель", "Захист", "Інструмент", "Інше"];
+  return ["Захист", "Кріплення", "Кабель", "Конектори", "Щити", "Роботи", "Панелі", "Інвертори", "АКБ", "Інструмент", "Інше"];
 }
 
 function warehouseCategories() {
