@@ -1738,6 +1738,17 @@ function normalizeProjectFinance(finance = {}) {
       purchasePrice: Number(item.purchasePrice || item.purchase_price || 0),
       salePrice: Number(item.salePrice || item.sale_price || 0),
     })) : [],
+    offerLines: Array.isArray(finance.offerLines || finance.offer_lines) ? (finance.offerLines || finance.offer_lines).map((item) => ({
+      id: item.id || `offer-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      warehouseItemId: item.warehouseItemId || item.warehouse_item_id || "",
+      category: item.category || "Інше",
+      name: item.name || "",
+      qty: Number(item.qty || 0),
+      unit: item.unit || "шт",
+      purchasePrice: Number(item.purchasePrice || item.purchase_price || 0),
+      salePrice: Number(item.salePrice || item.sale_price || 0),
+      note: item.note || "",
+    })) : [],
     expenses: Array.isArray(finance.expenses) ? finance.expenses.map((item) => ({
       name: item.name || "",
       amount: Number(item.amount || 0),
@@ -2154,7 +2165,7 @@ function renderProjectStageContent(status, project, isValid, stringsTotal, expec
   const stageTabs = {
     new: [["Інформація про клієнта та об'єкт", "summary"]],
     planned: [["Виїзд на замір", "measurement"]],
-    proposal: [["Комерційна пропозиція", "files"], ["Розрахунок вартості", "finance"]],
+    proposal: [["Комерційна пропозиція", "commercialOffer"], ["Файли КП", "files"]],
     contract: [["Договір і оплата", "finance"], ["Файли договору", "files"]],
     in_progress: [["Технічні дані", "technical"], ["Матеріали для монтажу", "materials"], ["MPPT / стрінги", "strings"]],
     waiting_review: [["Фотофіксація", "photos"]],
@@ -2174,6 +2185,9 @@ function renderProjectStageContent(status, project, isValid, stringsTotal, expec
 function renderTabById(tabId, project, isValid, stringsTotal, expected) {
   if (tabId === "measurement") {
     return renderMeasurementStage(project);
+  }
+  if (tabId === "commercialOffer") {
+    return renderCommercialOfferStage(project);
   }
 
   const previousTab = selectedTab;
@@ -2213,6 +2227,253 @@ function renderMeasurementStage(project) {
       </table>
     </div>
   `;
+}
+
+function offerLineTotals(project) {
+  const finance = normalizeProjectFinance(project.finance);
+  const equipmentPurchase = finance.offerLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
+  const equipmentSale = finance.offerLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
+  const otherExpenses = finance.expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const installationPrice = Number(finance.installationPrice || 0);
+  const totalSale = equipmentSale + installationPrice;
+  const totalCost = equipmentPurchase + otherExpenses + Number(finance.crewPayroll || 0);
+  return {
+    finance,
+    equipmentPurchase,
+    equipmentSale,
+    otherExpenses,
+    installationPrice,
+    totalSale,
+    totalCost,
+    profit: totalSale - totalCost,
+  };
+}
+
+function renderCommercialOfferStage(project) {
+  const totals = offerLineTotals(project);
+  const firstWarehouseItem = warehouseItems[0] || {};
+  const firstSalePrice = Number(firstWarehouseItem.retailPrice || firstWarehouseItem.installerPrice || firstWarehouseItem.salePrice || 0);
+  return `
+    <div class="proposal-actions">
+      <button class="secondary-button" type="button" id="copyOfferToMaterialsButton">Перенести в матеріали</button>
+      <button class="secondary-button" type="button" id="shareCommercialOfferButton">Надіслати</button>
+      <button class="primary-button" type="button" id="printCommercialOfferButton">Друк / PDF</button>
+    </div>
+
+    <div class="metric-grid compact finance-metrics">
+      <div class="metric-card"><span>Закупка обладнання</span><strong>${money(totals.equipmentPurchase)}</strong></div>
+      <div class="metric-card"><span>Продаж обладнання</span><strong>${money(totals.equipmentSale)}</strong></div>
+      <div class="metric-card"><span>Монтаж</span><strong>${money(totals.installationPrice)}</strong></div>
+      <div class="metric-card ${totals.profit >= 0 ? "success" : "danger"}"><span>Орієнтовна маржа</span><strong>${money(totals.profit)}</strong></div>
+    </div>
+
+    <form class="inline-form commercial-offer-form" id="commercialOfferLineForm">
+      <label>Позиція зі складу
+        <select name="warehouseItemId" id="commercialOfferItemSelect">
+          ${warehouseItems.length
+            ? warehouseItems.map((item) => `<option value="${escapeAttribute(item.id)}">${item.name} / ${item.category} / ${item.qty} ${item.unit}</option>`).join("")
+            : `<option value="">Склад порожній</option>`}
+        </select>
+      </label>
+      <label>Кількість<input name="qty" type="number" min="0.01" step="0.01" value="1" required /></label>
+      <label>Ціна закупки<input name="purchasePrice" type="number" min="0" step="1" value="${escapeAttribute(warehouseUnitCost(firstWarehouseItem))}" /></label>
+      <label>Ціна продажу<input name="salePrice" type="number" min="0" step="1" value="${escapeAttribute(firstSalePrice)}" /></label>
+      <label class="wide-field">Коментар<input name="note" placeholder="Комплектація, уточнення для клієнта..." /></label>
+      <div class="form-submit-cell"><button class="primary-button">Додати в КП</button></div>
+    </form>
+
+    <form class="inline-form commercial-offer-totals-form" id="commercialOfferTotalsForm">
+      <label>Вартість монтажу<input name="installationPrice" type="number" min="0" step="1" value="${escapeAttribute(totals.finance.installationPrice)}" /></label>
+      <label>ЗП бригади / собівартість робіт<input name="crewPayroll" type="number" min="0" step="1" value="${escapeAttribute(totals.finance.crewPayroll)}" /></label>
+      <div class="form-submit-cell"><button class="secondary-button">Зберегти суми</button></div>
+    </form>
+
+    <div class="table-wrap commercial-offer-table">
+      <table>
+        <thead><tr><th>Позиція</th><th>К-сть</th><th>Закупка</th><th>Продаж</th><th>Сума</th><th></th></tr></thead>
+        <tbody>
+          ${totals.finance.offerLines.length
+            ? totals.finance.offerLines.map((item, index) => `
+              <tr>
+                <td><strong>${item.name}</strong><span>${item.category}${item.note ? ` · ${item.note}` : ""}</span></td>
+                <td>${item.qty} ${item.unit}</td>
+                <td>${money(item.purchasePrice)}</td>
+                <td>${money(item.salePrice)}</td>
+                <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0))}</td>
+                <td><button class="table-button danger-text" type="button" data-delete-offer-line="${index}">Видалити</button></td>
+              </tr>
+            `).join("")
+            : `<tr><td colspan="6">Позиції КП ще не додано. Вибери обладнання або матеріали зі складу.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <section class="finance-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Витрати</p>
+          <h3>Додаткові витрати для розрахунку</h3>
+        </div>
+        <span class="chip">${money(totals.otherExpenses)}</span>
+      </div>
+      <form class="inline-form finance-line-form" id="projectExpenseForm">
+        <label>Назва<input name="name" required placeholder="Доставка, проєктування, пальне..." /></label>
+        <label>Сума<input name="amount" type="number" min="0" step="1" required /></label>
+        <button class="primary-button">Додати</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Витрата</th><th>Сума</th><th></th></tr></thead>
+          <tbody>
+            ${totals.finance.expenses.length
+              ? totals.finance.expenses.map((item, index) => `
+                <tr>
+                  <td>${item.name}</td>
+                  <td>${money(item.amount)}</td>
+                  <td><button class="table-button danger-text" data-delete-expense-index="${index}">Видалити</button></td>
+                </tr>
+              `).join("")
+              : `<tr><td colspan="3">Додаткові витрати ще не додано.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function commercialOfferDocumentMarkup(project) {
+  const totals = offerLineTotals(project);
+  return `
+    <div class="passport-document commercial-offer-document">
+      <header class="passport-title">
+        <div>
+          <p class="eyebrow">Комерційна пропозиція</p>
+          <h2>${project.title}</h2>
+          <p>${project.address}</p>
+        </div>
+        <img class="passport-logo" src="./assets/sparta-logo.jpeg" alt="SPARTA power" />
+      </header>
+      <section class="passport-company">
+        <div>
+          <strong>${companyContacts.name}</strong>
+          <span>${companyContacts.location}</span>
+        </div>
+        <div>
+          <span>${companyContacts.phone}</span>
+          <span>${companyContacts.email}</span>
+        </div>
+      </section>
+      <section class="passport-section">
+        <h3>Клієнт</h3>
+        <div class="data-grid">
+          <div class="data-item"><span>Ім'я / компанія</span><strong>${project.clientName || "-"}</strong></div>
+          <div class="data-item"><span>Телефон</span><strong>${project.clientPhone || "-"}</strong></div>
+          <div class="data-item"><span>Об'єкт</span><strong>${project.objectType || "-"}</strong></div>
+          <div class="data-item"><span>Дата</span><strong>${new Date().toLocaleDateString("uk-UA")}</strong></div>
+        </div>
+      </section>
+      <section class="passport-section">
+        <h3>Обладнання та матеріали</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Назва</th><th>Категорія</th><th>К-сть</th><th>Ціна</th><th>Сума</th></tr></thead>
+            <tbody>
+              ${totals.finance.offerLines.length
+                ? totals.finance.offerLines.map((item) => `
+                  <tr>
+                    <td>${item.name}${item.note ? `<br><span class="muted-text">${item.note}</span>` : ""}</td>
+                    <td>${item.category}</td>
+                    <td>${item.qty} ${item.unit}</td>
+                    <td>${money(item.salePrice)}</td>
+                    <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0))}</td>
+                  </tr>
+                `).join("")
+                : `<tr><td colspan="5">Позиції КП ще не додано.</td></tr>`}
+              <tr><td colspan="4"><strong>Монтажні роботи</strong></td><td>${money(totals.installationPrice)}</td></tr>
+              <tr><td colspan="4"><strong>Разом до оплати</strong></td><td><strong>${money(totals.totalSale)}</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <footer class="passport-footer">
+        <div>
+          <span>Представник компанії</span>
+          <strong>${companyContacts.name}</strong>
+        </div>
+        <div>
+          <span>Дійсна на дату</span>
+          <strong>${new Date().toLocaleDateString("uk-UA")}</strong>
+        </div>
+      </footer>
+    </div>
+  `;
+}
+
+function printCommercialOffer() {
+  const project = selectedProject();
+  if (!project) return;
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    alert("Браузер заблокував вікно друку. Дозволь спливаючі вікна для цього сайту.");
+    return;
+  }
+  printWindow.document.write(`
+    <!doctype html>
+    <html lang="uk">
+      <head>
+        <meta charset="utf-8" />
+        <title>КП ${project.title}</title>
+        <link rel="stylesheet" href="${location.origin}/styles.css" />
+      </head>
+      <body class="print-page">${commercialOfferDocumentMarkup(project)}</body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  window.setTimeout(() => printWindow.print(), 500);
+}
+
+async function shareCommercialOffer() {
+  const project = selectedProject();
+  if (!project) return;
+  const totals = offerLineTotals(project);
+  const text = [
+    `Комерційна пропозиція: ${project.title}`,
+    `Клієнт: ${project.clientName || "-"}`,
+    `Адреса: ${project.address || "-"}`,
+    `Сума: ${money(totals.totalSale)}`,
+    "Для PDF натисни 'Друк / PDF' у додатку.",
+  ].join("\n");
+  if (navigator.share) {
+    await navigator.share({ title: `КП ${project.title}`, text });
+    return;
+  }
+  await navigator.clipboard?.writeText(text);
+  alert("Текст КП скопійовано. PDF можна створити через кнопку Друк / PDF.");
+}
+
+function copyCommercialOfferToMaterials() {
+  const project = selectedProject();
+  if (!project) return;
+  const finance = normalizeProjectFinance(project.finance);
+  if (!finance.offerLines.length) {
+    alert("Спочатку додай позиції в КП.");
+    return;
+  }
+  project.materials ||= [];
+  finance.offerLines.forEach((item) => {
+    project.materials.push({
+      name: item.name,
+      category: item.category,
+      plannedQty: Number(item.qty || 0),
+      issuedQty: 0,
+      actualQty: Number(item.qty || 0),
+      unit: item.unit || "шт",
+    });
+  });
+  saveProjects();
+  render();
+  showSection("objectDetail");
 }
 
 function equipmentTypeConfig(type) {
@@ -4362,6 +4623,32 @@ document.addEventListener("click", (event) => {
     showSection("objectDetail");
   }
 
+  const deleteOfferLineButton = event.target.closest("[data-delete-offer-line]");
+  if (deleteOfferLineButton) {
+    const project = selectedProject();
+    if (!project) return;
+    project.finance = normalizeProjectFinance(project.finance);
+    project.finance.offerLines.splice(Number(deleteOfferLineButton.dataset.deleteOfferLine), 1);
+    syncCommercialOfferContractPrice(project);
+    saveProjects();
+    render();
+    showSection("objectDetail");
+  }
+
+  if (event.target.closest("#printCommercialOfferButton")) {
+    printCommercialOffer();
+  }
+
+  if (event.target.closest("#shareCommercialOfferButton")) {
+    shareCommercialOffer().catch((error) => {
+      if (error?.name !== "AbortError") alert(`Не вдалося поділитися КП: ${error.message}`);
+    });
+  }
+
+  if (event.target.closest("#copyOfferToMaterialsButton")) {
+    copyCommercialOfferToMaterials();
+  }
+
   const deleteExpenseButton = event.target.closest("[data-delete-expense-index]");
   if (deleteExpenseButton) {
     const project = selectedProject();
@@ -4500,6 +4787,10 @@ document.addEventListener("change", (event) => {
     }
   }
 
+  if (event.target.id === "commercialOfferItemSelect") {
+    fillCommercialOfferPrices(event.target.closest("#commercialOfferLineForm"));
+  }
+
   if (event.target.id === "warehouseCategorySelect") {
     const formElement = event.target.closest("#warehouseItemForm");
     const customCategory = formElement.querySelector(".warehouse-custom-category");
@@ -4555,6 +4846,18 @@ document.addEventListener("submit", (event) => {
   if (event.target.id === "projectFinanceForm") {
     event.preventDefault();
     saveProjectFinance(event.target);
+    return;
+  }
+
+  if (event.target.id === "commercialOfferLineForm") {
+    event.preventDefault();
+    addCommercialOfferLine(event.target);
+    return;
+  }
+
+  if (event.target.id === "commercialOfferTotalsForm") {
+    event.preventDefault();
+    saveCommercialOfferTotals(event.target);
     return;
   }
 
@@ -4763,6 +5066,64 @@ function saveProjectFinance(formElement) {
   saveProjects();
   render();
   showSection("objectDetail");
+}
+
+function fillCommercialOfferPrices(formElement) {
+  if (!formElement) return;
+  const item = warehouseItemById(formElement.elements.warehouseItemId?.value);
+  if (!item) return;
+  formElement.elements.purchasePrice.value = Number(warehouseUnitCost(item) || 0);
+  formElement.elements.salePrice.value = Number(item.retailPrice || item.installerPrice || item.salePrice || 0);
+}
+
+function addCommercialOfferLine(formElement) {
+  const project = selectedProject();
+  if (!project) return;
+  const data = new FormData(formElement);
+  const item = warehouseItemById(data.get("warehouseItemId"));
+  if (!item) return;
+
+  project.finance = normalizeProjectFinance(project.finance);
+  project.finance.offerLines.push({
+    id: `offer-${Date.now()}`,
+    warehouseItemId: item.id,
+    category: item.category || "Інше",
+    name: item.name || "",
+    qty: Number(data.get("qty") || 0),
+    unit: item.unit || "шт",
+    purchasePrice: Number(data.get("purchasePrice") || warehouseUnitCost(item) || 0),
+    salePrice: Number(data.get("salePrice") || item.retailPrice || item.installerPrice || item.salePrice || 0),
+    note: String(data.get("note") || item.characteristics || "").trim(),
+  });
+  syncCommercialOfferContractPrice(project);
+  saveProjects();
+  formElement.reset();
+  fillCommercialOfferPrices(formElement);
+  render();
+  showSection("objectDetail");
+}
+
+function saveCommercialOfferTotals(formElement) {
+  const project = selectedProject();
+  if (!project) return;
+  const data = new FormData(formElement);
+  project.finance = normalizeProjectFinance({
+    ...project.finance,
+    installationPrice: Number(data.get("installationPrice") || 0),
+    crewPayroll: Number(data.get("crewPayroll") || 0),
+  });
+  syncCommercialOfferContractPrice(project);
+  saveProjects();
+  render();
+  showSection("objectDetail");
+}
+
+function syncCommercialOfferContractPrice(project) {
+  const totals = offerLineTotals(project);
+  project.finance = normalizeProjectFinance({
+    ...project.finance,
+    contractPrice: totals.totalSale,
+  });
 }
 
 function addProjectExpense(formElement) {

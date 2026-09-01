@@ -1083,6 +1083,26 @@ button.metric-card:hover,
   grid-template-columns: 1.5fr 92px 82px 120px 120px auto;
 }
 
+.proposal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.commercial-offer-form,
+.commercial-offer-totals-form {
+  margin-bottom: 14px;
+}
+
+.commercial-offer-table td span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
 .warehouse-form {
   grid-template-columns: repeat(5, minmax(130px, 1fr));
 }
