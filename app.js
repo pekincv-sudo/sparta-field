@@ -1,11 +1,25 @@
 const statusLabels = {
-  new: "Новий",
-  planned: "Заплановано",
-  in_progress: "В роботі",
-  waiting_review: "Очікує перевірки",
+  new: "Лід",
+  planned: "Замір",
+  proposal: "КП",
+  contract: "Договір",
+  in_progress: "Монтаж",
+  waiting_review: "Перевірка",
   completed: "Завершено",
-  passport_issued: "Паспорт видано",
+  passport_issued: "Паспорт",
+  service: "Сервіс",
 };
+
+const projectFunnelSteps = [
+  ["new", "Лід"],
+  ["planned", "Замір"],
+  ["proposal", "КП"],
+  ["contract", "Договір"],
+  ["in_progress", "Монтаж"],
+  ["waiting_review", "Перевірка"],
+  ["passport_issued", "Паспорт"],
+  ["service", "Сервіс"],
+];
 
 const companyContacts = {
   name: "SPARTA power",
@@ -1740,7 +1754,7 @@ function warehouseMovementTarget(movement) {
 }
 
 function activeWarehouseProjects() {
-  return projects.filter((project) => !["completed", "passport_issued"].includes(project.status));
+  return projects.filter((project) => !isClosedProjectStatus(project.status));
 }
 
 function addWarehouseItemToProjectMaterials(project, item, qty) {
@@ -1800,19 +1814,22 @@ function showSection(sectionId) {
 }
 
 function statusClass(status) {
-  if (status === "passport_issued" || status === "completed") return "green";
-  if (status === "waiting_review" || status === "planned") return "amber";
+  if (status === "passport_issued" || status === "completed" || status === "service") return "green";
+  if (status === "waiting_review" || status === "planned" || status === "proposal" || status === "contract") return "amber";
   return "";
 }
 
 function statusProgress(project) {
   const statusProgressMap = {
     new: 10,
-    planned: 25,
+    planned: 22,
+    proposal: 35,
+    contract: 48,
     in_progress: 65,
-    waiting_review: 85,
-    completed: 100,
-    passport_issued: 100,
+    waiting_review: 78,
+    completed: 88,
+    passport_issued: 92,
+    service: 100,
   };
 
   const passportScore = passportChecklist(project).filter(([, ready]) => ready).length * 10;
@@ -1821,11 +1838,30 @@ function statusProgress(project) {
 }
 
 function statusTone(status) {
-  if (status === "completed" || status === "passport_issued") return "success";
+  if (status === "completed" || status === "passport_issued" || status === "service") return "success";
   if (status === "in_progress") return "work";
   if (status === "waiting_review") return "blue";
-  if (status === "planned") return "warning";
+  if (status === "planned" || status === "proposal" || status === "contract") return "warning";
   return "muted";
+}
+
+function projectStatusOptions(selectedStatus = "new") {
+  const options = projectFunnelSteps
+    .map(([value, label]) => `<option value="${value}" ${selectedAttr(selectedStatus, value)}>${label}</option>`)
+    .join("");
+  const legacyCompleted = selectedStatus === "completed"
+    ? `<option value="completed" selected>Завершено</option>`
+    : "";
+  return `${options}${legacyCompleted}`;
+}
+
+function projectFunnelIndex(status) {
+  const index = projectFunnelSteps.findIndex(([value]) => value === status);
+  return index >= 0 ? index : projectFunnelSteps.length - 1;
+}
+
+function isClosedProjectStatus(status) {
+  return ["completed", "passport_issued", "service"].includes(status);
 }
 
 function projectSubtitle(project) {
@@ -1959,9 +1995,7 @@ function renderDetail() {
         <div class="status-row">
           <label class="status-control">Статус
             <select id="projectStatusSelect">
-              <option value="planned" ${selectedAttr(project.status, "planned")}>Заплановано</option>
-              <option value="in_progress" ${selectedAttr(project.status, "in_progress")}>В роботі</option>
-              <option value="completed" ${selectedAttr(project.status, "completed")}>Завершено</option>
+              ${projectStatusOptions(project.status)}
             </select>
           </label>
           <span class="chip">${project.installationDate || "Без дати"}</span>
@@ -1969,7 +2003,25 @@ function renderDetail() {
       </div>
     </div>
 
+    ${renderProjectFunnel(project)}
     ${renderProjectSectionStack(project, isValid, stringsTotal, expected, sections)}
+  `;
+}
+
+function renderProjectFunnel(project) {
+  const activeIndex = projectFunnelIndex(project.status);
+  return `
+    <div class="project-funnel" aria-label="Етапи об'єкта">
+      ${projectFunnelSteps.map(([status, label], index) => {
+        const state = index < activeIndex ? "done" : index === activeIndex ? "current" : "";
+        return `
+          <button class="funnel-step ${state}" type="button" data-project-status="${status}" aria-pressed="${project.status === status}">
+            <span>${index + 1}</span>
+            <strong>${label}</strong>
+          </button>
+        `;
+      }).join("")}
+    </div>
   `;
 }
 
@@ -2839,9 +2891,10 @@ function renderPassport() {
 
 function renderHome() {
   if (!homeView) return;
-  const inWork = projects.filter((project) => project.status === "in_progress").length;
-  const planned = projects.filter((project) => project.status === "planned").length;
-  const completed = projects.filter((project) => project.status === "completed" || project.status === "passport_issued").length;
+  const preparation = projects.filter((project) => ["new", "planned", "proposal", "contract"].includes(project.status)).length;
+  const mounting = projects.filter((project) => ["in_progress", "waiting_review"].includes(project.status)).length;
+  const completed = projects.filter((project) => isClosedProjectStatus(project.status)).length;
+  const activeCount = projects.filter((project) => !isClosedProjectStatus(project.status)).length;
   const financeTotals = projects.reduce((result, project) => {
     const totals = projectFinanceTotals(project);
     result.revenue += totals.revenue;
@@ -2850,7 +2903,7 @@ function renderHome() {
     return result;
   }, { revenue: 0, profit: 0, balanceDue: 0 });
   const activeProjects = projects
-    .filter((project) => ["in_progress", "planned", "waiting_review", "new"].includes(project.status))
+    .filter((project) => !isClosedProjectStatus(project.status))
     .slice(0, 4);
 
   homeView.innerHTML = `
@@ -2865,16 +2918,16 @@ function renderHome() {
       </div>
       <div class="hero-progress">
         <span>Активних об'єктів</span>
-        <strong>${inWork + planned}</strong>
-        <div class="progress-line"><span style="width: ${projects.length ? Math.min(100, ((inWork + planned) / projects.length) * 100) : 0}%"></span></div>
+        <strong>${activeCount}</strong>
+        <div class="progress-line"><span style="width: ${projects.length ? Math.min(100, (activeCount / projects.length) * 100) : 0}%"></span></div>
       </div>
     </section>
 
     <div class="metric-grid">
       <div class="metric-card"><span>Об'єктів</span><strong>${projects.length}</strong></div>
-      <div class="metric-card"><span>В роботі</span><strong>${inWork}</strong></div>
-      <div class="metric-card"><span>Заплановано</span><strong>${planned}</strong></div>
-      <div class="metric-card"><span>Завершено</span><strong>${completed}</strong></div>
+      <div class="metric-card"><span>Підготовка</span><strong>${preparation}</strong></div>
+      <div class="metric-card"><span>Монтаж</span><strong>${mounting}</strong></div>
+      <div class="metric-card"><span>Паспорт / сервіс</span><strong>${completed}</strong></div>
       <div class="metric-card"><span>кВт у базі</span><strong>${projects.reduce((sum, project) => sum + Number(totalPower(project)), 0).toFixed(1)}</strong></div>
       <div class="metric-card"><span>Сума об'єктів</span><strong>${money(financeTotals.revenue)}</strong></div>
       <div class="metric-card warning"><span>До оплати</span><strong>${money(financeTotals.balanceDue)}</strong></div>
@@ -2936,10 +2989,10 @@ function renderMapView() {
         <span class="map-road two"></span>
       </div>
       <div class="legend-list">
-        <span><i class="dot success"></i>Завершено</span>
-        <span><i class="dot warning"></i>В роботі / заплановано</span>
+        <span><i class="dot success"></i>Паспорт / сервіс</span>
+        <span><i class="dot warning"></i>Підготовка</span>
+        <span><i class="dot work"></i>Монтаж</span>
         <span><i class="dot blue"></i>Перевірка</span>
-        <span><i class="dot muted"></i>Новий</span>
       </div>
     </section>
   `;
@@ -3687,9 +3740,9 @@ function renderCompanyMemberProfile(member) {
 function renderStats() {
   const stats = [
     ["Усі об'єкти", projects.length],
-    ["В роботі", projects.filter((project) => project.status === "in_progress").length],
-    ["Заплановано", projects.filter((project) => project.status === "planned").length],
-    ["Завершено", projects.filter((project) => project.status === "completed").length],
+    ["Підготовка", projects.filter((project) => ["new", "planned", "proposal", "contract"].includes(project.status)).length],
+    ["Монтаж", projects.filter((project) => ["in_progress", "waiting_review"].includes(project.status)).length],
+    ["Завершено", projects.filter((project) => isClosedProjectStatus(project.status)).length],
     ["Паспорти", projects.filter((project) => project.status === "passport_issued").length],
   ];
 
@@ -3896,6 +3949,16 @@ document.addEventListener("click", (event) => {
     if (selectedTab) {
       document.querySelector(`#project-section-${selectedTab}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+  }
+
+  const projectStatusButton = event.target.closest("[data-project-status]");
+  if (projectStatusButton) {
+    const project = selectedProject();
+    if (!project) return;
+    project.status = projectStatusButton.dataset.projectStatus;
+    saveProjects();
+    render();
+    showSection("objectDetail");
   }
 
   if (event.target.closest("#editTechnicalButton")) {
@@ -4338,7 +4401,7 @@ function addWarehouseMovement(formElement) {
   let targetProject = null;
   if (type === "project") {
     targetProject = projects.find((itemProject) => normalizeProjectId(itemProject.id) === normalizeProjectId(projectId));
-    if (!targetProject || ["completed", "passport_issued"].includes(targetProject.status)) {
+    if (!targetProject || isClosedProjectStatus(targetProject.status)) {
       alert("Для переміщення вибери активний об'єкт. Завершені об'єкти у списку не показуються.");
       return;
     }

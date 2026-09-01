@@ -824,6 +824,66 @@ button.metric-card:hover,
   border-color: var(--yellow);
 }
 
+.project-funnel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.funnel-step {
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  align-items: center;
+  gap: 8px;
+  background: #101a20;
+  color: var(--muted);
+  text-align: left;
+}
+
+.funnel-step span {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: #1b252b;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.funnel-step strong {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.funnel-step.done {
+  border-color: rgba(55, 201, 107, 0.28);
+  color: #b7f4c7;
+}
+
+.funnel-step.done span {
+  background: rgba(55, 201, 107, 0.16);
+  color: #8bf0a7;
+}
+
+.funnel-step.current {
+  border-color: rgba(255, 210, 26, 0.64);
+  background: rgba(255, 210, 26, 0.12);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px rgba(255, 210, 26, 0.16);
+}
+
+.funnel-step.current span {
+  background: var(--yellow);
+  color: #0b0c0d;
+}
+
 .section-stack {
   display: grid;
   gap: 14px;
@@ -1382,6 +1442,10 @@ th {
 
 .dot.warning {
   background: var(--yellow);
+}
+
+.dot.work {
+  background: #ff8f3d;
 }
 
 .dot.blue {
