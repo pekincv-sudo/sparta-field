@@ -987,6 +987,21 @@ button.metric-card:hover,
   cursor: pointer;
 }
 
+.serial-photo-preview {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.serial-photo-preview img {
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  object-fit: cover;
+}
+
 .stats-grid {
   grid-template-columns: repeat(5, minmax(120px, 1fr));
   margin-bottom: 18px;

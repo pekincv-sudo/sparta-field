@@ -2057,8 +2057,8 @@ function renderProjectStageContent(status, project, isValid, stringsTotal, expec
     planned: [["Виїзд на замір", "measurement"]],
     proposal: [["Комерційна пропозиція", "files"], ["Розрахунок вартості", "finance"]],
     contract: [["Договір і оплата", "finance"], ["Файли договору", "files"]],
-    in_progress: [["Технічні дані", "technical"], ["Серійні номери обладнання", "serials"], ["Матеріали для монтажу", "materials"], ["MPPT / стрінги", "strings"]],
-    waiting_review: [["Фотофіксація", "photos"], ["Серійні номери обладнання", "serials"]],
+    in_progress: [["Технічні дані", "technical"], ["Матеріали для монтажу", "materials"], ["MPPT / стрінги", "strings"]],
+    waiting_review: [["Фотофіксація", "photos"]],
     passport_issued: [["Паспорт об'єкта", "passport"]],
     service: [["Сервісні файли", "files"], ["Історія фото", "photos"]],
   };
@@ -2126,14 +2126,41 @@ function renderSerialCheckStage(project) {
       <button class="primary-button" id="editTechnicalButton">Редагувати серійні номери</button>
     </div>
     <div class="data-grid">
-      ${renderSerialDataItem("inverter", "Серійний номер інвертора", technical.inverterSerialNumber)}
-      ${renderSerialDataItem("battery", "Серійні номери АКБ", technical.batterySerialNumbers)}
-      ${renderSerialDataItem("panel", "Серійні номери фотомодулів", technical.panelSerialNumbers)}
+      ${renderSerialDataItem(project, "inverter", "Серійний номер інвертора", technical.inverterSerialNumber)}
+      ${renderSerialDataItem(project, "battery", "Серійні номери АКБ", technical.batterySerialNumbers)}
+      ${renderSerialDataItem(project, "panel", "Серійні номери фотомодулів", technical.panelSerialNumbers)}
     </div>
   `;
 }
 
-function renderSerialDataItem(type, label, value) {
+function serialPhotoCategoryLabel(type) {
+  const labels = {
+    inverter: "Серійний номер інвертора",
+    battery: "Серійний номер АКБ",
+    panel: "Серійний номер фотомодуля",
+  };
+  return labels[type] || "Серійний номер обладнання";
+}
+
+function serialPhotosForProject(project, type) {
+  const category = serialPhotoCategoryLabel(type);
+  return (project.photos || [])
+    .filter((photo) => typeof photo !== "string" && photo.category === category)
+    .slice(-3)
+    .reverse();
+}
+
+function renderSerialPhotoPreview(project, type) {
+  const photos = serialPhotosForProject(project, type);
+  if (!photos.length) return "";
+  return `
+    <div class="serial-photo-preview">
+      ${photos.map((photo) => `<img src="${photo.src}" alt="${escapeAttribute(photo.caption || photo.category || "Фото серійника")}" />`).join("")}
+    </div>
+  `;
+}
+
+function renderSerialDataItem(project, type, label, value) {
   return `
     <div class="data-item serial-data-item">
       <span>${label}</span>
@@ -2142,6 +2169,7 @@ function renderSerialDataItem(type, label, value) {
         📷
         <input type="file" accept="image/*" capture="environment" data-serial-photo="${type}" />
       </label>
+      ${renderSerialPhotoPreview(project, type)}
     </div>
   `;
 }
@@ -2159,17 +2187,17 @@ function renderTab(project, isValid, stringsTotal, expected) {
       <div class="data-grid">
         <div class="data-item"><span>Панелі</span><strong>${formatCombined(project.technical.panelManufacturer, project.technical.panelModel)}</strong></div>
         <div class="data-item"><span>Кількість</span><strong>${project.technical.panelCount} шт × ${project.technical.panelPowerW} Вт</strong></div>
-        ${renderSerialDataItem("panel", "Серійні номери фотомодулів", project.technical.panelSerialNumbers)}
+        ${renderSerialDataItem(project, "panel", "Серійні номери фотомодулів", project.technical.panelSerialNumbers)}
         <div class="data-item"><span>Загальна потужність</span><strong>${totalPower(project)} кВт</strong></div>
         <div class="data-item"><span>Інвертор</span><strong>${formatCombined(project.technical.inverterManufacturer, project.technical.inverterModel)}</strong></div>
         <div class="data-item"><span>Потужність інвертора</span><strong>${project.technical.inverterPowerKw || 0} кВт</strong></div>
-        ${renderSerialDataItem("inverter", "Серійний номер інвертора", project.technical.inverterSerialNumber)}
+        ${renderSerialDataItem(project, "inverter", "Серійний номер інвертора", project.technical.inverterSerialNumber)}
         <div class="data-item"><span>MPPT</span><strong>${project.technical.mpptCount}</strong></div>
         <div class="data-item"><span>PV входів на один MPPT</span><strong>${project.technical.pvInputsPerMppt || 0}</strong></div>
         <div class="data-item"><span>Акумулятор</span><strong>${formatCombined(project.technical.batteryManufacturer, project.technical.batteryModel)}</strong></div>
         <div class="data-item"><span>Ємність акумулятора</span><strong>${project.technical.batteryCapacityKwh || 0} кВт·год × ${project.technical.batteryModulesCount || 0} мод.</strong></div>
         <div class="data-item"><span>Загальна ємність АКБ</span><strong>${batteryTotalCapacity(project)} кВт·год</strong></div>
-        ${renderSerialDataItem("battery", "Серійні номери АКБ", project.technical.batterySerialNumbers)}
+        ${renderSerialDataItem(project, "battery", "Серійні номери АКБ", project.technical.batterySerialNumbers)}
       </div>
     `;
   }
@@ -4653,12 +4681,7 @@ function addPhoto(formElement) {
 }
 
 function addSerialPhoto(file, serialType) {
-  const labels = {
-    inverter: "Серійний номер інвертора",
-    battery: "Серійний номер АКБ",
-    panel: "Серійний номер фотомодуля",
-  };
-  const label = labels[serialType] || "Серійний номер обладнання";
+  const label = serialPhotoCategoryLabel(serialType);
   return addProjectPhotoFromFile(file, label, label);
 }
 
