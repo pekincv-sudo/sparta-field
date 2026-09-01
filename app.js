@@ -1943,6 +1943,7 @@ function renderDetail() {
   const stringsTotal = stringPanelCount(project);
   const expected = project.technical.panelCount;
   const isValid = stringsTotal === expected;
+  const sections = projectDetailSections();
 
   projectDetail.innerHTML = `
     <div class="detail-head">
@@ -1968,23 +1969,55 @@ function renderDetail() {
       </div>
     </div>
 
-    <div class="tabs">
-      ${[
-        ["summary", "Інформація"],
-        ["technical", "Техдані"],
-        ["strings", "MPPT"],
-        ["materials", "Матеріали"],
-        ["finance", "Фінанси"],
-        ["photos", "Фото"],
-        ["files", "Файли"],
-        ["passport", "Паспорт об'єкта"],
-      ]
-        .map((tab) => `<button class="tab ${selectedTab === tab[0] ? "active" : ""}" data-tab="${tab[0]}">${tab[1]}</button>`)
-        .join("")}
-    </div>
-
-    <div>${renderTab(project, isValid, stringsTotal, expected)}</div>
+    ${renderProjectSectionStack(project, isValid, stringsTotal, expected, sections)}
   `;
+}
+
+function projectDetailSections() {
+  return [
+    ["summary", "Інформація"],
+    ["technical", "Технічні дані"],
+    ["strings", "MPPT"],
+    ["materials", "Матеріали"],
+    ["finance", "Фінанси"],
+    ["photos", "Фото"],
+    ["files", "Файли"],
+    ["passport", "Паспорт об'єкта"],
+  ];
+}
+
+function renderProjectSectionStack(project, isValid, stringsTotal, expected, sections = projectDetailSections()) {
+  const activeIndex = Math.max(0, sections.findIndex(([id]) => id === selectedTab));
+  const previousTab = selectedTab;
+  const visibleSections = sections.slice(activeIndex);
+  const html = `
+    <div class="section-stack">
+      <div class="section-jump-list" aria-label="Навігація по інформації об'єкта">
+        ${sections.map(([id, label]) => `
+          <button class="section-jump ${id === selectedTab ? "active" : ""}" type="button" data-tab="${id}">
+            <span>${label}</span>
+            <small>${id === selectedTab ? "Відкрито" : "Відкрити"}</small>
+          </button>
+        `).join("")}
+      </div>
+      ${visibleSections.map(([id, label], index) => {
+        selectedTab = id;
+        return `
+          <section class="project-section-card ${index === 0 ? "active" : ""}" id="project-section-${id}">
+            <button class="project-section-toggle ${index === 0 ? "active" : ""}" type="button" data-tab="${id}">
+              <span>${label}</span>
+              <small>${index === 0 ? "Відкрито" : "Перейти"}</small>
+            </button>
+            <div class="project-section-body">
+              ${renderTab(project, isValid, stringsTotal, expected)}
+            </div>
+          </section>
+        `;
+      }).join("")}
+    </div>
+  `;
+  selectedTab = previousTab;
+  return html;
 }
 
 function renderTab(project, isValid, stringsTotal, expected) {
@@ -3866,6 +3899,7 @@ document.addEventListener("click", (event) => {
     }
     selectedTab = tab.dataset.tab;
     renderDetail();
+    document.querySelector(`#project-section-${selectedTab}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   if (event.target.closest("#editTechnicalButton")) {

@@ -824,6 +824,101 @@ button.metric-card:hover,
   border-color: var(--yellow);
 }
 
+.section-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.section-jump-list {
+  display: grid;
+  gap: 8px;
+}
+
+.section-jump {
+  width: 100%;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid rgba(255, 210, 26, 0.52);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--panel-2);
+  color: var(--ink);
+  text-align: left;
+}
+
+.section-jump.active {
+  border-color: rgba(255, 210, 26, 0.58);
+  border-left-color: var(--yellow);
+  background: rgba(255, 210, 26, 0.12);
+}
+
+.section-jump span {
+  font-weight: 900;
+}
+
+.section-jump small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.section-jump.active small {
+  color: var(--yellow);
+}
+
+.project-section-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(12, 18, 22, 0.72);
+  overflow: hidden;
+}
+
+.project-section-card.active {
+  border-color: rgba(255, 210, 26, 0.5);
+  box-shadow: 0 0 0 1px rgba(255, 210, 26, 0.16);
+}
+
+.project-section-toggle {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 13px 15px;
+  background: #101a20;
+  color: var(--ink);
+  text-align: left;
+}
+
+.project-section-toggle.active {
+  background: rgba(255, 210, 26, 0.12);
+}
+
+.project-section-toggle span {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.project-section-toggle small {
+  color: var(--yellow);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.project-section-body {
+  padding: 15px;
+}
+
 .data-grid,
 .stats-grid,
 .feature-grid,
