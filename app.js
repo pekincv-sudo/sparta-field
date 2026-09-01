@@ -1987,30 +1987,23 @@ function projectDetailSections() {
 }
 
 function renderProjectSectionStack(project, isValid, stringsTotal, expected, sections = projectDetailSections()) {
-  const activeIndex = Math.max(0, sections.findIndex(([id]) => id === selectedTab));
   const previousTab = selectedTab;
-  const visibleSections = sections.slice(activeIndex);
   const html = `
     <div class="section-stack">
-      <div class="section-jump-list" aria-label="Навігація по інформації об'єкта">
-        ${sections.map(([id, label]) => `
-          <button class="section-jump ${id === selectedTab ? "active" : ""}" type="button" data-tab="${id}">
-            <span>${label}</span>
-            <small>${id === selectedTab ? "Відкрито" : "Відкрити"}</small>
-          </button>
-        `).join("")}
-      </div>
-      ${visibleSections.map(([id, label], index) => {
+      ${sections.map(([id, label]) => {
+        const isOpen = id === previousTab;
         selectedTab = id;
         return `
-          <section class="project-section-card ${index === 0 ? "active" : ""}" id="project-section-${id}">
-            <button class="project-section-toggle ${index === 0 ? "active" : ""}" type="button" data-tab="${id}">
+          <section class="project-section-card ${isOpen ? "active" : ""}" id="project-section-${id}">
+            <button class="project-section-toggle ${isOpen ? "active" : ""}" type="button" data-tab="${id}">
               <span>${label}</span>
-              <small>${index === 0 ? "Відкрито" : "Перейти"}</small>
+              <small>${isOpen ? "Згорнути" : "Відкрити"}</small>
             </button>
-            <div class="project-section-body">
-              ${renderTab(project, isValid, stringsTotal, expected)}
-            </div>
+            ${isOpen ? `
+              <div class="project-section-body">
+                ${renderTab(project, isValid, stringsTotal, expected)}
+              </div>
+            ` : ""}
           </section>
         `;
       }).join("")}
@@ -3753,7 +3746,7 @@ document.addEventListener("click", (event) => {
   const projectCard = event.target.closest("[data-project-id]");
   if (projectCard) {
     selectedProjectId = normalizeProjectId(projectCard.dataset.projectId);
-    selectedTab = "summary";
+    selectedTab = "";
     render();
     showSection("objectDetail");
   }
@@ -3891,15 +3884,18 @@ document.addEventListener("click", (event) => {
 
   const tab = event.target.closest("[data-tab]");
   if (tab) {
-    if (selectedTab === "strings" && tab.dataset.tab !== "strings") {
+    const nextTab = selectedTab === tab.dataset.tab ? "" : tab.dataset.tab;
+    if (selectedTab === "strings" && nextTab !== "strings") {
       stringsEditing = false;
     }
-    if (selectedTab === "materials" && tab.dataset.tab !== "materials") {
+    if (selectedTab === "materials" && nextTab !== "materials") {
       materialsEditing = false;
     }
-    selectedTab = tab.dataset.tab;
+    selectedTab = nextTab;
     renderDetail();
-    document.querySelector(`#project-section-${selectedTab}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (selectedTab) {
+      document.querySelector(`#project-section-${selectedTab}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   if (event.target.closest("#editTechnicalButton")) {

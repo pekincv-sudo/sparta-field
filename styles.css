@@ -829,48 +829,6 @@ button.metric-card:hover,
   gap: 14px;
 }
 
-.section-jump-list {
-  display: grid;
-  gap: 8px;
-}
-
-.section-jump {
-  width: 100%;
-  min-height: 50px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid var(--line);
-  border-left: 3px solid rgba(255, 210, 26, 0.52);
-  border-radius: 8px;
-  padding: 12px 14px;
-  background: var(--panel-2);
-  color: var(--ink);
-  text-align: left;
-}
-
-.section-jump.active {
-  border-color: rgba(255, 210, 26, 0.58);
-  border-left-color: var(--yellow);
-  background: rgba(255, 210, 26, 0.12);
-}
-
-.section-jump span {
-  font-weight: 900;
-}
-
-.section-jump small {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.section-jump.active small {
-  color: var(--yellow);
-}
-
 .project-section-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -897,6 +855,10 @@ button.metric-card:hover,
   background: #101a20;
   color: var(--ink);
   text-align: left;
+}
+
+.project-section-card:not(.active) .project-section-toggle {
+  border-bottom: 0;
 }
 
 .project-section-toggle.active {
