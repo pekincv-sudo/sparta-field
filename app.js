@@ -477,7 +477,7 @@ const hasCloudConfig = Boolean(
     !window.SPARTA_SUPABASE_CONFIG.url.includes("YOUR_PROJECT_URL") &&
     !window.SPARTA_SUPABASE_CONFIG.anonKey.includes("YOUR_SUPABASE_ANON_KEY")
 );
-const savedProjects = readJsonStorage("solarObjectManager.projects", null);
+const savedProjects = hasCloudConfig ? null : readJsonStorage("solarObjectManager.projects", null);
 let projects = savedProjects || (hasCloudConfig ? [] : defaultProjects);
 let crmTasks = readJsonStorage("solarObjectManager.crmTasks", []);
 crmTasks = seedDemoCrmTasks(crmTasks);
@@ -968,24 +968,6 @@ function warehouseItemToDb(item) {
   };
 }
 
-async function verifySupabaseEndpoint(url) {
-  await new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    request.open("GET", `${url.replace(/\/$/, "")}/auth/v1/health`);
-    request.timeout = 5000;
-    request.addEventListener("load", () => {
-      if (request.status >= 200 && request.status < 500) {
-        resolve();
-        return;
-      }
-      reject(new Error("адреса Supabase не відповідає або проєкт недоступний"));
-    });
-    request.addEventListener("error", () => reject(new Error("адреса Supabase не відповідає або проєкт недоступний")));
-    request.addEventListener("timeout", () => reject(new Error("час очікування Supabase вичерпано")));
-    request.send();
-  });
-}
-
 async function initCloud() {
   const config = supabaseConfig();
   if (!config || !window.supabase?.createClient) {
@@ -993,7 +975,6 @@ async function initCloud() {
     return;
   }
 
-  await verifySupabaseEndpoint(config.url);
   cloudState.enabled = true;
   cloudState.companyId = config.companyId || null;
   cloudState.client = window.supabase.createClient(config.url, config.anonKey);
@@ -1847,12 +1828,6 @@ function statusTone(status) {
   return "muted";
 }
 
-function projectStatusOptions(selectedStatus = "new") {
-  return Object.entries(statusLabels)
-    .map(([value, label]) => `<option value="${value}" ${selectedAttr(selectedStatus, value)}>${label}</option>`)
-    .join("");
-}
-
 function projectSubtitle(project) {
   return project.objectType || "Об'єкт СЕС";
 }
@@ -1901,65 +1876,6 @@ function objectTechnicalSpecs(project, wrap = true) {
   return wrap ? `<div class="object-specs">${specs.join("")}</div>` : specs.join("");
 }
 
-function projectNextStep(project) {
-  const normalizedProject = ensureProjectCollections(project);
-  if (!normalizedProject) {
-    return { title: "Об'єкт не вибрано", detail: "Відкрий список об'єктів.", tab: "summary", tone: "muted" };
-  }
-
-  const missingTechnical = !Number(normalizedProject.technical?.panelCount || 0) || !normalizedProject.technical?.inverterModel;
-  if (missingTechnical) {
-    return { title: "Заповнити техдані", detail: "Панелі, інвертор і потужність потрібні для розрахунків.", tab: "technical", tone: "warning" };
-  }
-
-  const stringsTotal = stringPanelCount(normalizedProject);
-  const expectedPanels = Number(normalizedProject.technical?.panelCount || 0);
-  if (expectedPanels && stringsTotal !== expectedPanels) {
-    return { title: "Перевірити MPPT", detail: `У стрінгах ${stringsTotal} із ${expectedPanels} панелей.`, tab: "strings", tone: "danger" };
-  }
-
-  if (!normalizedProject.materials?.length) {
-    return { title: "Додати матеріали", detail: "Потрібен список обладнання для складу і фінансів.", tab: "materials", tone: "warning" };
-  }
-
-  const checklist = installerChecklistStats(normalizedProject);
-  if (normalizedProject.status === "in_progress" && checklist.percent < 100) {
-    return { title: "Закрити чеклист", detail: `${checklist.done}/${checklist.total} робіт виконано.`, tab: "summary", tone: "work" };
-  }
-
-  if (normalizedProject.status === "waiting_review") {
-    return { title: "Підготувати паспорт", detail: "Перевір фото, файли і дані перед видачею.", tab: "passport", tone: "blue" };
-  }
-
-  const finance = projectFinanceTotals(normalizedProject);
-  if (finance.balanceDue > 0) {
-    return { title: "Контроль оплати", detail: `До оплати: ${money(finance.balanceDue)}.`, tab: "finance", tone: "warning" };
-  }
-
-  if (normalizedProject.status === "completed") {
-    return { title: "Видати паспорт", detail: "Об'єкт завершено, залишився фінальний документ.", tab: "passport", tone: "success" };
-  }
-
-  if (normalizedProject.status === "passport_issued") {
-    return { title: "Сервісний супровід", detail: "Об'єкт закрито, тримай історію під рукою.", tab: "summary", tone: "success" };
-  }
-
-  return { title: "Почати монтаж", detail: "Заплануй дату, бригаду і задачі.", tab: "summary", tone: "muted" };
-}
-
-function operationalProjects() {
-  const toneWeight = { danger: 0, warning: 1, work: 2, blue: 3, muted: 4, success: 5 };
-  return projects
-    .filter((project) => project.status !== "passport_issued")
-    .map((project) => ({ project, nextStep: projectNextStep(project) }))
-    .sort((a, b) => {
-      const toneDiff = (toneWeight[a.nextStep.tone] ?? 4) - (toneWeight[b.nextStep.tone] ?? 4);
-      if (toneDiff) return toneDiff;
-      return statusProgress(a.project) - statusProgress(b.project);
-    })
-    .slice(0, 5);
-}
-
 function serviceTickets() {
   return [
     { title: "Перевірка інвертора", object: selectedProject()?.title || "Об'єкт СЕС", status: "В роботі", tone: "warning" },
@@ -1984,10 +1900,9 @@ function renderProjectList() {
   const items = filteredProjects();
   projectList.innerHTML = items.length
     ? items
-    .map((project) => {
-      const nextStep = projectNextStep(project);
-      return `
-        <button class="object-card status-${project.status} ${String(project.id) === String(selectedProjectId) ? "active" : ""}" data-project-id="${project.id}" data-open-tab="${nextStep.tab}">
+    .map(
+      (project) => `
+        <button class="object-card status-${project.status} ${String(project.id) === String(selectedProjectId) ? "active" : ""}" data-project-id="${project.id}">
           <span class="object-thumb" aria-hidden="true"></span>
           <div class="object-content">
             <div class="object-line">
@@ -2000,16 +1915,12 @@ function renderProjectList() {
               <span class="chip ${statusClass(project.status)}">${statusLabels[project.status]}</span>
               <span class="chip">${totalPower(project)} кВт</span>
             </div>
-            <div class="next-step ${nextStep.tone}">
-              <b>${nextStep.title}</b>
-              <span>${nextStep.detail}</span>
-            </div>
             <div class="progress-line"><span style="width: ${statusProgress(project)}%"></span></div>
             <small>${statusProgress(project)}%</small>
           </div>
         </button>
-      `;
-    })
+      `,
+    )
     .join("")
     : `<div class="wide-panel"><h2>Об'єктів не знайдено</h2><p>Створи новий об'єкт або зміни фільтр.</p></div>`;
 }
@@ -2047,7 +1958,9 @@ function renderDetail() {
         <div class="status-row">
           <label class="status-control">Статус
             <select id="projectStatusSelect">
-              ${projectStatusOptions(project.status)}
+              <option value="planned" ${selectedAttr(project.status, "planned")}>Заплановано</option>
+              <option value="in_progress" ${selectedAttr(project.status, "in_progress")}>В роботі</option>
+              <option value="completed" ${selectedAttr(project.status, "completed")}>Завершено</option>
             </select>
           </label>
           <span class="chip">${project.installationDate || "Без дати"}</span>
@@ -2057,14 +1970,14 @@ function renderDetail() {
 
     <div class="tabs">
       ${[
-        ["summary", "Керування"],
-        ["technical", "Енергія"],
-        ["strings", "Проєктування"],
-        ["materials", "Монтаж"],
-        ["finance", "КП / фінанси"],
+        ["summary", "Інформація"],
+        ["technical", "Техдані"],
+        ["strings", "MPPT"],
+        ["materials", "Матеріали"],
+        ["finance", "Фінанси"],
         ["photos", "Фото"],
-        ["files", "Документи"],
-        ["passport", "Паспорт"],
+        ["files", "Файли"],
+        ["passport", "Паспорт об'єкта"],
       ]
         .map((tab) => `<button class="tab ${selectedTab === tab[0] ? "active" : ""}" data-tab="${tab[0]}">${tab[1]}</button>`)
         .join("")}
@@ -2903,9 +2816,6 @@ function renderHome() {
   const inWork = projects.filter((project) => project.status === "in_progress").length;
   const planned = projects.filter((project) => project.status === "planned").length;
   const completed = projects.filter((project) => project.status === "completed" || project.status === "passport_issued").length;
-  const overdueTasks = sortedCrmTasks(crmFilteredTasks("overdue"));
-  const todayTasks = sortedCrmTasks(crmFilteredTasks("today"));
-  const activeQueue = operationalProjects();
   const financeTotals = projects.reduce((result, project) => {
     const totals = projectFinanceTotals(project);
     result.revenue += totals.revenue;
@@ -2922,9 +2832,9 @@ function renderHome() {
       <div class="hero-brand">
         <img class="brand-logo big" src="./assets/sparta-logo.jpeg" alt="SPARTA power" />
         <div>
-          <p class="eyebrow">Логіка OpenSolar</p>
-          <h2>SPARTA field</h2>
-          <span>Проєкт, техдані, дизайн, монтаж, пропозиція і паспорт в одному робочому циклі.</span>
+          <p class="eyebrow">Панель керування</p>
+          <h2>Об'єкти SPARTA power</h2>
+          <span>Загальний огляд монтажів, матеріалів і паспортів СЕС.</span>
         </div>
       </div>
       <div class="hero-progress">
@@ -2945,47 +2855,10 @@ function renderHome() {
       <div class="metric-card success"><span>Заробіток</span><strong>${money(financeTotals.profit)}</strong></div>
     </div>
 
-    <section class="quick-panel ops-panel">
-      <div class="panel-heading">
-        <div>
-          <p class="eyebrow">Робочий пріоритет</p>
-          <h2>Що робити далі</h2>
-        </div>
-        <div class="status-row">
-          <button class="secondary-button compact-button quick-action-inline" data-section="crm" data-crm-shortcut="today">Сьогодні: ${todayTasks.length}</button>
-          <button class="secondary-button compact-button quick-action-inline" data-section="crm" data-crm-shortcut="overdue">Прострочено: ${overdueTasks.length}</button>
-        </div>
-      </div>
-      <div class="workflow-rail" aria-label="Етапи роботи">
-        <span>Керування</span>
-        <span>Енергія</span>
-        <span>Проєктування</span>
-        <span>КП</span>
-        <span>Монтаж</span>
-        <span>Документи</span>
-      </div>
-      <div class="ops-list">
-        ${activeQueue.length
-          ? activeQueue.map(({ project, nextStep }) => `
-            <button class="ops-card ${nextStep.tone}" data-project-id="${project.id}" data-open-tab="${nextStep.tab}">
-              <div>
-                <strong>${project.title}</strong>
-                <span>${project.address || project.clientName || "Без адреси"}</span>
-              </div>
-              <div>
-                <em>${nextStep.title}</em>
-                <span>${nextStep.detail}</span>
-              </div>
-            </button>
-          `).join("")
-          : `<div class="empty-state"><strong>Черга порожня</strong><span>Активні об'єкти закриті або ще не створені.</span></div>`}
-      </div>
-    </section>
-
     <section class="quick-panel">
       <div class="panel-heading">
         <div>
-          <p class="eyebrow">Об'єкти</p>
+          <p class="eyebrow">Робочий список</p>
           <h2>Актуальні об'єкти</h2>
         </div>
         <button class="secondary-button compact-button quick-action" data-section="projects">Усі об'єкти</button>
@@ -3014,7 +2887,7 @@ function renderHome() {
         <button class="quick-action" data-section="projects"><span>▤</span>Об'єкти</button>
         <button class="quick-action" data-section="warehouse"><span>▦</span>Склад</button>
         <button class="quick-action" id="newProjectQuickButton"><span>＋</span>Новий об'єкт</button>
-        <button class="quick-action" data-section="crm" data-crm-shortcut="today"><span>☑</span>Задачі</button>
+        <button class="quick-action" data-section="projects"><span>▣</span>Матеріали</button>
       </div>
     </section>
   `;
@@ -3820,20 +3693,7 @@ document.addEventListener("click", (event) => {
 
   const quickAction = event.target.closest(".quick-action");
   if (quickAction?.dataset.section) {
-    if (quickAction.dataset.crmShortcut) {
-      crmFilter = quickAction.dataset.crmShortcut;
-      renderCrmView();
-    }
     showSection(quickAction.dataset.section);
-  }
-
-  const quickInlineAction = event.target.closest(".quick-action-inline");
-  if (quickInlineAction?.dataset.section) {
-    if (quickInlineAction.dataset.crmShortcut) {
-      crmFilter = quickInlineAction.dataset.crmShortcut;
-      renderCrmView();
-    }
-    showSection(quickInlineAction.dataset.section);
   }
 
   if (event.target.closest("#crmNotificationButton")) {
@@ -3860,7 +3720,7 @@ document.addEventListener("click", (event) => {
   const projectCard = event.target.closest("[data-project-id]");
   if (projectCard) {
     selectedProjectId = normalizeProjectId(projectCard.dataset.projectId);
-    selectedTab = projectCard.dataset.openTab || "summary";
+    selectedTab = "summary";
     render();
     showSection("objectDetail");
   }
@@ -4921,7 +4781,7 @@ async function removeCompanyMember(userId) {
 
 async function authenticateUser(email, password, mode, messageTarget) {
   if (!cloudState.client) {
-    messageTarget.textContent = cloudState.message || "Supabase не налаштовано.";
+    messageTarget.textContent = "Supabase не налаштовано.";
     return false;
   }
 
@@ -4945,16 +4805,7 @@ async function authenticateUser(email, password, mode, messageTarget) {
         password: passwordValue,
       });
 
-  let authData;
-  let error;
-  try {
-    const result = await authRequest;
-    authData = result.data;
-    error = result.error;
-  } catch (requestError) {
-    messageTarget.textContent = "Не вдалося підключитися до Supabase. Перевір адресу проєкту або інтернет.";
-    return false;
-  }
+  const { data: authData, error } = await authRequest;
 
   if (error) {
     messageTarget.textContent = error.message;
@@ -5257,15 +5108,7 @@ async function initApp() {
   try {
     await initCloud();
   } catch (error) {
-    cloudState.client = null;
-    cloudState.user = null;
-    cloudState.enabled = false;
-    cloudState.ready = false;
-    if (!projects.length) {
-      projects = JSON.parse(JSON.stringify(defaultProjects)).map((project) => ensureProjectCollections(project));
-      selectedProjectId = normalizeProjectId(projects[0]?.id || "");
-    }
-    cloudState.message = `Supabase недоступний: ${error.message}. Додаток відкрито в локальному режимі.`;
+    cloudState.message = `Supabase помилка: ${error.message}`;
   }
   if (window.spartaStorageWarning) {
     cloudState.message = window.spartaStorageWarning;
