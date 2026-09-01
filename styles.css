@@ -542,12 +542,105 @@ button.metric-card:hover,
   font-size: 22px;
 }
 
+.quick-action-inline {
+  min-height: 34px;
+}
+
 .panel-heading {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: center;
   margin-bottom: 12px;
+}
+
+.ops-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.workflow-rail {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.workflow-rail span {
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 210, 26, 0.08);
+  color: #f2d965;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.ops-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ops-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-left: 4px solid rgba(255, 210, 26, 0.82);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--panel-2);
+  color: var(--ink);
+  text-align: left;
+}
+
+.ops-card.danger {
+  border-left-color: var(--red);
+}
+
+.ops-card.warning {
+  border-left-color: var(--yellow);
+}
+
+.ops-card.work {
+  border-left-color: #f59e0b;
+}
+
+.ops-card.blue {
+  border-left-color: var(--blue);
+}
+
+.ops-card.success {
+  border-left-color: var(--green);
+}
+
+.ops-card strong,
+.ops-card span,
+.ops-card em {
+  display: block;
+}
+
+.ops-card strong {
+  overflow-wrap: anywhere;
+}
+
+.ops-card span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.ops-card em {
+  margin-bottom: 3px;
+  color: var(--yellow);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
 }
 
 .home-object-list {
@@ -717,6 +810,49 @@ button.metric-card:hover,
   color: #cbd4d8;
   font-size: 12px;
   font-weight: 850;
+}
+
+.next-step {
+  display: grid;
+  gap: 3px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid rgba(255, 210, 26, 0.82);
+  border-radius: 8px;
+  background: rgba(17, 25, 30, 0.72);
+}
+
+.next-step.danger {
+  border-left-color: var(--red);
+}
+
+.next-step.warning {
+  border-left-color: var(--yellow);
+}
+
+.next-step.work {
+  border-left-color: #f59e0b;
+}
+
+.next-step.blue {
+  border-left-color: var(--blue);
+}
+
+.next-step.success {
+  border-left-color: var(--green);
+}
+
+.next-step b {
+  color: #f6df73;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.next-step span {
+  color: #c8d1d6;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .chip.green {
@@ -2115,6 +2251,7 @@ dialog::backdrop {
 
   .metric-grid,
   .quick-grid,
+  .workflow-rail,
   .object-specs,
   .crm-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2149,6 +2286,10 @@ dialog::backdrop {
   }
 
   .project-file-card {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-card {
     grid-template-columns: 1fr;
   }
 
