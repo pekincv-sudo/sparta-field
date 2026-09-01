@@ -364,6 +364,7 @@ const defaultProjects = [
     technical: {
       panelManufacturer: "Longi",
       panelModel: "LR5-72HTH-580M",
+      panelSerialNumbers: "",
       panelPowerW: 580,
       panelCount: 24,
       inverterManufacturer: "Deye",
@@ -440,6 +441,7 @@ const defaultProjects = [
     technical: {
       panelManufacturer: "Jinko",
       panelModel: "Tiger Neo 575W",
+      panelSerialNumbers: "",
       panelPowerW: 575,
       panelCount: 52,
       inverterManufacturer: "Huawei",
@@ -527,6 +529,7 @@ const cloudState = {
   memberRole: null,
   supportsProjectChecklist: true,
   supportsProjectFinance: true,
+  supportsPanelSerialNumbers: true,
   supportsWarehouse: true,
   enabled: false,
   ready: false,
@@ -789,9 +792,9 @@ function projectToDb(project, includeChecklist = true) {
   return row;
 }
 
-function technicalToDb(project) {
+function technicalToDb(project, includePanelSerialNumbers = true) {
   const technical = project.technical || {};
-  return {
+  const row = {
     panel_manufacturer: technical.panelManufacturer || "",
     panel_model: technical.panelModel || "",
     panel_power_w: Number(technical.panelPowerW || 0),
@@ -808,6 +811,8 @@ function technicalToDb(project) {
     battery_modules_count: Number(technical.batteryModulesCount || 0),
     battery_serial_numbers: technical.batterySerialNumbers || "",
   };
+  if (includePanelSerialNumbers) row.panel_serial_numbers = technical.panelSerialNumbers || "";
+  return row;
 }
 
 function publicPhotoUrl(storagePath) {
@@ -843,6 +848,7 @@ function dbProjectToApp(row) {
     technical: {
       panelManufacturer: row.project_technical?.panel_manufacturer || "",
       panelModel: row.project_technical?.panel_model || "",
+      panelSerialNumbers: row.project_technical?.panel_serial_numbers || "",
       panelPowerW: Number(row.project_technical?.panel_power_w || 0),
       panelCount: Number(row.project_technical?.panel_count || 0),
       inverterManufacturer: row.project_technical?.inverter_manufacturer || "",
@@ -1301,9 +1307,17 @@ async function syncProjectsToCloud() {
     if (projectError) throw projectError;
 
     const projectId = savedProject.id;
-    const { error: technicalError } = await cloudState.client
+    let { error: technicalError } = await cloudState.client
       .from("project_technical")
-      .upsert({ project_id: projectId, ...technicalToDb(project) }, { onConflict: "project_id" });
+      .upsert({ project_id: projectId, ...technicalToDb(project, cloudState.supportsPanelSerialNumbers) }, { onConflict: "project_id" });
+    if (technicalError && /panel_serial_numbers|schema cache/i.test(technicalError.message || "")) {
+      cloudState.supportsPanelSerialNumbers = false;
+      ({ error: technicalError } = await cloudState.client
+        .from("project_technical")
+        .upsert({ project_id: projectId, ...technicalToDb(project, false) }, { onConflict: "project_id" }));
+      cloudState.message = "Об'єкт синхронізовано без серійних номерів фотомодулів. Додай SQL-колонку panel_serial_numbers у Supabase.";
+      renderProfileView();
+    }
     if (technicalError) throw technicalError;
 
     await cloudState.client.from("project_strings").delete().eq("project_id", projectId);
@@ -1593,6 +1607,8 @@ function escapeAttribute(value) {
 
 function ensureProjectCollections(project) {
   if (!project) return project;
+  project.technical ||= {};
+  project.technical.panelSerialNumbers ||= "";
   project.strings ||= [];
   project.materials ||= [];
   project.photos ||= [];
@@ -2038,11 +2054,11 @@ function renderProjectSectionStack(project, isValid, stringsTotal, expected) {
 function renderProjectStageContent(status, project, isValid, stringsTotal, expected) {
   const stageTabs = {
     new: [["Інформація про клієнта та об'єкт", "summary"]],
-    planned: [["Замір і технічні дані", "technical"]],
+    planned: [["Виїзд на замір", "measurement"]],
     proposal: [["Комерційна пропозиція", "files"], ["Розрахунок вартості", "finance"]],
     contract: [["Договір і оплата", "finance"], ["Файли договору", "files"]],
-    in_progress: [["Матеріали для монтажу", "materials"], ["MPPT / стрінги", "strings"]],
-    waiting_review: [["Фотофіксація", "photos"], ["Контроль MPPT", "strings"]],
+    in_progress: [["Технічні дані", "technical"], ["Матеріали для монтажу", "materials"], ["MPPT / стрінги", "strings"]],
+    waiting_review: [["Фотофіксація", "photos"], ["Серійні номери обладнання", "serials"]],
     passport_issued: [["Паспорт об'єкта", "passport"]],
     service: [["Сервісні файли", "files"], ["Історія фото", "photos"]],
   };
@@ -2057,11 +2073,64 @@ function renderProjectStageContent(status, project, isValid, stringsTotal, expec
 }
 
 function renderTabById(tabId, project, isValid, stringsTotal, expected) {
+  if (tabId === "measurement") {
+    return renderMeasurementStage(project);
+  }
+  if (tabId === "serials") {
+    return renderSerialCheckStage(project);
+  }
+
   const previousTab = selectedTab;
   selectedTab = tabId;
   const html = renderTab(project, isValid, stringsTotal, expected);
   selectedTab = previousTab;
   return html;
+}
+
+function renderMeasurementStage(project) {
+  const projectTasks = crmTasks.filter((task) => normalizeProjectId(task.projectId) === normalizeProjectId(project.id));
+  const measurementTasks = projectTasks.filter((task) => /замір|виїзд/i.test(`${task.title} ${task.note}`));
+  return `
+    <div class="section-actions">
+      <button class="primary-button" type="button" id="createMeasurementTaskButton">Додати в CRM задачу на виїзд</button>
+    </div>
+    <div class="data-grid">
+      <div class="data-item"><span>Клієнт</span><strong>${project.clientName || "Не вказано"}</strong></div>
+      <div class="data-item"><span>Телефон</span><strong>${project.clientPhone || "Не вказано"}</strong></div>
+      <div class="data-item"><span>Адреса виїзду</span><strong>${project.address || "Не вказано"}</strong></div>
+      <div class="data-item"><span>Запланована дата монтажу</span><strong>${project.installationDate || "Не вказано"}</strong></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Задача CRM</th><th>Дата</th><th>Статус</th></tr></thead>
+        <tbody>
+          ${measurementTasks.length
+            ? measurementTasks.map((task) => `
+              <tr>
+                <td>${task.title}</td>
+                <td>${crmDueLabel(task.dueAt)}</td>
+                <td>${crmStatusLabels[task.status] || task.status || "-"}</td>
+              </tr>
+            `).join("")
+            : `<tr><td colspan="3">Задачу на виїзд ще не створено.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSerialCheckStage(project) {
+  const technical = project.technical || {};
+  return `
+    <div class="section-actions">
+      <button class="primary-button" id="editTechnicalButton">Редагувати серійні номери</button>
+    </div>
+    <div class="data-grid">
+      <div class="data-item"><span>Серійний номер інвертора</span><strong>${technical.inverterSerialNumber || "Не вказано"}</strong></div>
+      <div class="data-item"><span>Серійні номери АКБ</span><strong>${technical.batterySerialNumbers || "Не вказано"}</strong></div>
+      <div class="data-item"><span>Серійні номери фотомодулів</span><strong>${technical.panelSerialNumbers || "Не вказано"}</strong></div>
+    </div>
+  `;
 }
 
 function renderTab(project, isValid, stringsTotal, expected) {
@@ -2077,6 +2146,7 @@ function renderTab(project, isValid, stringsTotal, expected) {
       <div class="data-grid">
         <div class="data-item"><span>Панелі</span><strong>${formatCombined(project.technical.panelManufacturer, project.technical.panelModel)}</strong></div>
         <div class="data-item"><span>Кількість</span><strong>${project.technical.panelCount} шт × ${project.technical.panelPowerW} Вт</strong></div>
+        <div class="data-item"><span>Серійні номери фотомодулів</span><strong>${project.technical.panelSerialNumbers || "Не вказано"}</strong></div>
         <div class="data-item"><span>Загальна потужність</span><strong>${totalPower(project)} кВт</strong></div>
         <div class="data-item"><span>Інвертор</span><strong>${formatCombined(project.technical.inverterManufacturer, project.technical.inverterModel)}</strong></div>
         <div class="data-item"><span>Потужність інвертора</span><strong>${project.technical.inverterPowerKw || 0} кВт</strong></div>
@@ -3463,29 +3533,42 @@ function fillCrmAssigneeOptions(selectedUserId = "") {
   }
 }
 
-function openCrmTaskDialog(task = null) {
-  const due = splitCrmDueAt(task?.dueAt || "");
+function openCrmTaskDialog(task = null, defaults = {}) {
+  const source = task || defaults;
+  const due = splitCrmDueAt(source?.dueAt || "");
   crmTaskForm.reset();
   crmTaskForm.dueDate.type = "text";
   crmTaskForm.dueTime.type = "text";
   crmTaskForm.id.value = task?.id || "";
-  crmTaskForm.title.value = task?.title || "";
-  crmTaskForm.type.value = task?.type || "task";
+  crmTaskForm.title.value = source?.title || "";
+  crmTaskForm.type.value = source?.type || "task";
   crmTaskForm.dueDate.defaultValue = "";
   crmTaskForm.dueTime.defaultValue = "";
   crmTaskForm.dueDate.value = due.date;
   crmTaskForm.dueTime.value = due.time;
-  crmTaskForm.priority.value = task?.priority || "normal";
-  crmTaskForm.status.value = task?.status || "planned";
-  crmTaskForm.note.value = task?.note || "";
-  if (!task) {
+  crmTaskForm.priority.value = source?.priority || "normal";
+  crmTaskForm.status.value = source?.status || "planned";
+  crmTaskForm.note.value = source?.note || "";
+  if (!task && !source?.dueAt) {
     crmTaskForm.dueDate.value = "";
     crmTaskForm.dueTime.value = "";
   }
-  fillCrmProjectOptions(task?.projectId || "");
-  fillCrmAssigneeOptions(task?.assignedTo || cloudState.user?.id || "");
+  fillCrmProjectOptions(source?.projectId || "");
+  fillCrmAssigneeOptions(source?.assignedTo || cloudState.user?.id || "");
   crmTaskDialog.querySelector("h2").textContent = task ? "Редагувати задачу" : "Нова задача";
   crmTaskDialog.showModal();
+}
+
+function openMeasurementTaskDialog(project) {
+  if (!project) return;
+  openCrmTaskDialog(null, {
+    projectId: normalizeProjectId(project.id),
+    title: `Виїзд на замір: ${project.title}`,
+    type: "task",
+    priority: "normal",
+    status: "planned",
+    note: `Адреса: ${project.address || "не вказано"}. Клієнт: ${project.clientName || "не вказано"}, ${project.clientPhone || "телефон не вказано"}.`,
+  });
 }
 
 function saveCrmTaskFromForm() {
@@ -3977,6 +4060,10 @@ document.addEventListener("click", (event) => {
 
   if (event.target.closest("#editProjectInfoButton")) {
     openProjectInfoDialog();
+  }
+
+  if (event.target.closest("#createMeasurementTaskButton")) {
+    openMeasurementTaskDialog(selectedProject());
   }
 
   if (event.target.closest("#editStringsButton")) {
@@ -5037,6 +5124,7 @@ form.addEventListener("submit", (event) => {
     technical: {
       panelManufacturer: "",
       panelModel: "Не заповнено",
+      panelSerialNumbers: "",
       panelPowerW: 0,
       panelCount: 0,
       inverterManufacturer: "",
@@ -5187,6 +5275,7 @@ technicalForm.addEventListener("submit", (event) => {
     ...project.technical,
     panelManufacturer: data.get("panelManufacturer").trim(),
     panelModel: data.get("panelModel").trim(),
+    panelSerialNumbers: data.get("panelSerialNumbers").trim(),
     panelPowerW: Number(data.get("panelPowerW") || 0),
     panelCount: Number(data.get("panelCount") || 0),
     inverterManufacturer: data.get("inverterManufacturer").trim(),
