@@ -959,11 +959,6 @@ button.metric-card:hover,
   overflow-wrap: anywhere;
 }
 
-.serial-data-item {
-  position: relative;
-  padding-right: 48px;
-}
-
 .serial-photo-button {
   position: absolute;
   right: 12px;
@@ -1000,6 +995,57 @@ button.metric-card:hover,
   border: 1px solid var(--line);
   border-radius: 8px;
   object-fit: cover;
+}
+
+.equipment-detail-grid {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.equipment-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(12, 18, 22, 0.6);
+}
+
+.equipment-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.equipment-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #101a20;
+}
+
+.serial-row {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 10px 46px 10px 0;
+}
+
+.serial-row span {
+  color: var(--yellow);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.serial-row strong {
+  color: #dfe7ea;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.serial-photo-button.inline {
+  right: 0;
+  top: 8px;
 }
 
 .stats-grid {

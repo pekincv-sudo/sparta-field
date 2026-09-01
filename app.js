@@ -530,6 +530,8 @@ const cloudState = {
   supportsProjectChecklist: true,
   supportsProjectFinance: true,
   supportsPanelSerialNumbers: true,
+  supportsEquipmentDetails: true,
+  supportsPhotoEquipmentLinks: true,
   supportsWarehouse: true,
   enabled: false,
   ready: false,
@@ -792,7 +794,7 @@ function projectToDb(project, includeChecklist = true) {
   return row;
 }
 
-function technicalToDb(project, includePanelSerialNumbers = true) {
+function technicalToDb(project, includePanelSerialNumbers = true, includeEquipmentDetails = true) {
   const technical = project.technical || {};
   const row = {
     panel_manufacturer: technical.panelManufacturer || "",
@@ -812,6 +814,13 @@ function technicalToDb(project, includePanelSerialNumbers = true) {
     battery_serial_numbers: technical.batterySerialNumbers || "",
   };
   if (includePanelSerialNumbers) row.panel_serial_numbers = technical.panelSerialNumbers || "";
+  if (includeEquipmentDetails) {
+    row.equipment_details = {
+      inverters: technical.inverters || [],
+      batteries: technical.batteries || [],
+      panelGroups: technical.panelGroups || [],
+    };
+  }
   return row;
 }
 
@@ -849,6 +858,9 @@ function dbProjectToApp(row) {
       panelManufacturer: row.project_technical?.panel_manufacturer || "",
       panelModel: row.project_technical?.panel_model || "",
       panelSerialNumbers: row.project_technical?.panel_serial_numbers || "",
+      inverters: row.project_technical?.equipment_details?.inverters || [],
+      batteries: row.project_technical?.equipment_details?.batteries || [],
+      panelGroups: row.project_technical?.equipment_details?.panelGroups || [],
       panelPowerW: Number(row.project_technical?.panel_power_w || 0),
       panelCount: Number(row.project_technical?.panel_count || 0),
       inverterManufacturer: row.project_technical?.inverter_manufacturer || "",
@@ -889,6 +901,8 @@ function dbProjectToApp(row) {
       storagePath: item.storage_path || "",
       src: publicPhotoUrl(item.storage_path || ""),
       createdAt: item.created_at || "",
+      equipmentType: item.equipment_type || "",
+      equipmentId: item.equipment_id || "",
     })),
     files: projectFilesFor(row.client_id || row.id),
   };
@@ -1309,13 +1323,20 @@ async function syncProjectsToCloud() {
     const projectId = savedProject.id;
     let { error: technicalError } = await cloudState.client
       .from("project_technical")
-      .upsert({ project_id: projectId, ...technicalToDb(project, cloudState.supportsPanelSerialNumbers) }, { onConflict: "project_id" });
-    if (technicalError && /panel_serial_numbers|schema cache/i.test(technicalError.message || "")) {
-      cloudState.supportsPanelSerialNumbers = false;
+      .upsert({
+        project_id: projectId,
+        ...technicalToDb(project, cloudState.supportsPanelSerialNumbers, cloudState.supportsEquipmentDetails),
+      }, { onConflict: "project_id" });
+    if (technicalError && /panel_serial_numbers|equipment_details|schema cache/i.test(technicalError.message || "")) {
+      if (/panel_serial_numbers|schema cache/i.test(technicalError.message || "")) cloudState.supportsPanelSerialNumbers = false;
+      if (/equipment_details|schema cache/i.test(technicalError.message || "")) cloudState.supportsEquipmentDetails = false;
       ({ error: technicalError } = await cloudState.client
         .from("project_technical")
-        .upsert({ project_id: projectId, ...technicalToDb(project, false) }, { onConflict: "project_id" }));
-      cloudState.message = "Об'єкт синхронізовано без серійних номерів фотомодулів. Додай SQL-колонку panel_serial_numbers у Supabase.";
+        .upsert({
+          project_id: projectId,
+          ...technicalToDb(project, cloudState.supportsPanelSerialNumbers, cloudState.supportsEquipmentDetails),
+        }, { onConflict: "project_id" }));
+      cloudState.message = "Об'єкт синхронізовано без нових полів обладнання. Додай SQL-міграцію equipment_details/panel_serial_numbers у Supabase.";
       renderProfileView();
     }
     if (technicalError) throw technicalError;
@@ -1351,14 +1372,32 @@ async function syncProjectsToCloud() {
     await cloudState.client.from("project_photos").delete().eq("project_id", projectId);
     const cloudPhotos = (project.photos || []).filter((item) => typeof item !== "string" && item.storagePath);
     if (cloudPhotos.length) {
-      const { error } = await cloudState.client.from("project_photos").insert(cloudPhotos.map((item) => ({
+      const photoRows = cloudPhotos.map((item) => ({
         project_id: projectId,
         category: item.category || "Інше",
         caption: item.caption || "",
         file_name: item.fileName || "",
         storage_path: item.storagePath,
         created_by: cloudState.user?.id || null,
-      })));
+        ...(cloudState.supportsPhotoEquipmentLinks
+          ? {
+            equipment_type: item.equipmentType || "",
+            equipment_id: item.equipmentId || "",
+          }
+          : {}),
+      }));
+      let { error } = await cloudState.client.from("project_photos").insert(photoRows);
+      if (error && /equipment_type|equipment_id|schema cache/i.test(error.message || "")) {
+        cloudState.supportsPhotoEquipmentLinks = false;
+        ({ error } = await cloudState.client.from("project_photos").insert(photoRows.map((item) => {
+          const { equipment_type: equipmentType, equipment_id: equipmentId, ...photoRow } = item;
+          return photoRow;
+        })));
+        if (!error) {
+          cloudState.message = "Фото синхронізовано без прив'язки до позиції обладнання. Додай SQL-колонки equipment_type/equipment_id у project_photos.";
+          renderProfileView();
+        }
+      }
       if (error) throw error;
     }
 
@@ -1609,6 +1648,7 @@ function ensureProjectCollections(project) {
   if (!project) return project;
   project.technical ||= {};
   project.technical.panelSerialNumbers ||= "";
+  normalizeTechnicalEquipment(project.technical);
   project.strings ||= [];
   project.materials ||= [];
   project.photos ||= [];
@@ -1622,6 +1662,65 @@ function ensureProjectCollections(project) {
     project.files = storedFiles;
   }
   return project;
+}
+
+function normalizeEquipmentItem(item = {}, type = "equipment") {
+  return {
+    id: item.id || `${type}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    manufacturer: item.manufacturer || "",
+    model: item.model || "",
+    power: item.power || item.powerKw || item.powerW || item.capacityKwh || "",
+    count: Number(item.count || 1),
+    serialNumbers: item.serialNumbers || item.serialNumber || "",
+    note: item.note || "",
+  };
+}
+
+function normalizeEquipmentList(items, fallback, type) {
+  const normalized = Array.isArray(items) ? items.map((item) => normalizeEquipmentItem(item, type)) : [];
+  if (normalized.length) return normalized;
+  return fallback ? [normalizeEquipmentItem(fallback, type)] : [];
+}
+
+function normalizeTechnicalEquipment(technical) {
+  technical.inverters = normalizeEquipmentList(
+    technical.inverters,
+    technical.inverterManufacturer || technical.inverterModel || technical.inverterSerialNumber || Number(technical.inverterPowerKw || 0)
+      ? {
+        manufacturer: technical.inverterManufacturer,
+        model: technical.inverterModel,
+        power: technical.inverterPowerKw,
+        serialNumbers: technical.inverterSerialNumber,
+      }
+      : null,
+    "inverter",
+  );
+  technical.batteries = normalizeEquipmentList(
+    technical.batteries,
+    technical.batteryManufacturer || technical.batteryModel || technical.batterySerialNumbers || Number(technical.batteryModulesCount || 0)
+      ? {
+        manufacturer: technical.batteryManufacturer,
+        model: technical.batteryModel,
+        power: technical.batteryCapacityKwh,
+        count: technical.batteryModulesCount || 1,
+        serialNumbers: technical.batterySerialNumbers,
+      }
+      : null,
+    "battery",
+  );
+  technical.panelGroups = normalizeEquipmentList(
+    technical.panelGroups,
+    technical.panelManufacturer || technical.panelModel || technical.panelSerialNumbers || Number(technical.panelCount || 0)
+      ? {
+        manufacturer: technical.panelManufacturer,
+        model: technical.panelModel,
+        power: technical.panelPowerW,
+        count: technical.panelCount || 1,
+        serialNumbers: technical.panelSerialNumbers,
+      }
+      : null,
+    "panel",
+  );
 }
 
 function normalizeProjectFinance(finance = {}) {
@@ -2076,9 +2175,6 @@ function renderTabById(tabId, project, isValid, stringsTotal, expected) {
   if (tabId === "measurement") {
     return renderMeasurementStage(project);
   }
-  if (tabId === "serials") {
-    return renderSerialCheckStage(project);
-  }
 
   const previousTab = selectedTab;
   selectedTab = tabId;
@@ -2119,59 +2215,113 @@ function renderMeasurementStage(project) {
   `;
 }
 
-function renderSerialCheckStage(project) {
-  const technical = project.technical || {};
-  return `
-    <div class="section-actions">
-      <button class="primary-button" id="editTechnicalButton">Редагувати серійні номери</button>
-    </div>
-    <div class="data-grid">
-      ${renderSerialDataItem(project, "inverter", "Серійний номер інвертора", technical.inverterSerialNumber)}
-      ${renderSerialDataItem(project, "battery", "Серійні номери АКБ", technical.batterySerialNumbers)}
-      ${renderSerialDataItem(project, "panel", "Серійні номери фотомодулів", technical.panelSerialNumbers)}
-    </div>
-  `;
-}
-
-function serialPhotoCategoryLabel(type) {
-  const labels = {
-    inverter: "Серійний номер інвертора",
-    battery: "Серійний номер АКБ",
-    panel: "Серійний номер фотомодуля",
+function equipmentTypeConfig(type) {
+  const configs = {
+    inverters: {
+      title: "Інвертори",
+      addLabel: "Додати інвертор",
+      photoLabel: "Фото серійника інвертора",
+      powerLabel: "Потужність, кВт",
+      modelPlaceholder: "SUN-12K-SG04LP3",
+      serialLabel: "Серійний номер інвертора",
+    },
+    batteries: {
+      title: "АКБ",
+      addLabel: "Додати АКБ",
+      photoLabel: "Фото серійника АКБ",
+      powerLabel: "Ємність, кВт·год",
+      modelPlaceholder: "Tower T10, US5000",
+      serialLabel: "Серійний номер АКБ",
+    },
+    panelGroups: {
+      title: "Фотомодулі",
+      addLabel: "Додати фотомодулі",
+      photoLabel: "Фото серійників фотомодулів",
+      powerLabel: "Потужність, Вт",
+      modelPlaceholder: "LR5-72HTH-580M",
+      serialLabel: "Серійні номери фотомодулів",
+    },
   };
-  return labels[type] || "Серійний номер обладнання";
+  return configs[type];
 }
 
-function serialPhotosForProject(project, type) {
-  const category = serialPhotoCategoryLabel(type);
+function renderEquipmentDetails(project) {
+  normalizeTechnicalEquipment(project.technical);
+  return `
+    <div class="equipment-detail-grid">
+      ${renderEquipmentCollection(project, "inverters")}
+      ${renderEquipmentCollection(project, "batteries")}
+      ${renderEquipmentCollection(project, "panelGroups")}
+    </div>
+  `;
+}
+
+function renderEquipmentCollection(project, type) {
+  const config = equipmentTypeConfig(type);
+  const items = project.technical[type] || [];
+  return `
+    <section class="equipment-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Обладнання</p>
+          <h3>${config.title}</h3>
+        </div>
+        <span class="chip">${items.length} поз.</span>
+      </div>
+      <div class="equipment-list">
+        ${items.length
+          ? items.map((item, index) => renderEquipmentCard(project, type, item, index)).join("")
+          : `<div class="empty-state"><strong>Позиції ще не додано</strong><span>Додай модель, потужність, серійник і фото.</span></div>`}
+      </div>
+      ${renderEquipmentForm(type)}
+    </section>
+  `;
+}
+
+function renderEquipmentCard(project, type, item, index) {
+  const config = equipmentTypeConfig(type);
+  const photos = equipmentPhotosForProject(project, item.id);
+  return `
+    <article class="equipment-card">
+      <div class="object-line">
+        <div>
+          <h3>${formatCombined(item.manufacturer, item.model)}</h3>
+          <p>${config.powerLabel}: ${item.power || "-"}${item.count > 1 ? ` · К-сть: ${item.count}` : ""}</p>
+        </div>
+        <button class="table-button danger-text" type="button" data-delete-equipment-type="${type}" data-delete-equipment-index="${index}">Видалити</button>
+      </div>
+      <div class="serial-row">
+        <span>${config.serialLabel}</span>
+        <strong>${item.serialNumbers || "Не вказано"}</strong>
+        <label class="serial-photo-button inline" title="Сфотографувати серійник">
+          📷
+          <input type="file" accept="image/*" capture="environment" data-equipment-photo-type="${type}" data-equipment-photo-id="${item.id}" />
+        </label>
+      </div>
+      ${photos.length ? `<div class="serial-photo-preview">${photos.map((photo) => `<img src="${photo.src}" alt="${escapeAttribute(photo.caption || config.photoLabel)}" />`).join("")}</div>` : ""}
+    </article>
+  `;
+}
+
+function renderEquipmentForm(type) {
+  const config = equipmentTypeConfig(type);
+  return `
+    <form class="inline-form equipment-form" data-equipment-type="${type}">
+      <label>Виробник<input name="manufacturer" placeholder="Deye, Huawei, Longi..." /></label>
+      <label>Модель<input name="model" placeholder="${config.modelPlaceholder}" /></label>
+      <label>${config.powerLabel}<input name="power" type="number" min="0" step="0.01" /></label>
+      <label>Кількість<input name="count" type="number" min="1" step="1" value="1" /></label>
+      <label class="full">${config.serialLabel}<textarea name="serialNumbers" rows="2" placeholder="Один або кілька серійних номерів"></textarea></label>
+      <div class="form-submit-cell"><button class="primary-button">${config.addLabel}</button></div>
+    </form>
+  `;
+}
+
+function equipmentPhotosForProject(project, equipmentId) {
   return (project.photos || [])
-    .filter((photo) => typeof photo !== "string" && photo.category === category)
-    .slice(-3)
+    .filter((photo) => typeof photo !== "string" && photo.equipmentId === equipmentId)
+    .slice(-6)
     .reverse();
-}
-
-function renderSerialPhotoPreview(project, type) {
-  const photos = serialPhotosForProject(project, type);
-  if (!photos.length) return "";
-  return `
-    <div class="serial-photo-preview">
-      ${photos.map((photo) => `<img src="${photo.src}" alt="${escapeAttribute(photo.caption || photo.category || "Фото серійника")}" />`).join("")}
-    </div>
-  `;
-}
-
-function renderSerialDataItem(project, type, label, value) {
-  return `
-    <div class="data-item serial-data-item">
-      <span>${label}</span>
-      <strong>${value || "Не вказано"}</strong>
-      <label class="serial-photo-button" title="Сфотографувати серійник">
-        📷
-        <input type="file" accept="image/*" capture="environment" data-serial-photo="${type}" />
-      </label>
-      ${renderSerialPhotoPreview(project, type)}
-    </div>
-  `;
 }
 
 function renderTab(project, isValid, stringsTotal, expected) {
@@ -2187,18 +2337,16 @@ function renderTab(project, isValid, stringsTotal, expected) {
       <div class="data-grid">
         <div class="data-item"><span>Панелі</span><strong>${formatCombined(project.technical.panelManufacturer, project.technical.panelModel)}</strong></div>
         <div class="data-item"><span>Кількість</span><strong>${project.technical.panelCount} шт × ${project.technical.panelPowerW} Вт</strong></div>
-        ${renderSerialDataItem(project, "panel", "Серійні номери фотомодулів", project.technical.panelSerialNumbers)}
         <div class="data-item"><span>Загальна потужність</span><strong>${totalPower(project)} кВт</strong></div>
         <div class="data-item"><span>Інвертор</span><strong>${formatCombined(project.technical.inverterManufacturer, project.technical.inverterModel)}</strong></div>
         <div class="data-item"><span>Потужність інвертора</span><strong>${project.technical.inverterPowerKw || 0} кВт</strong></div>
-        ${renderSerialDataItem(project, "inverter", "Серійний номер інвертора", project.technical.inverterSerialNumber)}
         <div class="data-item"><span>MPPT</span><strong>${project.technical.mpptCount}</strong></div>
         <div class="data-item"><span>PV входів на один MPPT</span><strong>${project.technical.pvInputsPerMppt || 0}</strong></div>
         <div class="data-item"><span>Акумулятор</span><strong>${formatCombined(project.technical.batteryManufacturer, project.technical.batteryModel)}</strong></div>
         <div class="data-item"><span>Ємність акумулятора</span><strong>${project.technical.batteryCapacityKwh || 0} кВт·год × ${project.technical.batteryModulesCount || 0} мод.</strong></div>
         <div class="data-item"><span>Загальна ємність АКБ</span><strong>${batteryTotalCapacity(project)} кВт·год</strong></div>
-        ${renderSerialDataItem(project, "battery", "Серійні номери АКБ", project.technical.batterySerialNumbers)}
       </div>
+      ${renderEquipmentDetails(project)}
     `;
   }
 
@@ -4199,6 +4347,21 @@ document.addEventListener("click", (event) => {
     render();
   }
 
+  const deleteEquipmentButton = event.target.closest("[data-delete-equipment-type]");
+  if (deleteEquipmentButton) {
+    const project = selectedProject();
+    if (!project) return;
+    const type = deleteEquipmentButton.dataset.deleteEquipmentType;
+    const index = Number(deleteEquipmentButton.dataset.deleteEquipmentIndex);
+    normalizeTechnicalEquipment(project.technical);
+    if (!Array.isArray(project.technical[type])) return;
+    project.technical[type].splice(index, 1);
+    syncLegacyTechnicalFields(project.technical);
+    saveProjects();
+    render();
+    showSection("objectDetail");
+  }
+
   const deleteExpenseButton = event.target.closest("[data-delete-expense-index]");
   if (deleteExpenseButton) {
     const project = selectedProject();
@@ -4284,10 +4447,11 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("change", (event) => {
-  if (event.target.matches("[data-serial-photo]")) {
+  if (event.target.matches("[data-equipment-photo-id]")) {
     const file = event.target.files?.[0];
-    const serialType = event.target.dataset.serialPhoto;
-    addSerialPhoto(file, serialType).finally(() => {
+    const type = event.target.dataset.equipmentPhotoType;
+    const equipmentId = event.target.dataset.equipmentPhotoId;
+    addEquipmentPhoto(file, type, equipmentId).finally(() => {
       event.target.value = "";
     });
     return;
@@ -4409,6 +4573,12 @@ document.addEventListener("submit", (event) => {
   if (event.target.id === "projectFileForm") {
     event.preventDefault();
     addProjectFile(event.target).catch((error) => alert(`Не вдалося додати файл: ${error.message}`));
+    return;
+  }
+
+  if (event.target.matches(".equipment-form")) {
+    event.preventDefault();
+    addEquipmentItem(event.target);
     return;
   }
 
@@ -4680,12 +4850,20 @@ function addPhoto(formElement) {
   addProjectPhotoFromFile(file, data.get("category"), data.get("caption").trim(), () => formElement.reset());
 }
 
-function addSerialPhoto(file, serialType) {
-  const label = serialPhotoCategoryLabel(serialType);
-  return addProjectPhotoFromFile(file, label, label);
+function addEquipmentPhoto(file, type, equipmentId) {
+  const project = selectedProject();
+  if (!project) return Promise.resolve(false);
+  normalizeTechnicalEquipment(project.technical);
+  const config = equipmentTypeConfig(type);
+  const item = (project.technical[type] || []).find((equipment) => equipment.id === equipmentId);
+  const caption = item ? `${config.photoLabel}: ${formatCombined(item.manufacturer, item.model)}` : config.photoLabel;
+  return addProjectPhotoFromFile(file, config.photoLabel, caption, null, {
+    equipmentType: type,
+    equipmentId,
+  });
 }
 
-function addProjectPhotoFromFile(file, category, caption, afterAdd = null) {
+function addProjectPhotoFromFile(file, category, caption, afterAdd = null, extra = {}) {
   const project = selectedProject();
   if (!project || !file || !file.type?.startsWith("image/")) return Promise.resolve(false);
 
@@ -4698,6 +4876,7 @@ function addProjectPhotoFromFile(file, category, caption, afterAdd = null) {
         fileName: file.name,
         src: reader.result,
         createdAt: new Date().toISOString(),
+        ...extra,
       };
 
       project.photos.push(photo);
@@ -4728,6 +4907,113 @@ function addProjectPhotoFromFile(file, category, caption, afterAdd = null) {
     reader.addEventListener("error", () => resolve(false));
     reader.readAsDataURL(file);
   });
+}
+
+function addEquipmentItem(formElement) {
+  const project = selectedProject();
+  if (!project) return;
+  const type = formElement.dataset.equipmentType;
+  const data = new FormData(formElement);
+  normalizeTechnicalEquipment(project.technical);
+  if (!Array.isArray(project.technical[type])) return;
+
+  project.technical[type].push(normalizeEquipmentItem({
+    manufacturer: String(data.get("manufacturer") || "").trim(),
+    model: String(data.get("model") || "").trim(),
+    power: String(data.get("power") || "").trim(),
+    count: Number(data.get("count") || 1),
+    serialNumbers: String(data.get("serialNumbers") || "").trim(),
+  }, type));
+  syncLegacyTechnicalFields(project.technical);
+  saveProjects();
+  formElement.reset();
+  render();
+  showSection("objectDetail");
+}
+
+function syncLegacyTechnicalFields(technical) {
+  const [panel] = technical.panelGroups || [];
+  const [inverter] = technical.inverters || [];
+  const [battery] = technical.batteries || [];
+
+  if (panel) {
+    technical.panelManufacturer = panel.manufacturer || "";
+    technical.panelModel = panel.model || "";
+    technical.panelPowerW = Number(panel.power || 0);
+    technical.panelCount = Number(panel.count || 0);
+    technical.panelSerialNumbers = panel.serialNumbers || "";
+  } else {
+    technical.panelManufacturer = "";
+    technical.panelModel = "";
+    technical.panelPowerW = 0;
+    technical.panelCount = 0;
+    technical.panelSerialNumbers = "";
+  }
+  if (inverter) {
+    technical.inverterManufacturer = inverter.manufacturer || "";
+    technical.inverterModel = inverter.model || "";
+    technical.inverterPowerKw = Number(inverter.power || 0);
+    technical.inverterSerialNumber = inverter.serialNumbers || "";
+  } else {
+    technical.inverterManufacturer = "";
+    technical.inverterModel = "";
+    technical.inverterPowerKw = 0;
+    technical.inverterSerialNumber = "";
+  }
+  if (battery) {
+    technical.batteryManufacturer = battery.manufacturer || "";
+    technical.batteryModel = battery.model || "";
+    technical.batteryCapacityKwh = Number(battery.power || 0);
+    technical.batteryModulesCount = Number(battery.count || 0);
+    technical.batterySerialNumbers = battery.serialNumbers || "";
+    technical.hasBattery = Boolean(battery.manufacturer || battery.model || battery.serialNumbers || Number(battery.count || 0));
+  } else {
+    technical.batteryManufacturer = "";
+    technical.batteryModel = "";
+    technical.batteryCapacityKwh = 0;
+    technical.batteryModulesCount = 0;
+    technical.batterySerialNumbers = "";
+    technical.hasBattery = false;
+  }
+}
+
+function syncEquipmentListsFromLegacyFields(technical) {
+  const existingPanel = (technical.panelGroups || [])[0];
+  const existingInverter = (technical.inverters || [])[0];
+  const existingBattery = (technical.batteries || [])[0];
+  const panelFallback = technical.panelManufacturer || technical.panelModel || technical.panelSerialNumbers || Number(technical.panelCount || 0)
+    ? {
+      id: existingPanel?.id,
+      manufacturer: technical.panelManufacturer,
+      model: technical.panelModel,
+      power: technical.panelPowerW,
+      count: technical.panelCount || 1,
+      serialNumbers: technical.panelSerialNumbers,
+    }
+    : null;
+  const inverterFallback = technical.inverterManufacturer || technical.inverterModel || technical.inverterSerialNumber || Number(technical.inverterPowerKw || 0)
+    ? {
+      id: existingInverter?.id,
+      manufacturer: technical.inverterManufacturer,
+      model: technical.inverterModel,
+      power: technical.inverterPowerKw,
+      serialNumbers: technical.inverterSerialNumber,
+    }
+    : null;
+  const batteryFallback = technical.batteryManufacturer || technical.batteryModel || technical.batterySerialNumbers || Number(technical.batteryModulesCount || 0)
+    ? {
+      id: existingBattery?.id,
+      manufacturer: technical.batteryManufacturer,
+      model: technical.batteryModel,
+      power: technical.batteryCapacityKwh,
+      count: technical.batteryModulesCount || 1,
+      serialNumbers: technical.batterySerialNumbers,
+    }
+    : null;
+
+  if ((technical.panelGroups || []).length <= 1) technical.panelGroups = panelFallback ? [normalizeEquipmentItem(panelFallback, "panel")] : [];
+  if ((technical.inverters || []).length <= 1) technical.inverters = inverterFallback ? [normalizeEquipmentItem(inverterFallback, "inverter")] : [];
+  if ((technical.batteries || []).length <= 1) technical.batteries = batteryFallback ? [normalizeEquipmentItem(batteryFallback, "battery")] : [];
 }
 
 async function openProjectFile(file) {
@@ -5352,6 +5638,7 @@ technicalForm.addEventListener("submit", (event) => {
     batteryModulesCount: Number(data.get("batteryModulesCount") || 0),
     batterySerialNumbers: data.get("batterySerialNumbers").trim(),
   };
+  syncEquipmentListsFromLegacyFields(project.technical);
 
   saveProjects();
   technicalDialog.close();
