@@ -1832,9 +1832,7 @@ function statusProgress(project) {
     service: 100,
   };
 
-  const passportScore = passportChecklist(project).filter(([, ready]) => ready).length * 10;
-  const checklistScore = installerChecklistStats(project).percent;
-  return Math.min(100, Math.max(statusProgressMap[project.status] || 15, passportScore, checklistScore));
+  return statusProgressMap[project.status] || 10;
 }
 
 function statusTone(status) {
