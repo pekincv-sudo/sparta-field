@@ -2057,7 +2057,7 @@ function renderProjectStageContent(status, project, isValid, stringsTotal, expec
     planned: [["Виїзд на замір", "measurement"]],
     proposal: [["Комерційна пропозиція", "files"], ["Розрахунок вартості", "finance"]],
     contract: [["Договір і оплата", "finance"], ["Файли договору", "files"]],
-    in_progress: [["Технічні дані", "technical"], ["Матеріали для монтажу", "materials"], ["MPPT / стрінги", "strings"]],
+    in_progress: [["Технічні дані", "technical"], ["Серійні номери обладнання", "serials"], ["Матеріали для монтажу", "materials"], ["MPPT / стрінги", "strings"]],
     waiting_review: [["Фотофіксація", "photos"], ["Серійні номери обладнання", "serials"]],
     passport_issued: [["Паспорт об'єкта", "passport"]],
     service: [["Сервісні файли", "files"], ["Історія фото", "photos"]],
@@ -2126,9 +2126,22 @@ function renderSerialCheckStage(project) {
       <button class="primary-button" id="editTechnicalButton">Редагувати серійні номери</button>
     </div>
     <div class="data-grid">
-      <div class="data-item"><span>Серійний номер інвертора</span><strong>${technical.inverterSerialNumber || "Не вказано"}</strong></div>
-      <div class="data-item"><span>Серійні номери АКБ</span><strong>${technical.batterySerialNumbers || "Не вказано"}</strong></div>
-      <div class="data-item"><span>Серійні номери фотомодулів</span><strong>${technical.panelSerialNumbers || "Не вказано"}</strong></div>
+      ${renderSerialDataItem("inverter", "Серійний номер інвертора", technical.inverterSerialNumber)}
+      ${renderSerialDataItem("battery", "Серійні номери АКБ", technical.batterySerialNumbers)}
+      ${renderSerialDataItem("panel", "Серійні номери фотомодулів", technical.panelSerialNumbers)}
+    </div>
+  `;
+}
+
+function renderSerialDataItem(type, label, value) {
+  return `
+    <div class="data-item serial-data-item">
+      <span>${label}</span>
+      <strong>${value || "Не вказано"}</strong>
+      <label class="serial-photo-button" title="Сфотографувати серійник">
+        📷
+        <input type="file" accept="image/*" capture="environment" data-serial-photo="${type}" />
+      </label>
     </div>
   `;
 }
@@ -2146,17 +2159,17 @@ function renderTab(project, isValid, stringsTotal, expected) {
       <div class="data-grid">
         <div class="data-item"><span>Панелі</span><strong>${formatCombined(project.technical.panelManufacturer, project.technical.panelModel)}</strong></div>
         <div class="data-item"><span>Кількість</span><strong>${project.technical.panelCount} шт × ${project.technical.panelPowerW} Вт</strong></div>
-        <div class="data-item"><span>Серійні номери фотомодулів</span><strong>${project.technical.panelSerialNumbers || "Не вказано"}</strong></div>
+        ${renderSerialDataItem("panel", "Серійні номери фотомодулів", project.technical.panelSerialNumbers)}
         <div class="data-item"><span>Загальна потужність</span><strong>${totalPower(project)} кВт</strong></div>
         <div class="data-item"><span>Інвертор</span><strong>${formatCombined(project.technical.inverterManufacturer, project.technical.inverterModel)}</strong></div>
         <div class="data-item"><span>Потужність інвертора</span><strong>${project.technical.inverterPowerKw || 0} кВт</strong></div>
-        <div class="data-item"><span>Серійний номер</span><strong>${project.technical.inverterSerialNumber || "Не вказано"}</strong></div>
+        ${renderSerialDataItem("inverter", "Серійний номер інвертора", project.technical.inverterSerialNumber)}
         <div class="data-item"><span>MPPT</span><strong>${project.technical.mpptCount}</strong></div>
         <div class="data-item"><span>PV входів на один MPPT</span><strong>${project.technical.pvInputsPerMppt || 0}</strong></div>
         <div class="data-item"><span>Акумулятор</span><strong>${formatCombined(project.technical.batteryManufacturer, project.technical.batteryModel)}</strong></div>
         <div class="data-item"><span>Ємність акумулятора</span><strong>${project.technical.batteryCapacityKwh || 0} кВт·год × ${project.technical.batteryModulesCount || 0} мод.</strong></div>
         <div class="data-item"><span>Загальна ємність АКБ</span><strong>${batteryTotalCapacity(project)} кВт·год</strong></div>
-        <div class="data-item"><span>Серійні номери АКБ</span><strong>${project.technical.batterySerialNumbers || "Не вказано"}</strong></div>
+        ${renderSerialDataItem("battery", "Серійні номери АКБ", project.technical.batterySerialNumbers)}
       </div>
     `;
   }
@@ -4243,6 +4256,15 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-serial-photo]")) {
+    const file = event.target.files?.[0];
+    const serialType = event.target.dataset.serialPhoto;
+    addSerialPhoto(file, serialType).finally(() => {
+      event.target.value = "";
+    });
+    return;
+  }
+
   if (event.target.matches("[data-work-checklist-item]")) {
     const project = selectedProject();
     if (!project) return;
@@ -4625,48 +4647,64 @@ async function uploadProjectFileToCloud(project, file) {
 }
 
 function addPhoto(formElement) {
-  const project = selectedProject();
-  if (!project) return;
-
   const data = new FormData(formElement);
   const file = data.get("file");
-  if (!file || !file.type?.startsWith("image/")) return;
+  addProjectPhotoFromFile(file, data.get("category"), data.get("caption").trim(), () => formElement.reset());
+}
 
-  const reader = new FileReader();
-  reader.addEventListener("load", async () => {
-    const photo = {
-      category: data.get("category"),
-      caption: data.get("caption").trim(),
-      fileName: file.name,
-      src: reader.result,
-      createdAt: new Date().toISOString(),
-    };
+function addSerialPhoto(file, serialType) {
+  const labels = {
+    inverter: "Серійний номер інвертора",
+    battery: "Серійний номер АКБ",
+    panel: "Серійний номер фотомодуля",
+  };
+  const label = labels[serialType] || "Серійний номер обладнання";
+  return addProjectPhotoFromFile(file, label, label);
+}
 
-    project.photos.push(photo);
-    saveProjects();
-    formElement.reset();
-    render();
+function addProjectPhotoFromFile(file, category, caption, afterAdd = null) {
+  const project = selectedProject();
+  if (!project || !file || !file.type?.startsWith("image/")) return Promise.resolve(false);
 
-    if (cloudState.ready) {
-      try {
-        cloudState.message = "Фото завантажується...";
-        renderProfileView();
-        const uploaded = await uploadPhotoToCloud(project, file);
-        if (uploaded) {
-          Object.assign(photo, uploaded);
-          saveProjects();
-          render();
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", async () => {
+      const photo = {
+        category,
+        caption,
+        fileName: file.name,
+        src: reader.result,
+        createdAt: new Date().toISOString(),
+      };
+
+      project.photos.push(photo);
+      saveProjects();
+      afterAdd?.();
+      render();
+
+      if (cloudState.ready) {
+        try {
+          cloudState.message = "Фото завантажується...";
+          renderProfileView();
+          const uploaded = await uploadPhotoToCloud(project, file);
+          if (uploaded) {
+            Object.assign(photo, uploaded);
+            saveProjects();
+            render();
+          }
+        } catch (error) {
+          cloudState.message = `Фото лишилось локально: ${error.message}`;
+          renderProfileView();
         }
-      } catch (error) {
-        cloudState.message = `Фото лишилось локально: ${error.message}`;
-        renderProfileView();
       }
-    }
 
-    saveProjects();
-    render();
+      saveProjects();
+      render();
+      resolve(true);
+    });
+    reader.addEventListener("error", () => resolve(false));
+    reader.readAsDataURL(file);
   });
-  reader.readAsDataURL(file);
 }
 
 async function openProjectFile(file) {

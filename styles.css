@@ -959,6 +959,34 @@ button.metric-card:hover,
   overflow-wrap: anywhere;
 }
 
+.serial-data-item {
+  position: relative;
+  padding-right: 48px;
+}
+
+.serial-photo-button {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+  background: #101a20;
+  color: var(--yellow);
+  cursor: pointer;
+  font-size: 17px;
+}
+
+.serial-photo-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .stats-grid {
   grid-template-columns: repeat(5, minmax(120px, 1fr));
   margin-bottom: 18px;
