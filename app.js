@@ -511,6 +511,7 @@ let selectedProjectId = String(projects[0]?.id ?? "");
 let selectedTab = "";
 let stringsEditing = false;
 let materialsEditing = false;
+let selectedWarehouseSection = "inverters";
 let authMode = "signin";
 let crmFilter = "today";
 let cloudSyncTimer = null;
@@ -1846,7 +1847,7 @@ function warehouseItemFormState() {
 }
 
 function warehouseBaseCategories() {
-  return ["Захист", "Кріплення", "Кабель", "Конектори", "Щити", "Роботи", "Панелі", "Інвертори", "АКБ", "Інструмент", "Інше"];
+  return ["Інвертори", "Фотомодулі", "Панелі", "АКБ", "Кабелі", "Кабель", "Комплектуючі", "Кріплення", "Конектори", "Захист", "Щити", "Роботи", "Інструмент", "Інше"];
 }
 
 function warehouseCategories() {
@@ -1855,6 +1856,28 @@ function warehouseCategories() {
 
 function warehouseProductsForCategory(category) {
   return warehouseItems.filter((item) => !category || category === "__new" || item.category === category);
+}
+
+function warehouseSections() {
+  return [
+    { id: "inverters", title: "Інвертори", categories: ["Інвертори"], defaultCategory: "Інвертори" },
+    { id: "panels", title: "Фотомодулі", categories: ["Фотомодулі", "Панелі"], defaultCategory: "Фотомодулі" },
+    { id: "batteries", title: "АКБ", categories: ["АКБ"], defaultCategory: "АКБ" },
+    { id: "cables", title: "Кабелі", categories: ["Кабель", "Кабелі"], defaultCategory: "Кабель" },
+    { id: "components", title: "Комплектуючі", categories: ["Кріплення", "Конектори", "Захист", "Щити", "Комплектуючі"], defaultCategory: "Комплектуючі" },
+  ];
+}
+
+function warehouseSectionForCategory(category) {
+  const normalizedCategory = normalizeLookupValue(category);
+  return warehouseSections().find((section) =>
+    section.categories.some((sectionCategory) => normalizeLookupValue(sectionCategory) === normalizedCategory),
+  )?.id || "components";
+}
+
+function warehouseItemsForSection(section) {
+  const categories = section.categories.map(normalizeLookupValue);
+  return warehouseItems.filter((item) => categories.includes(normalizeLookupValue(item.category)));
 }
 
 function warehouseUnitCost(item) {
@@ -3521,9 +3544,6 @@ function renderWarehouseView() {
   if (!warehouseView) return;
   const totals = warehouseTotals();
   const formState = warehouseItemFormState();
-  const formItem = formState.item || {};
-  const selectedCategory = formItem.category || warehouseCategories()[0] || "Інше";
-  const productOptions = warehouseProductsForCategory(selectedCategory);
   const movementDefaultItem = warehouseItems[0] || {};
   const movementDefaultPrice = Number(movementDefaultItem.installerPrice || movementDefaultItem.salePrice || 0);
   const activeProjects = activeWarehouseProjects();
@@ -3544,41 +3564,7 @@ function renderWarehouseView() {
         <div class="metric-card warning"><span>Рухів сьогодні</span><strong>${totals.movedToday}</strong></div>
       </div>
 
-      <form class="inline-form warehouse-form" id="warehouseItemForm">
-        <label>Категорія
-          <select name="category" id="warehouseCategorySelect">
-            ${warehouseCategories()
-              .map((category) => `<option value="${category}" ${formItem.category === category ? "selected" : ""}>${category}</option>`)
-              .join("")}
-            <option value="__new">+ Додати категорію</option>
-          </select>
-        </label>
-        <label class="warehouse-custom-category" ${formState.isEditing ? "hidden" : "hidden"}>Нова категорія<input name="customCategory" placeholder="Наприклад: Оптимізатори" /></label>
-        <label>Товар
-          <select name="catalogItem" id="warehouseProductSelect">
-            ${productOptions.map((item) => `<option value="${escapeAttribute(item.id)}" ${formItem.id === item.id ? "selected" : ""}>${item.name}</option>`).join("")}
-            <option value="__new" ${formState.isEditing || !productOptions.length ? "selected" : ""}>+ Додати товар</option>
-          </select>
-        </label>
-        <label class="warehouse-custom-product" ${formState.isEditing ? "" : productOptions.length ? "hidden" : ""}>Назва<input name="name" placeholder="Назва позиції" value="${escapeAttribute(formItem.name || "")}" /></label>
-        <label>Артикул<input name="sku" placeholder="SKU" value="${escapeAttribute(formItem.sku || "")}" /></label>
-        <label>К-сть<input name="qty" type="number" min="0" step="0.01" required value="${escapeAttribute(formItem.qty ?? "")}" /></label>
-        <label>Од.<input name="unit" value="${escapeAttribute(formItem.unit || "шт")}" required /></label>
-        <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.purchasePrice ?? "")}" /></label>
-        <label>Доставка / од.<input name="deliveryCost" type="number" min="0" step="1" value="${escapeAttribute(formItem.deliveryCost ?? "")}" /></label>
-        <label>Дод. витрати / од.<input name="extraCost" type="number" min="0" step="1" value="${escapeAttribute(formItem.extraCost ?? "")}" /></label>
-        <label>Монтажникам<input name="installerPrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.installerPrice ?? formItem.salePrice ?? "")}" /></label>
-        <label>Розниця<input name="retailPrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.retailPrice ?? formItem.salePrice ?? "")}" /></label>
-        <label>Мін. залишок<input name="minQty" type="number" min="0" step="0.01" value="${escapeAttribute(formItem.minQty ?? "")}" /></label>
-        <label>Місце<input name="location" placeholder="Стелаж, склад, авто" value="${escapeAttribute(formItem.location || "")}" /></label>
-        <label>Серійний номер<input name="serialNumber" placeholder="SN / партія" value="${escapeAttribute(formItem.serialNumber || "")}" /></label>
-        <label>Постачальник<input name="supplier" placeholder="Назва постачальника" value="${escapeAttribute(formItem.supplier || "")}" /></label>
-        <label class="wide-field">Характеристики<input name="characteristics" placeholder="Потужність, тип, колір, розмір..." value="${escapeAttribute(formItem.characteristics || "")}" /></label>
-        <div class="form-submit-cell">
-          ${formState.isEditing ? `<button class="secondary-button" type="button" data-cancel-warehouse-edit>Скасувати</button>` : ""}
-          <button class="primary-button">${formState.isEditing ? "Зберегти позицію" : "Додати прихід"}</button>
-        </div>
-      </form>
+      ${renderWarehouseSectionStack(formState)}
 
       <form class="inline-form warehouse-movement-form" id="warehouseMovementForm">
         <label>Товар
@@ -3605,44 +3591,6 @@ function renderWarehouseView() {
         <label class="wide-field">Коментар<input name="note" placeholder="Накладна, хто забрав, умови..." /></label>
         <div class="form-submit-cell"><button class="primary-button">Провести рух</button></div>
       </form>
-
-      <div class="warehouse-card-grid">
-        ${warehouseItems.length
-          ? warehouseItems.map((item, index) => {
-            const isLow = Number(item.qty || 0) <= Number(item.minQty || 0);
-            const unitCost = warehouseUnitCost(item);
-            return `
-              <article class="warehouse-item-card ${isLow ? "warning-row" : ""}">
-                <div class="warehouse-card-head">
-                  <div>
-                    <p class="eyebrow">${item.category}</p>
-                    <h3>${item.name}</h3>
-                    <span class="muted-text">${item.sku || "Без артикулу"}</span>
-                  </div>
-                  <span class="chip ${isLow ? "amber" : ""}">${item.qty} ${item.unit}</span>
-                </div>
-                <div class="warehouse-card-specs">
-                  <span><b>Собівартість</b>${money(unitCost)}</span>
-                  <span><b>Закупка</b>${money(item.purchasePrice)}</span>
-                  <span><b>Доставка</b>${money(item.deliveryCost)}</span>
-                  <span><b>Дод. витрати</b>${money(item.extraCost)}</span>
-                  <span><b>Монтажникам</b>${Number(item.installerPrice || 0) ? money(item.installerPrice) : "-"}</span>
-                  <span><b>Розниця</b>${Number(item.retailPrice || item.salePrice || 0) ? money(item.retailPrice || item.salePrice) : "-"}</span>
-                  <span><b>Серійний</b>${item.serialNumber || "-"}</span>
-                  <span><b>Постачальник</b>${item.supplier || "-"}</span>
-                  <span><b>Місце</b>${item.location || "-"}</span>
-                  <span><b>Мін. залишок</b>${item.minQty || 0} ${item.unit}</span>
-                </div>
-                ${item.characteristics ? `<p class="warehouse-characteristics">${item.characteristics}</p>` : ""}
-                <div class="warehouse-actions">
-                  <button class="table-button" data-edit-warehouse-index="${index}">Редагувати</button>
-                  <button class="table-button danger-text" data-delete-warehouse-index="${index}">Видалити</button>
-                </div>
-              </article>
-            `;
-          }).join("")
-          : `<p class="empty-state">Склад ще порожній.</p>`}
-      </div>
 
       <section class="finance-panel warehouse-history-panel">
         <div class="panel-heading">
@@ -3673,6 +3621,115 @@ function renderWarehouseView() {
         </div>
       </section>
     </section>
+  `;
+}
+
+function renderWarehouseSectionStack(formState) {
+  const editingItem = formState.item || null;
+  const activeSection = editingItem ? warehouseSectionForCategory(editingItem.category) : selectedWarehouseSection;
+  return `
+    <div class="section-stack warehouse-section-stack">
+      ${warehouseSections().map((section) => {
+        const items = warehouseItemsForSection(section);
+        const isOpen = section.id === activeSection;
+        return `
+          <section class="project-section-card warehouse-section-card ${isOpen ? "active" : ""}" id="warehouse-section-${section.id}">
+            <button class="project-section-toggle ${isOpen ? "active" : ""}" type="button" data-warehouse-section="${section.id}">
+              <span>${section.title}</span>
+              <small>${items.length} поз. · ${isOpen ? "Згорнути" : "Відкрити"}</small>
+            </button>
+            ${isOpen ? `<div class="project-section-body">${renderWarehouseSectionBody(section, items, formState)}</div>` : ""}
+          </section>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderWarehouseSectionBody(section, items, formState) {
+  return `
+    ${renderWarehouseItemForm(section, formState)}
+    <div class="warehouse-card-grid">
+      ${items.length
+        ? items.map((item) => renderWarehouseItemCard(item, warehouseItems.indexOf(item))).join("")
+        : `<p class="empty-state">У цій категорії ще немає позицій.</p>`}
+    </div>
+  `;
+}
+
+function renderWarehouseItemForm(section, formState) {
+  const formItem = formState.item || {};
+  const populatedCategory = section.categories.find((category) => warehouseProductsForCategory(category).length);
+  const selectedCategory = formItem.category || populatedCategory || section.defaultCategory;
+  const productOptions = warehouseProductsForCategory(selectedCategory);
+  return `
+    <form class="inline-form warehouse-form" id="warehouseItemForm">
+      <label>Категорія
+        <select name="category" id="warehouseCategorySelect">
+          ${section.categories.map((category) => `<option value="${category}" ${selectedCategory === category ? "selected" : ""}>${category}</option>`).join("")}
+          <option value="__new">+ Додати категорію</option>
+        </select>
+      </label>
+      <label class="warehouse-custom-category" hidden>Нова категорія<input name="customCategory" placeholder="Наприклад: Оптимізатори" /></label>
+      <label>Товар
+        <select name="catalogItem" id="warehouseProductSelect">
+          ${productOptions.map((item) => `<option value="${escapeAttribute(item.id)}" ${formItem.id === item.id ? "selected" : ""}>${item.name}</option>`).join("")}
+          <option value="__new" ${formState.isEditing || !productOptions.length ? "selected" : ""}>+ Додати товар</option>
+        </select>
+      </label>
+      <label class="warehouse-custom-product" ${formState.isEditing ? "" : productOptions.length ? "hidden" : ""}>Назва<input name="name" placeholder="Назва позиції" value="${escapeAttribute(formItem.name || "")}" /></label>
+      <label>Артикул<input name="sku" placeholder="SKU" value="${escapeAttribute(formItem.sku || "")}" /></label>
+      <label>К-сть<input name="qty" type="number" min="0" step="0.01" required value="${escapeAttribute(formItem.qty ?? "")}" /></label>
+      <label>Од.<input name="unit" value="${escapeAttribute(formItem.unit || "шт")}" required /></label>
+      <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.purchasePrice ?? "")}" /></label>
+      <label>Доставка / од.<input name="deliveryCost" type="number" min="0" step="1" value="${escapeAttribute(formItem.deliveryCost ?? "")}" /></label>
+      <label>Дод. витрати / од.<input name="extraCost" type="number" min="0" step="1" value="${escapeAttribute(formItem.extraCost ?? "")}" /></label>
+      <label>Монтажникам<input name="installerPrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.installerPrice ?? formItem.salePrice ?? "")}" /></label>
+      <label>Розниця<input name="retailPrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.retailPrice ?? formItem.salePrice ?? "")}" /></label>
+      <label>Мін. залишок<input name="minQty" type="number" min="0" step="0.01" value="${escapeAttribute(formItem.minQty ?? "")}" /></label>
+      <label>Місце<input name="location" placeholder="Стелаж, склад, авто" value="${escapeAttribute(formItem.location || "")}" /></label>
+      <label>Серійний номер<input name="serialNumber" placeholder="SN / партія" value="${escapeAttribute(formItem.serialNumber || "")}" /></label>
+      <label>Постачальник<input name="supplier" placeholder="Назва постачальника" value="${escapeAttribute(formItem.supplier || "")}" /></label>
+      <label class="wide-field">Характеристики<input name="characteristics" placeholder="Потужність, тип, колір, розмір..." value="${escapeAttribute(formItem.characteristics || "")}" /></label>
+      <div class="form-submit-cell">
+        ${formState.isEditing ? `<button class="secondary-button" type="button" data-cancel-warehouse-edit>Скасувати</button>` : ""}
+        <button class="primary-button">${formState.isEditing ? "Зберегти позицію" : "Додати прихід"}</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderWarehouseItemCard(item, index) {
+  const isLow = Number(item.qty || 0) <= Number(item.minQty || 0);
+  const unitCost = warehouseUnitCost(item);
+  return `
+    <article class="warehouse-item-card ${isLow ? "warning-row" : ""}">
+      <div class="warehouse-card-head">
+        <div>
+          <p class="eyebrow">${item.category}</p>
+          <h3>${item.name}</h3>
+          <span class="muted-text">${item.sku || "Без артикулу"}</span>
+        </div>
+        <span class="chip ${isLow ? "amber" : ""}">${item.qty} ${item.unit}</span>
+      </div>
+      <div class="warehouse-card-specs">
+        <span><b>Собівартість</b>${money(unitCost)}</span>
+        <span><b>Закупка</b>${money(item.purchasePrice)}</span>
+        <span><b>Доставка</b>${money(item.deliveryCost)}</span>
+        <span><b>Дод. витрати</b>${money(item.extraCost)}</span>
+        <span><b>Монтажникам</b>${Number(item.installerPrice || 0) ? money(item.installerPrice) : "-"}</span>
+        <span><b>Розниця</b>${Number(item.retailPrice || item.salePrice || 0) ? money(item.retailPrice || item.salePrice) : "-"}</span>
+        <span><b>Серійний</b>${item.serialNumber || "-"}</span>
+        <span><b>Постачальник</b>${item.supplier || "-"}</span>
+        <span><b>Місце</b>${item.location || "-"}</span>
+        <span><b>Мін. залишок</b>${item.minQty || 0} ${item.unit}</span>
+      </div>
+      ${item.characteristics ? `<p class="warehouse-characteristics">${item.characteristics}</p>` : ""}
+      <div class="warehouse-actions">
+        <button class="table-button" data-edit-warehouse-index="${index}">Редагувати</button>
+        <button class="table-button danger-text" data-delete-warehouse-index="${index}">Видалити</button>
+      </div>
+    </article>
   `;
 }
 
@@ -4516,6 +4573,16 @@ document.addEventListener("click", (event) => {
     openMeasurementTaskDialog(selectedProject());
   }
 
+  const warehouseSectionButton = event.target.closest("[data-warehouse-section]");
+  if (warehouseSectionButton) {
+    selectedWarehouseSection = selectedWarehouseSection === warehouseSectionButton.dataset.warehouseSection ? "" : warehouseSectionButton.dataset.warehouseSection;
+    editingWarehouseIndex = null;
+    renderWarehouseView();
+    if (selectedWarehouseSection) {
+      document.querySelector(`#warehouse-section-${selectedWarehouseSection}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
   if (event.target.closest("#editStringsButton")) {
     stringsEditing = true;
     renderDetail();
@@ -4678,6 +4745,7 @@ document.addEventListener("click", (event) => {
   const editWarehouseButton = event.target.closest("[data-edit-warehouse-index]");
   if (editWarehouseButton) {
     editingWarehouseIndex = Number(editWarehouseButton.dataset.editWarehouseIndex);
+    selectedWarehouseSection = warehouseSectionForCategory(warehouseItems[editingWarehouseIndex]?.category);
     render();
     showSection("warehouse");
   }
@@ -4801,7 +4869,7 @@ document.addEventListener("change", (event) => {
     productSelect.innerHTML = isNewCategory
       ? `<option value="__new" selected>+ Додати товар</option>`
       : `${warehouseProductsForCategory(event.target.value).map((item) => `<option value="${escapeAttribute(item.id)}">${item.name}</option>`).join("")}<option value="__new">+ Додати товар</option>`;
-    productField.hidden = false;
+    productField.hidden = !isNewCategory && productSelect.value && productSelect.value !== "__new";
     formElement.elements.name.value = "";
     if (!isNewCategory && productSelect.value && productSelect.value !== "__new") fillWarehouseFormFromItem(formElement, warehouseItemById(productSelect.value));
   }
@@ -4986,6 +5054,7 @@ function addWarehouseItem(formElement) {
   } else {
     warehouseItems.unshift(nextItem);
   }
+  selectedWarehouseSection = warehouseSectionForCategory(nextItem.category);
   if (!currentItem) {
     warehouseMovements.unshift({
       id: `wm-${Date.now()}`,

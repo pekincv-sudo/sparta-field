@@ -1107,6 +1107,19 @@ button.metric-card:hover,
   grid-template-columns: repeat(5, minmax(130px, 1fr));
 }
 
+.warehouse-section-stack {
+  margin-top: 16px;
+  margin-bottom: 16px;
+}
+
+.warehouse-section-card.active {
+  border-color: rgba(55, 201, 107, 0.36);
+}
+
+.warehouse-section-card .project-section-toggle small {
+  color: #8bf0a7;
+}
+
 .warehouse-movement-form {
   grid-template-columns: repeat(4, minmax(140px, 1fr));
   margin-top: 14px;
