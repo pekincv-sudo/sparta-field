@@ -196,9 +196,41 @@ function mergeWarehouseNomenclature(items) {
   return [...items, ...missingItems];
 }
 
+function readLocalStorage(key) {
+  try {
+    return window.localStorage?.getItem(key) ?? null;
+  } catch (error) {
+    console.warn(`Local storage read failed for ${key}`, error);
+    return null;
+  }
+}
+
+function writeLocalStorage(key, value) {
+  try {
+    window.localStorage?.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.warn(`Local storage write failed for ${key}`, error);
+    window.spartaStorageWarning = "Дані відкрито, але пам'ять телефону переповнена або недоступна. Зміни синхронізуються з хмарою після входу.";
+    return false;
+  }
+}
+
+function readJsonStorage(key, fallback) {
+  const savedValue = readLocalStorage(key);
+  if (!savedValue) return fallback;
+
+  try {
+    return JSON.parse(savedValue);
+  } catch (error) {
+    console.warn(`Local storage JSON is invalid for ${key}`, error);
+    return fallback;
+  }
+}
+
 function seedDemoCrmTasks(tasks) {
   const seedKey = "solarObjectManager.demoCrmTasksAdded";
-  if (localStorage.getItem(seedKey) === "true") return tasks;
+  if (readLocalStorage(seedKey) === "true") return tasks;
 
   const formatLocalDateTime = (date) => {
     const pad = (value) => String(value).padStart(2, "0");
@@ -298,8 +330,8 @@ function seedDemoCrmTasks(tasks) {
   ];
   const demoIds = new Set(demoTasks.map((task) => task.id));
   const nextTasks = [...demoTasks, ...tasks.filter((task) => !demoIds.has(task.id))];
-  localStorage.setItem("solarObjectManager.crmTasks", JSON.stringify(nextTasks));
-  localStorage.setItem(seedKey, "true");
+  writeLocalStorage("solarObjectManager.crmTasks", JSON.stringify(nextTasks));
+  writeLocalStorage(seedKey, "true");
   return nextTasks;
 }
 
@@ -445,20 +477,19 @@ const hasCloudConfig = Boolean(
     !window.SPARTA_SUPABASE_CONFIG.url.includes("YOUR_PROJECT_URL") &&
     !window.SPARTA_SUPABASE_CONFIG.anonKey.includes("YOUR_SUPABASE_ANON_KEY")
 );
-const savedProjects = hasCloudConfig ? null : localStorage.getItem("solarObjectManager.projects");
-let projects = savedProjects ? JSON.parse(savedProjects) : hasCloudConfig ? [] : defaultProjects;
-const savedCrmTasks = localStorage.getItem("solarObjectManager.crmTasks");
-let crmTasks = savedCrmTasks ? JSON.parse(savedCrmTasks) : [];
+const savedProjects = hasCloudConfig ? null : readJsonStorage("solarObjectManager.projects", null);
+let projects = savedProjects || (hasCloudConfig ? [] : defaultProjects);
+let crmTasks = readJsonStorage("solarObjectManager.crmTasks", []);
 crmTasks = seedDemoCrmTasks(crmTasks);
-let projectFilesByProjectId = JSON.parse(localStorage.getItem("solarObjectManager.projectFiles") || "{}");
-const savedWarehouseItems = JSON.parse(localStorage.getItem("solarObjectManager.warehouseItems") || "null");
+let projectFilesByProjectId = readJsonStorage("solarObjectManager.projectFiles", {});
+const savedWarehouseItems = readJsonStorage("solarObjectManager.warehouseItems", null);
 let warehouseItems = (savedWarehouseItems || defaultWarehouseItems()).map(normalizeWarehouseItem);
-if (savedWarehouseItems && localStorage.getItem("solarObjectManager.nomenclatureImported.v1") !== "true") {
+if (savedWarehouseItems && readLocalStorage("solarObjectManager.nomenclatureImported.v1") !== "true") {
   warehouseItems = mergeWarehouseNomenclature(warehouseItems);
-  localStorage.setItem("solarObjectManager.warehouseItems", JSON.stringify(warehouseItems));
-  localStorage.setItem("solarObjectManager.nomenclatureImported.v1", "true");
+  writeLocalStorage("solarObjectManager.warehouseItems", JSON.stringify(warehouseItems));
+  writeLocalStorage("solarObjectManager.nomenclatureImported.v1", "true");
 }
-let warehouseMovements = JSON.parse(localStorage.getItem("solarObjectManager.warehouseMovements") || "[]");
+let warehouseMovements = readJsonStorage("solarObjectManager.warehouseMovements", []);
 
 let selectedProjectId = String(projects[0]?.id ?? "");
 let selectedTab = "summary";
@@ -471,9 +502,9 @@ let crmSyncTimer = null;
 let warehouseSyncTimer = null;
 let editingWarehouseIndex = null;
 let cloudLoading = false;
-let pendingCloudDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingDeletes") || "[]");
-let pendingCrmDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingCrmDeletes") || "[]");
-let pendingWarehouseDeletes = JSON.parse(localStorage.getItem("solarObjectManager.pendingWarehouseDeletes") || "[]");
+let pendingCloudDeletes = readJsonStorage("solarObjectManager.pendingDeletes", []);
+let pendingCrmDeletes = readJsonStorage("solarObjectManager.pendingCrmDeletes", []);
+let pendingWarehouseDeletes = readJsonStorage("solarObjectManager.pendingWarehouseDeletes", []);
 
 const cloudState = {
   client: null,
@@ -489,6 +520,10 @@ const cloudState = {
   members: [],
   invitations: [],
 };
+
+if (window.spartaStorageWarning) {
+  cloudState.message = window.spartaStorageWarning;
+}
 
 function clearCompanyContext() {
   cloudState.companyId = supabaseConfig()?.companyId || null;
@@ -543,35 +578,35 @@ const overdueTasksDialog = document.querySelector("#overdueTasksDialog");
 const overdueTasksView = document.querySelector("#overdueTasksView");
 
 function saveProjects() {
-  localStorage.setItem("solarObjectManager.projects", JSON.stringify(projects));
+  writeLocalStorage("solarObjectManager.projects", JSON.stringify(projects));
   queueCloudSync();
 }
 
 function savePendingCloudDeletes() {
-  localStorage.setItem("solarObjectManager.pendingDeletes", JSON.stringify(pendingCloudDeletes));
+  writeLocalStorage("solarObjectManager.pendingDeletes", JSON.stringify(pendingCloudDeletes));
 }
 
 function savePendingCrmDeletes() {
-  localStorage.setItem("solarObjectManager.pendingCrmDeletes", JSON.stringify(pendingCrmDeletes));
+  writeLocalStorage("solarObjectManager.pendingCrmDeletes", JSON.stringify(pendingCrmDeletes));
 }
 
 function savePendingWarehouseDeletes() {
-  localStorage.setItem("solarObjectManager.pendingWarehouseDeletes", JSON.stringify(pendingWarehouseDeletes));
+  writeLocalStorage("solarObjectManager.pendingWarehouseDeletes", JSON.stringify(pendingWarehouseDeletes));
 }
 
 function saveCrmTasks() {
-  localStorage.setItem("solarObjectManager.crmTasks", JSON.stringify(crmTasks));
+  writeLocalStorage("solarObjectManager.crmTasks", JSON.stringify(crmTasks));
   renderCrmNotification();
   queueCrmSync();
 }
 
 function saveWarehouseItems() {
-  localStorage.setItem("solarObjectManager.warehouseItems", JSON.stringify(warehouseItems));
+  writeLocalStorage("solarObjectManager.warehouseItems", JSON.stringify(warehouseItems));
   queueWarehouseSync();
 }
 
 function saveWarehouseMovements() {
-  localStorage.setItem("solarObjectManager.warehouseMovements", JSON.stringify(warehouseMovements));
+  writeLocalStorage("solarObjectManager.warehouseMovements", JSON.stringify(warehouseMovements));
 }
 
 function projectFilesFor(projectId) {
@@ -579,7 +614,7 @@ function projectFilesFor(projectId) {
 }
 
 function saveProjectFilesByProjectId() {
-  localStorage.setItem("solarObjectManager.projectFiles", JSON.stringify(projectFilesByProjectId));
+  writeLocalStorage("solarObjectManager.projectFiles", JSON.stringify(projectFilesByProjectId));
 }
 
 function saveProjectFileMetadata(project) {
@@ -1068,7 +1103,7 @@ async function loadProjectsFromCloud() {
   projects = (data || []).map(dbProjectToApp);
   await loadProjectFilesFromCloud();
   selectedProjectId = projects[0] ? normalizeProjectId(projects[0].id) : "";
-  localStorage.setItem("solarObjectManager.projects", JSON.stringify(projects));
+  writeLocalStorage("solarObjectManager.projects", JSON.stringify(projects));
 }
 
 async function loadProjectFilesFromCloud() {
@@ -1133,7 +1168,7 @@ async function loadCrmTasksFromCloud() {
   }
 
   crmTasks = (data || []).map(dbCrmTaskToApp);
-  localStorage.setItem("solarObjectManager.crmTasks", JSON.stringify(crmTasks));
+  writeLocalStorage("solarObjectManager.crmTasks", JSON.stringify(crmTasks));
   renderCrmNotification();
 }
 
@@ -1159,7 +1194,7 @@ async function loadWarehouseItemsFromCloud() {
   }
 
   warehouseItems = (data || []).map(dbWarehouseItemToApp);
-  localStorage.setItem("solarObjectManager.warehouseItems", JSON.stringify(warehouseItems));
+  writeLocalStorage("solarObjectManager.warehouseItems", JSON.stringify(warehouseItems));
 }
 
 async function syncWarehouseItemsToCloud() {
@@ -5074,6 +5109,9 @@ async function initApp() {
     await initCloud();
   } catch (error) {
     cloudState.message = `Supabase помилка: ${error.message}`;
+  }
+  if (window.spartaStorageWarning) {
+    cloudState.message = window.spartaStorageWarning;
   }
   updateAccessMode();
   render();
