@@ -506,7 +506,7 @@ if (savedWarehouseItems && readLocalStorage("solarObjectManager.nomenclatureImpo
 let warehouseMovements = readJsonStorage("solarObjectManager.warehouseMovements", []);
 
 let selectedProjectId = String(projects[0]?.id ?? "");
-let selectedTab = "summary";
+let selectedTab = "";
 let stringsEditing = false;
 let materialsEditing = false;
 let authMode = "signin";
@@ -1854,6 +1854,9 @@ function projectStatusOptions(selectedStatus = "new") {
 }
 
 function projectFunnelIndex(status) {
+  if (status === "completed") {
+    return projectFunnelSteps.findIndex(([value]) => value === "passport_issued");
+  }
   const index = projectFunnelSteps.findIndex(([value]) => value === status);
   return index >= 0 ? index : projectFunnelSteps.length - 1;
 }
@@ -1977,7 +1980,6 @@ function renderDetail() {
   const stringsTotal = stringPanelCount(project);
   const expected = project.technical.panelCount;
   const isValid = stringsTotal === expected;
-  const sections = projectDetailSections();
 
   projectDetail.innerHTML = `
     <div class="detail-head">
@@ -2001,57 +2003,27 @@ function renderDetail() {
       </div>
     </div>
 
-    ${renderProjectFunnel(project)}
-    ${renderProjectSectionStack(project, isValid, stringsTotal, expected, sections)}
+    ${renderProjectSectionStack(project, isValid, stringsTotal, expected)}
   `;
 }
 
-function renderProjectFunnel(project) {
-  const activeIndex = projectFunnelIndex(project.status);
-  return `
-    <div class="project-funnel" aria-label="Етапи об'єкта">
-      ${projectFunnelSteps.map(([status, label], index) => {
-        const state = index < activeIndex ? "done" : index === activeIndex ? "current" : "";
-        return `
-          <button class="funnel-step ${state}" type="button" data-project-status="${status}" aria-pressed="${project.status === status}">
-            <span>${index + 1}</span>
-            <strong>${label}</strong>
-          </button>
-        `;
-      }).join("")}
-    </div>
-  `;
-}
-
-function projectDetailSections() {
-  return [
-    ["summary", "Інформація"],
-    ["technical", "Технічні дані"],
-    ["strings", "MPPT"],
-    ["materials", "Матеріали"],
-    ["finance", "Фінанси"],
-    ["photos", "Фото"],
-    ["files", "Файли"],
-    ["passport", "Паспорт об'єкта"],
-  ];
-}
-
-function renderProjectSectionStack(project, isValid, stringsTotal, expected, sections = projectDetailSections()) {
+function renderProjectSectionStack(project, isValid, stringsTotal, expected) {
   const previousTab = selectedTab;
+  const activeIndex = projectFunnelIndex(project.status);
   const html = `
     <div class="section-stack">
-      ${sections.map(([id, label]) => {
-        const isOpen = id === previousTab;
-        selectedTab = id;
+      ${projectFunnelSteps.map(([status, label], index) => {
+        const isOpen = status === previousTab;
+        const state = index < activeIndex ? "done" : index === activeIndex ? "current" : "";
         return `
-          <section class="project-section-card ${isOpen ? "active" : ""}" id="project-section-${id}">
-            <button class="project-section-toggle ${isOpen ? "active" : ""}" type="button" data-tab="${id}">
-              <span>${label}</span>
+          <section class="project-section-card ${isOpen ? "active" : ""} ${state}" id="project-section-${status}">
+            <button class="project-section-toggle ${isOpen ? "active" : ""}" type="button" data-workflow-stage="${status}">
+              <span><b>${index + 1}</b>${label}</span>
               <small>${isOpen ? "Згорнути" : "Відкрити"}</small>
             </button>
             ${isOpen ? `
               <div class="project-section-body">
-                ${renderTab(project, isValid, stringsTotal, expected)}
+                ${renderProjectStageContent(status, project, isValid, stringsTotal, expected)}
               </div>
             ` : ""}
           </section>
@@ -2063,9 +2035,38 @@ function renderProjectSectionStack(project, isValid, stringsTotal, expected, sec
   return html;
 }
 
+function renderProjectStageContent(status, project, isValid, stringsTotal, expected) {
+  const stageTabs = {
+    new: [["Інформація про клієнта та об'єкт", "summary"]],
+    planned: [["Замір і технічні дані", "technical"]],
+    proposal: [["Комерційна пропозиція", "files"], ["Розрахунок вартості", "finance"]],
+    contract: [["Договір і оплата", "finance"], ["Файли договору", "files"]],
+    in_progress: [["Матеріали для монтажу", "materials"], ["MPPT / стрінги", "strings"]],
+    waiting_review: [["Фотофіксація", "photos"], ["Контроль MPPT", "strings"]],
+    passport_issued: [["Паспорт об'єкта", "passport"]],
+    service: [["Сервісні файли", "files"], ["Історія фото", "photos"]],
+  };
+  return (stageTabs[status] || stageTabs.new)
+    .map(([title, tabId]) => `
+      <section class="stage-panel-section">
+        <h3>${title}</h3>
+        ${renderTabById(tabId, project, isValid, stringsTotal, expected)}
+      </section>
+    `)
+    .join("");
+}
+
+function renderTabById(tabId, project, isValid, stringsTotal, expected) {
+  const previousTab = selectedTab;
+  selectedTab = tabId;
+  const html = renderTab(project, isValid, stringsTotal, expected);
+  selectedTab = previousTab;
+  return html;
+}
+
 function renderTab(project, isValid, stringsTotal, expected) {
   if (selectedTab === "checklist") {
-    selectedTab = "summary";
+    selectedTab = "new";
   }
 
   if (selectedTab === "technical") {
@@ -3949,14 +3950,25 @@ document.addEventListener("click", (event) => {
     }
   }
 
-  const projectStatusButton = event.target.closest("[data-project-status]");
-  if (projectStatusButton) {
+  const workflowStageButton = event.target.closest("[data-workflow-stage]");
+  if (workflowStageButton) {
     const project = selectedProject();
     if (!project) return;
-    project.status = projectStatusButton.dataset.projectStatus;
+    const nextStage = selectedTab === workflowStageButton.dataset.workflowStage ? "" : workflowStageButton.dataset.workflowStage;
+    project.status = workflowStageButton.dataset.workflowStage;
+    if (nextStage !== "in_progress" && nextStage !== "waiting_review") {
+      stringsEditing = false;
+    }
+    if (nextStage !== "in_progress") {
+      materialsEditing = false;
+    }
+    selectedTab = nextStage;
     saveProjects();
     render();
     showSection("objectDetail");
+    if (selectedTab) {
+      document.querySelector(`#project-section-${selectedTab}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   if (event.target.closest("#editTechnicalButton")) {
@@ -4032,7 +4044,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (event.target.closest("#backToProjectsButton")) {
-    selectedTab = "summary";
+    selectedTab = "";
     render();
     showSection("projects");
   }
@@ -4160,6 +4172,7 @@ document.addEventListener("change", (event) => {
     if (!project) return;
 
     project.status = event.target.value;
+    selectedTab = event.target.value;
     saveProjects();
     render();
     showSection("objectDetail");
@@ -5054,7 +5067,7 @@ form.addEventListener("submit", (event) => {
   projects.unshift(nextProject);
   saveProjects();
   selectedProjectId = normalizeProjectId(nextProject.id);
-  selectedTab = "summary";
+  selectedTab = nextProject.status || "new";
   dialog.close();
   render();
   showSection("objectDetail");
@@ -5100,7 +5113,7 @@ function deleteSelectedProject() {
   });
 
   selectedProjectId = projects[0]?.id ?? null;
-  selectedTab = "summary";
+  selectedTab = "";
   saveProjects();
   render();
   showSection("projects");

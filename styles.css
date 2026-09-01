@@ -824,66 +824,6 @@ button.metric-card:hover,
   border-color: var(--yellow);
 }
 
-.project-funnel {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.funnel-step {
-  min-height: 58px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px;
-  display: grid;
-  grid-template-columns: 26px 1fr;
-  align-items: center;
-  gap: 8px;
-  background: #101a20;
-  color: var(--muted);
-  text-align: left;
-}
-
-.funnel-step span {
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  display: inline-grid;
-  place-items: center;
-  background: #1b252b;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.funnel-step strong {
-  font-size: 13px;
-  line-height: 1.2;
-}
-
-.funnel-step.done {
-  border-color: rgba(55, 201, 107, 0.28);
-  color: #b7f4c7;
-}
-
-.funnel-step.done span {
-  background: rgba(55, 201, 107, 0.16);
-  color: #8bf0a7;
-}
-
-.funnel-step.current {
-  border-color: rgba(255, 210, 26, 0.64);
-  background: rgba(255, 210, 26, 0.12);
-  color: var(--ink);
-  box-shadow: 0 0 0 1px rgba(255, 210, 26, 0.16);
-}
-
-.funnel-step.current span {
-  background: var(--yellow);
-  color: #0b0c0d;
-}
-
 .section-stack {
   display: grid;
   gap: 14px;
@@ -899,6 +839,14 @@ button.metric-card:hover,
 .project-section-card.active {
   border-color: rgba(255, 210, 26, 0.5);
   box-shadow: 0 0 0 1px rgba(255, 210, 26, 0.16);
+}
+
+.project-section-card.done {
+  border-color: rgba(55, 201, 107, 0.24);
+}
+
+.project-section-card.current:not(.active) {
+  border-color: rgba(255, 210, 26, 0.38);
 }
 
 .project-section-toggle {
@@ -926,8 +874,34 @@ button.metric-card:hover,
 }
 
 .project-section-toggle span {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
   font-size: 16px;
   font-weight: 900;
+}
+
+.project-section-toggle span b {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: #1b252b;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.project-section-card.done .project-section-toggle span b {
+  background: rgba(55, 201, 107, 0.16);
+  color: #8bf0a7;
+}
+
+.project-section-card.current .project-section-toggle span b,
+.project-section-toggle.active span b {
+  background: var(--yellow);
+  color: #0b0c0d;
 }
 
 .project-section-toggle small {
@@ -939,6 +913,16 @@ button.metric-card:hover,
 
 .project-section-body {
   padding: 15px;
+}
+
+.stage-panel-section + .stage-panel-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.stage-panel-section > h3 {
+  margin: 0 0 12px;
 }
 
 .data-grid,
