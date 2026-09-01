@@ -1120,6 +1120,68 @@ button.metric-card:hover,
   color: #8bf0a7;
 }
 
+.warehouse-picker-filters,
+.warehouse-picker-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(140px, 0.8fr) minmax(120px, 0.7fr) minmax(120px, 0.7fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.warehouse-picker-form {
+  grid-template-columns: minmax(130px, 0.8fr) minmax(220px, 1.7fr) minmax(88px, 0.45fr) minmax(70px, 0.35fr) minmax(96px, 0.45fr) minmax(96px, 0.45fr) auto;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.warehouse-product-field {
+  min-width: 0;
+}
+
+.warehouse-list-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 13px;
+  margin: 12px 0 8px;
+}
+
+.warehouse-list-wrap table {
+  min-width: 760px;
+}
+
+.warehouse-picker-table td:first-child b {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.warehouse-picker-table .muted-text {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.warehouse-extra-fields {
+  grid-column: 1 / -1;
+}
+
+.warehouse-extra-fields summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 800;
+  padding: 4px 0;
+}
+
+.warehouse-extra-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
 .warehouse-movement-form {
   grid-template-columns: repeat(4, minmax(140px, 1fr));
   margin-top: 14px;
@@ -2556,6 +2618,20 @@ dialog::backdrop {
 
   .warehouse-card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .warehouse-picker-filters,
+  .warehouse-picker-form,
+  .warehouse-extra-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .warehouse-picker-form .form-submit-cell {
+    justify-content: stretch;
+  }
+
+  .warehouse-picker-form .form-submit-cell button {
+    width: 100%;
   }
 
   .warehouse-card-head {

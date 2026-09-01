@@ -3549,11 +3549,13 @@ let selectedTab = "";
 let stringsEditing = false;
 let materialsEditing = false;
 let selectedWarehouseSection = "inverters";
+let warehousePickerFilters = {};
 let authMode = "signin";
 let crmFilter = "today";
 let cloudSyncTimer = null;
 let crmSyncTimer = null;
 let warehouseSyncTimer = null;
+let warehouseSearchTimer = null;
 let editingWarehouseIndex = null;
 let cloudLoading = false;
 let pendingCloudDeletes = readJsonStorage("solarObjectManager.pendingDeletes", []);
@@ -4921,6 +4923,78 @@ function warehouseSectionForCategory(category) {
 function warehouseItemsForSection(section) {
   const categories = section.categories.map(normalizeLookupValue);
   return warehouseItems.filter((item) => categories.includes(normalizeLookupValue(item.category)));
+}
+
+function warehouseSectionFilter(sectionId) {
+  return warehousePickerFilters[sectionId] || {};
+}
+
+function warehouseItemBrand(item) {
+  const name = normalizeLookupValue(item?.name || "");
+  const brands = [
+    ["deye", "Deye"],
+    ["longi", "Longi"],
+    ["ja solar", "JA Solar"],
+    ["tongwei", "Tongwei"],
+    ["astronergy", "Astronergy"],
+    ["tomzn", "Tomzn"],
+    ["etimat", "ETI"],
+    ["etitec", "ETI"],
+    ["eti", "ETI"],
+    ["techfine", "Techfine"],
+    ["tmg power", "TMG Power"],
+    ["boss", "Boss"],
+    ["bos-g", "BOS-G"],
+    ["bosg", "BOS-G"],
+    ["bos-b", "BOS-B"],
+  ];
+  return brands.find(([token]) => name.includes(token))?.[1] || "";
+}
+
+function warehouseItemPowerTags(item, sectionId = "") {
+  const name = normalizeLookupValue(item?.name || "");
+  const tags = [];
+  const patterns = [
+    { regex: /(\d+(?:[,.]\d+)?)\s*(квт\s*год|квтгод|kwh|кwh)/gi, unit: "кВт год" },
+    { regex: /(\d+(?:[,.]\d+)?)\s*(квт|kw)/gi, unit: "кВт" },
+    { regex: /(\d+(?:[,.]\d+)?)\s*(wp|вт|w)/gi, unit: "Вт" },
+    { regex: /(\d+(?:[,.]\d+)?)\s*(mm2|мм2|мм²)/gi, unit: "мм2" },
+  ];
+  patterns.forEach(({ regex, unit }) => {
+    for (const match of name.matchAll(regex)) {
+      const value = Number(String(match[1]).replace(",", "."));
+      if (!value) continue;
+      tags.push(`${Number.isInteger(value) ? value : value.toString().replace(".", ",")} ${unit}`);
+    }
+  });
+
+  if (!tags.length && sectionId === "cables") {
+    const cableSize = name.match(/(\d+)\s*[xх*]\s*(\d+(?:[,.]\d+)?)/i);
+    if (cableSize) tags.push(`${cableSize[1]}x${cableSize[2].replace(".", ",")}`);
+  }
+
+  return [...new Set(tags)];
+}
+
+function warehouseFilterOptions(items, mapper) {
+  return [...new Set(items.map(mapper).flat().filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "uk", { numeric: true }),
+  );
+}
+
+function warehouseFilteredItems(section, items) {
+  const filter = warehouseSectionFilter(section.id);
+  const query = normalizeLookupValue(filter.query || "");
+  return items.filter((item) => {
+    if (filter.category && item.category !== filter.category) return false;
+    if (filter.brand && warehouseItemBrand(item) !== filter.brand) return false;
+    if (filter.power && !warehouseItemPowerTags(item, section.id).includes(filter.power)) return false;
+    if (query) {
+      const searchText = normalizeLookupValue(`${item.name} ${item.sku} ${item.characteristics}`);
+      if (!searchText.includes(query)) return false;
+    }
+    return true;
+  });
 }
 
 function warehouseUnitCost(item) {
@@ -6690,55 +6764,127 @@ function renderWarehouseSectionStack(formState) {
 }
 
 function renderWarehouseSectionBody(section, items, formState) {
+  const filteredItems = warehouseFilteredItems(section, items);
+  const filter = warehouseSectionFilter(section.id);
   return `
-    ${renderWarehouseItemForm(section, formState)}
-    <div class="warehouse-card-grid">
-      ${items.length
-        ? items.map((item) => renderWarehouseItemCard(item, warehouseItems.indexOf(item))).join("")
-        : `<p class="empty-state">У цій категорії ще немає позицій.</p>`}
+    ${renderWarehousePickerFilters(section, items, filter)}
+    ${renderWarehouseItemForm(section, formState, filteredItems)}
+    <div class="warehouse-list-summary">
+      <span>${filteredItems.length} з ${items.length} позицій</span>
+      <span>Вибери назву зі списку, введи кількість і додай прихід</span>
+    </div>
+    <div class="table-wrap warehouse-list-wrap">
+      <table class="warehouse-picker-table">
+        <thead>
+          <tr><th>Назва</th><th>Категорія</th><th>Параметр</th><th>Залишок</th><th>Закупка</th><th>Продаж</th><th></th></tr>
+        </thead>
+        <tbody>
+          ${filteredItems.length
+            ? filteredItems.map((item) => renderWarehousePickerRow(item, warehouseItems.indexOf(item), section.id)).join("")
+            : `<tr><td colspan="7">За цими фільтрами позицій немає.</td></tr>`}
+        </tbody>
+      </table>
     </div>
   `;
 }
 
-function renderWarehouseItemForm(section, formState) {
-  const formItem = formState.item || {};
-  const populatedCategory = section.categories.find((category) => warehouseProductsForCategory(category).length);
-  const selectedCategory = formItem.category || populatedCategory || section.defaultCategory;
-  const productOptions = warehouseProductsForCategory(selectedCategory);
+function renderWarehousePickerFilters(section, items, filter) {
+  const brands = warehouseFilterOptions(items, warehouseItemBrand);
+  const powers = warehouseFilterOptions(items, (item) => warehouseItemPowerTags(item, section.id));
   return `
-    <form class="inline-form warehouse-form" id="warehouseItemForm">
-      <label>Категорія
+    <div class="warehouse-picker-filters">
+      <label>Пошук
+        <input data-warehouse-filter="query" data-section-id="${section.id}" value="${escapeAttribute(filter.query || "")}" placeholder="Назва, модель, артикул" />
+      </label>
+      <label>Підкатегорія
+        <select data-warehouse-filter="category" data-section-id="${section.id}">
+          <option value="">Усі</option>
+          ${section.categories.map((category) => `<option value="${escapeAttribute(category)}" ${filter.category === category ? "selected" : ""}>${category}</option>`).join("")}
+        </select>
+      </label>
+      <label>Марка
+        <select data-warehouse-filter="brand" data-section-id="${section.id}" ${brands.length ? "" : "disabled"}>
+          <option value="">Усі</option>
+          ${brands.map((brand) => `<option value="${escapeAttribute(brand)}" ${filter.brand === brand ? "selected" : ""}>${brand}</option>`).join("")}
+        </select>
+      </label>
+      <label>${section.id === "cables" ? "Переріз / тип" : "Потужність"}
+        <select data-warehouse-filter="power" data-section-id="${section.id}" ${powers.length ? "" : "disabled"}>
+          <option value="">Усі</option>
+          ${powers.map((power) => `<option value="${escapeAttribute(power)}" ${filter.power === power ? "selected" : ""}>${power}</option>`).join("")}
+        </select>
+      </label>
+    </div>
+  `;
+}
+
+function renderWarehouseItemForm(section, formState, filteredItems = []) {
+  const formItem = formState.item || {};
+  const filter = warehouseSectionFilter(section.id);
+  const visibleCategories = filter.category ? [filter.category] : section.categories;
+  const selectedCategory = formItem.category || filter.category || section.defaultCategory;
+  const productOptions = formState.isEditing ? warehouseProductsForCategory(selectedCategory) : filteredItems;
+  const selectedCatalogItem = formItem.id || productOptions[0]?.id || "__new";
+  const selectedItem = warehouseItemById(selectedCatalogItem) || formItem;
+  return `
+    <form class="warehouse-picker-form" id="warehouseItemForm">
+      <label>Напрямок
         <select name="category" id="warehouseCategorySelect">
-          ${section.categories.map((category) => `<option value="${category}" ${selectedCategory === category ? "selected" : ""}>${category}</option>`).join("")}
-          <option value="__new">+ Додати категорію</option>
+          ${visibleCategories.map((category) => `<option value="${escapeAttribute(category)}" ${selectedCategory === category ? "selected" : ""}>${category}</option>`).join("")}
+          <option value="__new">+ Нова категорія</option>
         </select>
       </label>
       <label class="warehouse-custom-category" hidden>Нова категорія<input name="customCategory" placeholder="Наприклад: Оптимізатори" /></label>
-      <label>Товар
+      <label class="warehouse-product-field">Назва зі списку
         <select name="catalogItem" id="warehouseProductSelect">
-          ${productOptions.map((item) => `<option value="${escapeAttribute(item.id)}" ${formItem.id === item.id ? "selected" : ""}>${item.name}</option>`).join("")}
-          <option value="__new" ${formState.isEditing || !productOptions.length ? "selected" : ""}>+ Додати товар</option>
+          ${productOptions.map((item) => `<option value="${escapeAttribute(item.id)}" ${selectedCatalogItem === item.id ? "selected" : ""}>${item.name}</option>`).join("")}
+          <option value="__new" ${formState.isEditing || !productOptions.length ? "selected" : ""}>+ Нова позиція</option>
         </select>
       </label>
-      <label class="warehouse-custom-product" ${formState.isEditing ? "" : productOptions.length ? "hidden" : ""}>Назва<input name="name" placeholder="Назва позиції" value="${escapeAttribute(formItem.name || "")}" /></label>
-      <label>Артикул<input name="sku" placeholder="SKU" value="${escapeAttribute(formItem.sku || "")}" /></label>
-      <label>К-сть<input name="qty" type="number" min="0" step="0.01" required value="${escapeAttribute(formItem.qty ?? "")}" /></label>
-      <label>Од.<input name="unit" value="${escapeAttribute(formItem.unit || "шт")}" required /></label>
-      <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.purchasePrice ?? "")}" /></label>
-      <label>Доставка / од.<input name="deliveryCost" type="number" min="0" step="1" value="${escapeAttribute(formItem.deliveryCost ?? "")}" /></label>
-      <label>Дод. витрати / од.<input name="extraCost" type="number" min="0" step="1" value="${escapeAttribute(formItem.extraCost ?? "")}" /></label>
-      <label>Монтажникам<input name="installerPrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.installerPrice ?? formItem.salePrice ?? "")}" /></label>
-      <label>Розниця<input name="retailPrice" type="number" min="0" step="1" value="${escapeAttribute(formItem.retailPrice ?? formItem.salePrice ?? "")}" /></label>
-      <label>Мін. залишок<input name="minQty" type="number" min="0" step="0.01" value="${escapeAttribute(formItem.minQty ?? "")}" /></label>
-      <label>Місце<input name="location" placeholder="Стелаж, склад, авто" value="${escapeAttribute(formItem.location || "")}" /></label>
-      <label>Серійний номер<input name="serialNumber" placeholder="SN / партія" value="${escapeAttribute(formItem.serialNumber || "")}" /></label>
-      <label>Постачальник<input name="supplier" placeholder="Назва постачальника" value="${escapeAttribute(formItem.supplier || "")}" /></label>
-      <label class="wide-field">Характеристики<input name="characteristics" placeholder="Потужність, тип, колір, розмір..." value="${escapeAttribute(formItem.characteristics || "")}" /></label>
+      <label class="warehouse-custom-product" ${formState.isEditing || !productOptions.length ? "" : "hidden"}>Нова назва<input name="name" placeholder="Назва позиції" value="${escapeAttribute(formItem.name || "")}" /></label>
+      <label>К-сть<input name="qty" type="number" min="0" step="0.01" required value="${escapeAttribute(formState.isEditing ? formItem.qty ?? "" : "")}" placeholder="0" /></label>
+      <label>Од.<input name="unit" value="${escapeAttribute(selectedItem.unit || formItem.unit || "шт")}" required /></label>
+      <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.purchasePrice ?? formItem.purchasePrice ?? "")}" /></label>
+      <label>Продаж<input name="retailPrice" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.retailPrice ?? selectedItem.salePrice ?? formItem.retailPrice ?? "")}" /></label>
+      <details class="warehouse-extra-fields">
+        <summary>Додатково</summary>
+        <div class="warehouse-extra-grid">
+          <label>Артикул<input name="sku" placeholder="SKU" value="${escapeAttribute(selectedItem.sku || formItem.sku || "")}" /></label>
+          <label>Доставка / од.<input name="deliveryCost" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.deliveryCost ?? formItem.deliveryCost ?? "")}" /></label>
+          <label>Дод. витрати / од.<input name="extraCost" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.extraCost ?? formItem.extraCost ?? "")}" /></label>
+          <label>Монтажникам<input name="installerPrice" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.installerPrice ?? selectedItem.salePrice ?? formItem.installerPrice ?? "")}" /></label>
+          <label>Мін. залишок<input name="minQty" type="number" min="0" step="0.01" value="${escapeAttribute(selectedItem.minQty ?? formItem.minQty ?? "")}" /></label>
+          <label>Місце<input name="location" placeholder="Стелаж, склад, авто" value="${escapeAttribute(selectedItem.location || formItem.location || "")}" /></label>
+          <label>Серійний номер<input name="serialNumber" placeholder="SN / партія" value="${escapeAttribute(selectedItem.serialNumber || formItem.serialNumber || "")}" /></label>
+          <label>Постачальник<input name="supplier" placeholder="Назва постачальника" value="${escapeAttribute(selectedItem.supplier || formItem.supplier || "")}" /></label>
+          <label class="wide-field">Характеристики<input name="characteristics" placeholder="Потужність, тип, колір, розмір..." value="${escapeAttribute(selectedItem.characteristics || formItem.characteristics || "")}" /></label>
+        </div>
+      </details>
       <div class="form-submit-cell">
         ${formState.isEditing ? `<button class="secondary-button" type="button" data-cancel-warehouse-edit>Скасувати</button>` : ""}
-        <button class="primary-button">${formState.isEditing ? "Зберегти позицію" : "Додати прихід"}</button>
+        <button class="primary-button">${formState.isEditing ? "Зберегти" : "Додати кількість"}</button>
       </div>
     </form>
+  `;
+}
+
+function renderWarehousePickerRow(item, index, sectionId) {
+  const tags = warehouseItemPowerTags(item, sectionId);
+  const brand = warehouseItemBrand(item);
+  const isLow = Number(item.qty || 0) <= Number(item.minQty || 0);
+  return `
+    <tr class="${isLow ? "warning-row" : ""}">
+      <td><b>${item.name}</b>${item.sku ? `<span class="muted-text">${item.sku}</span>` : ""}</td>
+      <td>${item.category}</td>
+      <td>${[brand, ...tags].filter(Boolean).join(" / ") || "-"}</td>
+      <td>${item.qty} ${item.unit}</td>
+      <td>${Number(item.purchasePrice || 0) ? money(item.purchasePrice) : "-"}</td>
+      <td>${Number(item.retailPrice || item.salePrice || 0) ? money(item.retailPrice || item.salePrice) : "-"}</td>
+      <td class="warehouse-actions">
+        <button class="table-button" data-pick-warehouse-id="${escapeAttribute(item.id)}">Вибрати</button>
+        <button class="table-button" data-edit-warehouse-index="${index}">Ред.</button>
+      </td>
+    </tr>
   `;
 }
 
@@ -7626,6 +7772,18 @@ document.addEventListener("click", (event) => {
     }
   }
 
+  const pickWarehouseButton = event.target.closest("[data-pick-warehouse-id]");
+  if (pickWarehouseButton) {
+    const formElement = document.querySelector("#warehouseItemForm");
+    const item = warehouseItemById(pickWarehouseButton.dataset.pickWarehouseId);
+    if (formElement && item) {
+      formElement.elements.catalogItem.value = item.id;
+      fillWarehouseFormFromItem(formElement, item);
+      formElement.elements.qty.value = "";
+      formElement.elements.qty.focus();
+    }
+  }
+
   if (event.target.closest("#editStringsButton")) {
     stringsEditing = true;
     renderDetail();
@@ -7844,7 +8002,34 @@ document.addEventListener("click", (event) => {
   }
 });
 
+document.addEventListener("input", (event) => {
+  if (!event.target.matches("[data-warehouse-filter='query']")) return;
+
+  const sectionId = event.target.dataset.sectionId || selectedWarehouseSection;
+  warehousePickerFilters[sectionId] = {
+    ...warehouseSectionFilter(sectionId),
+    query: event.target.value,
+  };
+  editingWarehouseIndex = null;
+  window.clearTimeout(warehouseSearchTimer);
+  warehouseSearchTimer = window.setTimeout(() => {
+    renderWarehouseView();
+    document.querySelector(`#warehouse-section-${sectionId} [data-warehouse-filter='query']`)?.focus();
+  }, 180);
+});
+
 document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-warehouse-filter]")) {
+    const sectionId = event.target.dataset.sectionId || selectedWarehouseSection;
+    warehousePickerFilters[sectionId] = {
+      ...warehouseSectionFilter(sectionId),
+      [event.target.dataset.warehouseFilter]: event.target.value,
+    };
+    editingWarehouseIndex = null;
+    renderWarehouseView();
+    return;
+  }
+
   if (event.target.matches("[data-equipment-photo-id]")) {
     const file = event.target.files?.[0];
     const type = event.target.dataset.equipmentPhotoType;
@@ -7914,7 +8099,10 @@ document.addEventListener("change", (event) => {
       : `${warehouseProductsForCategory(event.target.value).map((item) => `<option value="${escapeAttribute(item.id)}">${item.name}</option>`).join("")}<option value="__new">+ Додати товар</option>`;
     productField.hidden = !isNewCategory && productSelect.value && productSelect.value !== "__new";
     formElement.elements.name.value = "";
-    if (!isNewCategory && productSelect.value && productSelect.value !== "__new") fillWarehouseFormFromItem(formElement, warehouseItemById(productSelect.value));
+    if (!isNewCategory && productSelect.value && productSelect.value !== "__new") {
+      fillWarehouseFormFromItem(formElement, warehouseItemById(productSelect.value));
+      if (!Number.isInteger(editingWarehouseIndex)) formElement.elements.qty.value = "";
+    }
   }
 
   if (event.target.id === "warehouseProductSelect") {
@@ -7923,6 +8111,7 @@ document.addEventListener("change", (event) => {
     const selectedItem = warehouseItemById(event.target.value);
     productField.hidden = Boolean(selectedItem);
     if (selectedItem) fillWarehouseFormFromItem(formElement, selectedItem);
+    if (selectedItem && !Number.isInteger(editingWarehouseIndex)) formElement.elements.qty.value = "";
     if (event.target.value === "__new") {
       formElement.elements.name.value = "";
       formElement.elements.name.focus();
