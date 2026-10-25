@@ -52,7 +52,7 @@ declare
   client_key text;
 begin
   if auth.uid() is null or not public.has_company_role(p_company_id,
-    array['owner','admin','engineer','brigadier']::public.member_role[]) then
+    array['owner','admin','engineer']::public.member_role[]) then
     raise exception 'Only active office staff may save object cards' using errcode='42501';
   end if;
   if p_expected_revision is null or p_expected_revision<0 then raise exception 'Missing project revision'; end if;
