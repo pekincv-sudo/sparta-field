@@ -7,6 +7,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const output = path.join(root, "public-build");
 const files = [
+  "auth-flow.js", "team-access.js", "team-access.css",
   "index.html", "styles.css", "warehouse.css", "app.js", "sw.js",
   "local-workspace.js", "money.js", "cash-ledger.js", "cash-book.js",
   "workspace-reset-core.js", "workspace-maintenance.js",
