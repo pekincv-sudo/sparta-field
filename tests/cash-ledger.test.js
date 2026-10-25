@@ -8,7 +8,7 @@ function runCashLedgerTests() {
   function check(name, fn) { fn(); checks += 1; }
   const now = "2026-10-24T12:00:00.000Z";
   function payment(overrides) {
-    return Cash.createEntry(Object.assign({ id: "payment-1", companyId: "sparta", projectId: "taras", projectTitle: "Тарас Сусід",
+    return Cash.createEntry(Object.assign({ id: "payment-1", currency: "UAH", companyId: "sparta", projectId: "taras", projectTitle: "Тарас Сусід",
       direction: "income", category: "client_payment", amount: "1000,10", counterparty: "Тарас", purpose: "Аванс за станцію",
       occurredAt: "2026-10-23T10:15:00+03:00", method: "cash", createdBy: "owner" }, overrides), { now: now });
   }
@@ -18,7 +18,7 @@ function runCashLedgerTests() {
     assert.equal(Cash.parseAmount(" 123456,78 "), 12345678);
     assert.equal(Cash.parseAmount("001.2"), 120);
     assert.equal(Cash.parseAmount(1.01), 101);
-    assert.equal(Cash.formatAmount(-12345678), "−123\u00a0456,78 грн");
+    assert.equal(Cash.formatAmount(-12345678, "UAH"), "−123\u00a0456,78 грн");
   });
   check("ambiguous, negative, zero, oversized and overprecise amounts are rejected", function () {
     ["", "0", "-1", "+2", "1,000.00", "1.005", "1e4", "NaN", Infinity, null, "90071992547410.00"].forEach(function (value) {

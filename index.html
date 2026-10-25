@@ -12,8 +12,8 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/pwa/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/assets/pwa/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/assets/pwa/icon-512.png" />
-    <link rel="stylesheet" href="./styles.css?v=20261025-34" />
-    <link rel="stylesheet" href="./warehouse.css?v=20261025-34" />
+    <link rel="stylesheet" href="./styles.css?v=20261025-35" />
+    <link rel="stylesheet" href="./warehouse.css?v=20261025-35" />
   </head>
   <body class="auth-locked">
     <section class="auth-screen" aria-label="Вхід у SPARTA field">
@@ -54,7 +54,7 @@
           <button class="nav-item" data-section="projects"><span>▤</span>Об'єкти</button>
           <button class="nav-item" data-section="warehouse"><span>▦</span>Склад</button>
           <button class="nav-item" data-section="crm"><span>☑</span>CRM</button>
-          <button class="nav-item is-hidden" data-section="cash"><span>₴</span>Каса</button>
+          <button class="nav-item is-hidden" data-section="cash"><span>$</span>Каса</button>
           <button class="nav-item" data-section="profile"><span>○</span>Профіль</button>
         </nav>
 
@@ -335,6 +335,7 @@
         <div class="form-grid">
           <label>Назва об'єкта<input name="title" required /></label>
           <label>Клієнт<input name="clientName" required /></label>
+          <label>Валюта об’єкта<select name="currency"><option value="USD">USD — Долар США</option><option value="UAH">UAH — Гривня</option></select><small>Договір, матеріали та роботи в одній валюті.</small></label>
           <label>Телефон<input name="clientPhone" /></label>
           <label>Адреса<input name="address" required /></label>
           <label>Тип об'єкта
@@ -377,6 +378,7 @@
         <div class="form-grid">
           <label>Назва об'єкта<input name="title" required /></label>
           <label>Клієнт<input name="clientName" required /></label>
+          <label>Валюта об’єкта<select name="currency"><option value="USD">USD — Долар США</option><option value="UAH">UAH — Гривня</option></select><small>Договір, матеріали та роботи в одній валюті.</small></label>
           <label>Телефон<input name="clientPhone" /></label>
           <label>Адреса<input name="address" required /></label>
           <label>Тип об'єкта
@@ -451,17 +453,18 @@
       </form>
     </dialog>
 
-    <script src="./local-workspace.js?v=20261025-34"></script>
-    <script src="./supabase-config.js?v=20261025-34"></script>
+    <script src="./local-workspace.js?v=20261025-35"></script>
+    <script src="./supabase-config.js?v=20261025-35"></script>
     <!-- Kept locally so authentication also works when a CDN is blocked or unavailable. -->
-    <script src="./supabase-js.umd.js?v=20261025-34"></script>
-    <script src="./cash-ledger.js?v=20261025-34"></script>
-    <script src="./cash-book.js?v=20261025-34"></script>
-    <script src="./workspace-reset-core.js?v=20261025-34"></script>
-    <script src="./workspace-maintenance.js?v=20261025-34"></script>
-    <script src="./warehouse-core.js?v=20261025-34"></script>
-    <script src="./warehouse-ui.js?v=20261025-34"></script>
-    <script src="./warehouse-cloud.js?v=20261025-34"></script>
-    <script src="./app.js?v=20261025-34"></script>
+    <script src="./supabase-js.umd.js?v=20261025-35"></script>
+    <script src="./money.js?v=20261025-35"></script>
+    <script src="./cash-ledger.js?v=20261025-35"></script>
+    <script src="./cash-book.js?v=20261025-35"></script>
+    <script src="./workspace-reset-core.js?v=20261025-35"></script>
+    <script src="./workspace-maintenance.js?v=20261025-35"></script>
+    <script src="./warehouse-core.js?v=20261025-35"></script>
+    <script src="./warehouse-ui.js?v=20261025-35"></script>
+    <script src="./warehouse-cloud.js?v=20261025-35"></script>
+    <script src="./app.js?v=20261025-35"></script>
   </body>
 </html>

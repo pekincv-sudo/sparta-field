@@ -2,6 +2,9 @@
 -- Apply after release34-base.sql, before private-storage.sql / field-project-sync.sql.
 -- No client, object, warehouse, cash or attachment records are imported/deleted.
 begin;
+-- Existing numeric values remain UAH. Only new cards default to USD.
+alter table public.projects add column if not exists currency text not null default 'UAH' check(currency in ('USD','UAH'));
+alter table public.projects alter column currency set default 'USD';
 alter table public.projects add column if not exists data_revision bigint not null default 0;
 
 create or replace function public.sparta_project_write_guard()
@@ -57,6 +60,7 @@ begin
     jsonb_typeof(s) is distinct from 'array' or octet_length(p_payload::text)>2097152 or jsonb_array_length(s)>1000 then
     raise exception 'Invalid project payload';
   end if;
+  if coalesce(p->>'currency','') not in ('USD','UAH') then raise exception 'Select project currency: USD or UAH'; end if;
   client_key := btrim(p->>'client_id');
   if coalesce(client_key,'')='' or length(client_key)>200 or coalesce(btrim(p->>'title'),'')='' then raise exception 'Project name and client identity are required'; end if;
   if p ? 'company_id' and p->>'company_id' is distinct from p_company_id::text then raise exception 'Project belongs to another company' using errcode='42501'; end if;
@@ -83,14 +87,16 @@ begin
   perform set_config('sparta.project_write_company',p_company_id::text,true);
   -- The unique company/client key serializes concurrent creation too. A second
   -- creator must observe the first committed revision before making changes.
-  insert into public.projects(company_id,client_id,title,created_by)
-    values(p_company_id,client_key,p->>'title',auth.uid()) on conflict(company_id,client_id) do nothing;
+  insert into public.projects(company_id,client_id,title,currency,created_by)
+    values(p_company_id,client_key,p->>'title',p->>'currency',auth.uid()) on conflict(company_id,client_id) do nothing;
   select * into row from public.projects where company_id=p_company_id and client_id=client_key for update;
+  if row.currency is distinct from p->>'currency' then raise exception 'Project currency is fixed; do not relabel existing amounts'; end if;
   if row.data_revision<>p_expected_revision then raise exception 'Project changed on another device; reload before saving' using errcode='40001'; end if;
   if not public.has_company_role(p_company_id,array['owner','admin']::public.member_role[])
      and p ? 'finance' and p->'finance' is distinct from row.finance then
     raise exception 'Only owner or admin may change project finance' using errcode='42501';
   end if;
+  if exists(select 1 from jsonb_array_elements(coalesce(p->'finance'->'offerLines','[]'::jsonb)) x where coalesce(x->>'currency',p->>'currency') is distinct from p->>'currency') then raise exception 'Offer currency must match project currency'; end if;
   update public.projects set
     title=p->>'title',client_name=coalesce(p->>'client_name',''),client_phone=coalesce(p->>'client_phone',''),
     address=coalesce(p->>'address',''),object_type=coalesce(p->>'object_type',''),status=(p->>'status')::public.project_status,

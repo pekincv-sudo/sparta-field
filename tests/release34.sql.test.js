@@ -56,17 +56,19 @@ async function run(PGlite, root = path.resolve(__dirname, ".."), base = process.
     assert.equal((await db.query("select count(*)::int as count from public.project_tasks where company_id=$1",[company])).rows[0].count,1); passed++;
     await assert.rejects(db.query("select sparta_archive.restore_snapshot($1)",[backup]),/empty company/); passed++;
     await db.query("delete from public.project_tasks where company_id=$1",[company]);
+    // Simulate an archive created before the currency column existed.
+    await db.query("update sparta_archive.snapshots set data=jsonb_set(data,'{projects}',(select jsonb_agg(value-'currency') from jsonb_array_elements(data->'projects'))) where id=$1",[backup]);
     await db.query("select sparta_archive.restore_snapshot($1)",[backup]);
     assert.deepEqual(await snapshot(),before); passed++;
     await db.query("select sparta_archive.restore_snapshot($1)",[backup]);
     assert.deepEqual(await snapshot(),before); passed++;
     await db.query("select set_config('request.jwt.claim.sub',$1,false)",[user]);
-    await db.query("insert into public.cash_transactions(company_id,direction,category,amount_minor,counterparty,purpose) values($1,'income','opening_balance',100,'Owner','Test balance')",[company]);
+    await db.query("insert into public.cash_transactions(company_id,currency,direction,category,amount_minor,counterparty,purpose) values($1,'USD','income','opening_balance',100,'Owner','Test balance')",[company]);
     await assert.rejects(db.query("select sparta_archive.archive_company($1,'must-not-remove-money')",[company]),/Cash history exists/); passed++;
     await db.exec("set role authenticated");
-    const original = (await db.query("insert into public.cash_transactions(company_id,direction,category,amount_minor,counterparty,purpose) values($1,'income','other_income',12345,'Client','Verified receipt') returning id",[company])).rows[0].id;
-    await db.query("insert into public.cash_transactions(company_id,direction,category,amount_minor,counterparty,purpose,reverses_id) values($1,'expense','other_income',12345,'Client','Correction',$2)",[company,original]);
-    await assert.rejects(db.query("insert into public.cash_transactions(company_id,direction,category,amount_minor,counterparty,purpose,reverses_id) values($1,'expense','other_income',12345,'Client','Duplicate',$2)",[company,original]),/unique constraint/); passed++;
+    const original = (await db.query("insert into public.cash_transactions(company_id,currency,direction,category,amount_minor,counterparty,purpose) values($1,'USD','income','other_income',12345,'Client','Verified receipt') returning id",[company])).rows[0].id;
+    await db.query("insert into public.cash_transactions(company_id,currency,direction,category,amount_minor,counterparty,purpose,reverses_id) values($1,'USD','expense','other_income',12345,'Client','Correction',$2)",[company,original]);
+    await assert.rejects(db.query("insert into public.cash_transactions(company_id,currency,direction,category,amount_minor,counterparty,purpose,reverses_id) values($1,'USD','expense','other_income',12345,'Client','Duplicate',$2)",[company,original]),/unique constraint/); passed++;
     await assert.rejects(db.query("update public.cash_transactions set purpose='Rewrite' where id=$1",[original]),/permission denied|immutable/);
     await assert.rejects(db.query("delete from public.cash_transactions where id=$1",[original]),/permission denied|immutable/); passed++;
     await assert.rejects(db.query("select * from sparta_archive.snapshots"),/permission denied/); passed++;

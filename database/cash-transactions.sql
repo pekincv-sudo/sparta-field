@@ -1,10 +1,12 @@
--- SPARTA field: immutable cash journal (UAH, integer kopiykas).
+-- SPARTA field: immutable cash journal (USD / UAH, integer minor units).
 -- Run in Supabase SQL Editor after the existing company/project schema.
 -- This migration creates structure and policies only; it does not import money.
 -- Dependencies: public.companies, public.projects (company_id, client_id),
 -- public.member_role, public.has_company_role(uuid, public.member_role[]), auth.uid().
 
 begin;
+alter table public.projects add column if not exists currency text not null default 'UAH' check(currency in ('USD','UAH'));
+alter table public.projects alter column currency set default 'USD';
 
 create table if not exists public.cash_transactions (
   id uuid primary key default gen_random_uuid(),
@@ -30,10 +32,15 @@ create table if not exists public.cash_transactions (
   check (project_client_id is null or length(btrim(project_title)) > 0)
 );
 
+-- Adding the column preserves legacy rows without UPDATE of immutable history.
+alter table public.cash_transactions add column if not exists currency text not null default 'UAH' check(currency in ('USD','UAH'));
+-- Old clients must not silently post UAH amounts as USD.
+alter table public.cash_transactions alter column currency drop default;
+
 comment on table public.cash_transactions is
-  'Append-only UAH cash journal. Correct an entry by a linked opposite entry; never overwrite history.';
+  'Append-only USD / UAH cash journal. Correct an entry by a linked opposite entry; never overwrite history.';
 comment on column public.cash_transactions.amount_minor is
-  'Positive amount in kopiykas; direction supplies the sign. Limited to JavaScript safe integer range.';
+  'Positive amount in cents / kopiykas according to currency; direction supplies the sign. Limited to JavaScript safe integer range.';
 comment on column public.cash_transactions.project_title is
   'Project name at entry creation; remains readable if the project is renamed or removed.';
 comment on column public.cash_transactions.reverses_id is
@@ -60,6 +67,8 @@ begin
       using errcode = '42501';
   end if;
 
+  if new.currency is null or new.currency not in ('USD','UAH') then raise exception 'Select cash currency: USD or UAH'; end if;
+
   -- Audit identity/time come from the database, never from a browser payload.
   new.created_by := auth.uid();
   new.created_at := statement_timestamp();
@@ -85,6 +94,7 @@ begin
       or new.project_client_id is distinct from original.project_client_id
       or new.project_title is distinct from original.project_title
       or new.category is distinct from original.category
+      or new.currency is distinct from original.currency
       or new.amount_minor is distinct from original.amount_minor
       or new.payment_method is distinct from original.payment_method
       or new.direction is distinct from (case original.direction
@@ -104,6 +114,7 @@ begin
       raise exception 'Cash category does not match its direction.';
     end if;
 
+    if new.project_client_id is not null and exists (select 1 from public.projects p where p.company_id=new.company_id and p.client_id=new.project_client_id and p.currency<>new.currency) then raise exception 'Cash currency must match project currency; currencies are accounted separately'; end if;
     if new.project_client_id is not null and not exists (
       select 1 from public.projects p
       where p.company_id = new.company_id

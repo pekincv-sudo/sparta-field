@@ -1,6 +1,7 @@
 "use strict";
 
 async function runTests() {
+  const currency = require("./currency.test.js")();
   const domain = require("./cash-ledger.test.js")();
   const integration = await require("./cash-book.integration.test.js")();
   const isolation = require("./local-workspace.test.js")();
@@ -17,7 +18,7 @@ async function runTests() {
   const privateStorage = await require("./private-storage.test.js")();
   const publicBuild = await require("./public-build.test.js")();
   const field = await require("./field-project-sync.test.js")();
-  return { passed: domain.passed + integration.passed + isolation.passed + workflow.passed + proposal.passed + stages.passed + warehouse.passed + warehouseIntegration.passed + cleanUi.passed + cleanReset.passed + auth.passed + renderSafety.passed + warehouseCloud.passed + privateStorage.passed + publicBuild.passed + field.passed, domain, integration, isolation, workflow, proposal, stages, warehouse, warehouseIntegration, cleanUi, cleanReset, auth, renderSafety, warehouseCloud, privateStorage, publicBuild, field };
+  return { passed: currency.passed + domain.passed + integration.passed + isolation.passed + workflow.passed + proposal.passed + stages.passed + warehouse.passed + warehouseIntegration.passed + cleanUi.passed + cleanReset.passed + auth.passed + renderSafety.passed + warehouseCloud.passed + privateStorage.passed + publicBuild.passed + field.passed, currency, domain, integration, isolation, workflow, proposal, stages, warehouse, warehouseIntegration, cleanUi, cleanReset, auth, renderSafety, warehouseCloud, privateStorage, publicBuild, field };
 }
 
 if (require.main === module) {

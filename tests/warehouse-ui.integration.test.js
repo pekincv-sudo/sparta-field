@@ -44,7 +44,7 @@ async function runWarehouseIntegrationTests(projectDirectory = path.resolve(__di
   const hooks = ui.__test;
   const checks = [];
   const check = (name, callback) => { callback(); checks.push(name); };
-  const editor = (mode, qty, projectId = "a") => ({ mode, id: crypto.randomUUID(), number: mode + "-" + crypto.randomUUID(), date: "2026-10-24", projectId, customer: "Тестовий покупець", supplier: "Тестовий постачальник", location: "Склад", note: "Тест", attachments: [], lines: [{ itemId: "panel", qty: String(qty), purchasePrice: "120", deliveryCost: "", extraCost: "", salePrice: "170", serialNumbers: "" }] });
+  const editor = (mode, qty, projectId = "a") => ({ mode, currency: "UAH", id: crypto.randomUUID(), number: mode + "-" + crypto.randomUUID(), date: "2026-10-24", projectId, customer: "Тестовий покупець", supplier: "Тестовий постачальник", location: "Склад", note: "Тест", attachments: [], lines: [{ itemId: "panel", qty: String(qty), purchasePrice: "120", deliveryCost: "", extraCost: "", salePrice: "170", serialNumbers: "" }] });
   const post = (input) => {
     const result = hooks.postMovement(hooks.snapshot(), input);
     hooks.persist(result);

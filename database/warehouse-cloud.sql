@@ -2,6 +2,8 @@
 -- Apply after the existing companies/projects/warehouse_items schema.
 -- Does not import any browser data. Only existing company rows seed the first read.
 begin;
+alter table public.projects add column if not exists currency text not null default 'UAH' check(currency in ('USD','UAH'));
+alter table public.projects alter column currency set default 'USD';
 
 alter table public.warehouse_items add column if not exists app_data jsonb not null default '{}'::jsonb;
 alter table public.project_materials add column if not exists app_data jsonb not null default '{}'::jsonb;
@@ -151,6 +153,10 @@ begin
   end loop;
   for entry in select value from jsonb_array_elements(p_state->'items') loop
     item_id := entry->>'id';
+    if coalesce(entry->>'currency','UAH') not in ('USD','UAH') then raise exception 'Invalid inventory currency'; end if;
+    if exists(select 1 from jsonb_array_elements(current_row.state->'items') x where x->>'id'=item_id and coalesce(x->>'currency','UAH') is distinct from coalesce(entry->>'currency','UAH')) then
+      raise exception 'Inventory currency is fixed; create a separate product';
+    end if;
     if coalesce(btrim(entry->>'name'),'')='' or coalesce(btrim(entry->>'unit'),'')='' then raise exception 'Missing product name/unit'; end if;
     foreach field_name in array array['qty','minQty','purchasePrice','deliveryCost','extraCost','retailPrice','salePrice','installerPrice'] loop
       number_value := public.sparta_warehouse_number(entry->field_name);
@@ -167,6 +173,7 @@ begin
     old_unit_cost := coalesce(old_unit_cost,0); inventory_value := old_qty*old_unit_cost;
     for movement in select value from jsonb_array_elements(p_state->'movements') x
       where x->>'itemId'=item_id and not exists(select 1 from jsonb_array_elements(current_row.state->'movements') o where o->>'id'=x->>'id') loop
+      if coalesce(movement->>'currency','UAH') is distinct from coalesce(entry->>'currency','UAH') then raise exception 'Movement currency must match product'; end if;
       number_value := public.sparta_warehouse_number(movement->'qty');
       if movement->>'type' not in ('purchase','project','return','sale','adjustment','consume') then raise exception 'Unsupported stock movement'; end if;
       if movement->>'type'<>'adjustment' and number_value<=0 then raise exception 'Movement quantity must be positive'; end if;
@@ -195,8 +202,14 @@ begin
   end if;
   for entry in select value from jsonb_array_elements(p_state->'reservations') loop
     if public.sparta_warehouse_number(entry->'qty')<=0 then raise exception 'Reservation must be positive'; end if;
+    if exists(select 1 from jsonb_array_elements(p_state->'items') i join public.projects p on p.company_id=p_company_id and p.client_id=entry->>'projectId' where i->>'id'=entry->>'itemId' and coalesce(i->>'currency','UAH')<>p.currency) then raise exception 'Reservation currency must match project'; end if;
     if not exists(select 1 from jsonb_array_elements(p_state->'items') x where x->>'id'=entry->>'itemId')
        or not exists(select 1 from public.projects p where p.company_id=p_company_id and p.client_id=entry->>'projectId') then raise exception 'Reservation must reference company inventory/project'; end if;
+  end loop;
+  for entry in select value from jsonb_array_elements(p_state->'documents') x
+    where not exists(select 1 from jsonb_array_elements(current_row.state->'documents') o where o->>'id'=x->>'id' and o->>'status'<>'draft') loop
+    if coalesce(entry->>'currency','UAH') not in ('USD','UAH') then raise exception 'Invalid document currency'; end if;
+    if entry->>'status'='posted' and exists(select 1 from jsonb_array_elements(entry->'lines') l join jsonb_array_elements(p_state->'items') i on i->>'id'=l->>'itemId' where coalesce(i->>'currency','UAH')<>coalesce(entry->>'currency','UAH') or coalesce(l->>'currency',entry->>'currency','UAH')<>coalesce(entry->>'currency','UAH')) then raise exception 'Document lines must use one currency'; end if;
   end loop;
   -- Reject references to another company's project, and require material update
   -- rows for every new issue/return/installation confirmation.
@@ -204,6 +217,7 @@ begin
     where not exists(select 1 from jsonb_array_elements(current_row.state->'movements') o where o->>'id'=x->>'id') loop
     if not exists(select 1 from jsonb_array_elements(p_state->'items') i where i->>'id'=movement->>'itemId') then raise exception 'Unknown movement product'; end if;
     if coalesce(movement->>'projectId','')<>'' and not exists(select 1 from public.projects p where p.company_id=p_company_id and p.client_id=movement->>'projectId') then raise exception 'Unknown company project'; end if;
+    if coalesce(movement->>'projectId','')<>'' and exists(select 1 from public.projects p where p.company_id=p_company_id and p.client_id=movement->>'projectId' and p.currency<>coalesce(movement->>'currency','UAH')) then raise exception 'Movement currency must match project'; end if;
     if movement->>'type' in ('project','return','consume') and not exists(select 1 from jsonb_array_elements(p_project_updates) u where u->>'id'=movement->>'projectId') then raise exception 'Project movement requires atomic material update'; end if;
   end loop;
   if (select count(*) from jsonb_array_elements(p_project_updates))<>(select count(distinct x->>'id') from jsonb_array_elements(p_project_updates) x) then raise exception 'Duplicate material update'; end if;
@@ -215,6 +229,8 @@ begin
     if jsonb_typeof(update_entry->'materials') is distinct from 'array' then raise exception 'Materials must be an array'; end if;
     fresh_materials := update_entry->'materials';
     for material in select value from jsonb_array_elements(fresh_materials) loop
+      if coalesce(material->>'currency','UAH')<>project_row.currency then raise exception 'Material currency must match project'; end if;
+      if coalesce(material->>'warehouseItemId','')<>'' and exists(select 1 from jsonb_array_elements(p_state->'items') i where i->>'id'=material->>'warehouseItemId' and coalesce(i->>'currency','UAH')<>project_row.currency) then raise exception 'Product currency must match material'; end if;
       if coalesce(btrim(material->>'name'),'')='' then raise exception 'Material name is required'; end if;
       foreach field_name in array array['plannedQty','issuedQty','actualQty','purchasePriceSnapshot','salePriceSnapshot'] loop
         if public.sparta_warehouse_number(material->field_name)<0 then raise exception 'Material quantities/costs must be nonnegative'; end if;
