@@ -32,7 +32,7 @@ const PHOTO_BUCKET = "project-photos";
 const PROJECT_FILE_BUCKET = "project-files";
 const PROJECT_FILE_DB = window.SPARTA_LOCAL_WORKSPACE?.fileDatabase || "sparta-project-files";
 const PROJECT_FILE_STORE = "files";
-const PUBLIC_APP_URL = "https://sparta-field.vercel.app/";
+const PUBLIC_APP_URL = "https://sparta-field-u2pe.vercel.app/";
 
 const crmTypeLabels = {
   task: "Задача",
@@ -288,6 +288,7 @@ function clearCompanyContext() {
   selectedTab = "";
   cloudLoading = false;
   window.SpartaWarehouseCloud?.reset();
+  window.SpartaTeamAccess?.reset();
   document.querySelectorAll("dialog[open]").forEach((item) => item.close());
   window.SpartaCashBook?.refreshAccess();
 }
@@ -744,6 +745,8 @@ function dbProjectToApp(row) {
 function dbCrmTaskToApp(row) {
   return {
     id: row.client_task_id || row.id,
+    cloudTaskId: row.id,
+    cloudUpdatedAt: row.updated_at || "",
     projectId: row.project_client_id || "",
     title: row.title || "",
     note: row.note || "",
@@ -901,6 +904,7 @@ async function initCloud() {
 }
 
 function handleCloudAuthChange(event, session) {
+  window.SpartaAuthFlow?.onAuthEvent(event);
   if (window.SPARTA_LOCAL_WORKSPACE?.enabled) return;
   if (!session?.user) {
     clearCompanyContext();
@@ -928,7 +932,7 @@ async function applyCloudSession(session) {
   const user = session?.user || null;
   if (window.SPARTA_LOCAL_WORKSPACE?.enabled) return true;
   if (user?.id && cloudSessionTask && cloudSessionUserId === user.id) return cloudSessionTask;
-  if (user?.id && cloudState.user?.id === user.id && cloudState.ready && !cloudState.sessionLoading) return true;
+  if (user?.id && cloudState.user?.id === user.id && cloudState.ready && !cloudState.sessionLoading) { window.SpartaAuthFlow?.afterSession(); return true; }
   clearCompanyContext();
   cloudState.user = user;
   cloudState.sessionLoading = Boolean(user);
@@ -952,6 +956,8 @@ async function applyCloudSession(session) {
       await window.SpartaCashBook?.sync();
       if (revision !== cloudContextRevision) return false;
       cloudState.sessionLoading = false;
+      await window.SpartaAuthFlow?.recordSession("login").catch((error) => { cloudState.message = error.message; });
+      window.SpartaAuthFlow?.afterSession();
       updateAccessMode();
       render();
       return true;
@@ -964,6 +970,7 @@ async function applyCloudSession(session) {
       }
       throw error;
     } finally {
+      if (cloudState.user?.id === user.id) window.SpartaAuthFlow?.afterSession();
       if (cloudSessionTask === task) { cloudSessionTask = null; cloudSessionUserId = ""; }
       if (revision === cloudContextRevision && !cloudState.ready) {
         cloudState.sessionLoading = false;
@@ -1044,33 +1051,17 @@ async function retryAcceptInvitation() {
 async function loadCompanyPeople() {
   if (!cloudState.ready) return;
   const revision = cloudContextRevision;
-
-  const { data: members, error: membersError } = await cloudState.client
-    .from("company_members")
-    .select("user_id, role, is_active, profiles(email, full_name, phone)")
-    .eq("company_id", cloudState.companyId)
-    .order("created_at", { ascending: true });
-  if (revision !== cloudContextRevision) return;
-  if (!membersError) cloudState.members = members || [];
-
-  if (cloudState.memberRole === "owner") {
-    let { data: invitations, error: invitationsError } = await cloudState.client
-      .from("company_invitations")
-      .select("email, full_name, role, accepted_at, created_at")
-      .eq("company_id", cloudState.companyId)
-      .order("created_at", { ascending: false });
+  if (["owner", "admin"].includes(cloudState.memberRole)) {
+    const { data, error } = await cloudState.client.rpc("sparta_team_list", { p_company_id: cloudState.companyId });
     if (revision !== cloudContextRevision) return;
-    if (invitationsError && /full_name|schema cache/i.test(invitationsError.message || "")) {
-      ({ data: invitations, error: invitationsError } = await cloudState.client
-        .from("company_invitations")
-        .select("email, role, accepted_at, created_at")
-        .eq("company_id", cloudState.companyId)
-        .order("created_at", { ascending: false }));
-      if (revision !== cloudContextRevision) return;
-    }
-    if (!invitationsError) cloudState.invitations = invitations || [];
+    if (error) throw error;
+    cloudState.members = (data.members || []).map((member) => ({ user_id: member.userId, role: member.role, is_active: member.isActive, profiles: { email: member.email, full_name: member.fullName, phone: member.phone } }));
+    cloudState.invitations = (data.invitations || []).map((item) => ({ id: item.id, email: item.email, full_name: item.fullName, role: item.role, status: item.status, expires_at: item.expiresAt, accepted_at: item.status === "accepted" ? item.createdAt : null, revoked_at: item.status === "revoked" ? item.createdAt : null }));
   } else {
-    cloudState.invitations = [];
+    const { data, error } = await cloudState.client.from("company_members").select("user_id,role,is_active,profiles(email,full_name,phone)").eq("company_id", cloudState.companyId).eq("is_active", true);
+    if (revision !== cloudContextRevision) return;
+    if (error) throw error;
+    cloudState.members = data || []; cloudState.invitations = [];
   }
 }
 
@@ -1079,16 +1070,7 @@ async function loadProjectsFromCloud() {
   const revision = cloudContextRevision;
   cloudLoading = true;
   const { data, error } = await cloudState.client
-    .from("projects")
-    .select(`
-      *,
-      project_technical(*),
-      project_strings(*),
-      project_materials(*),
-      project_photos(*)
-    `)
-    .eq("company_id", cloudState.companyId)
-    .order("created_at", { ascending: false });
+    .rpc("sparta_project_list", { p_company_id: cloudState.companyId });
   if (revision !== cloudContextRevision) return;
   cloudLoading = false;
   if (error) throw error;
@@ -1167,6 +1149,7 @@ async function loadCrmTasksFromCloud() {
   }
 
   crmTasks = (data || []).map(dbCrmTaskToApp);
+  crmTasks.forEach((task) => { task.cloudSnapshot = JSON.stringify(crmTaskToDb(task)); });
   writeLocalStorage("solarObjectManager.crmTasks", JSON.stringify(crmTasks));
   renderCrmNotification();
 }
@@ -1222,7 +1205,7 @@ async function verifyPublicSchema() {
   if (window.SPARTA_LOCAL_WORKSPACE?.enabled) return;
   const client = guardedCloudWriteClient();
   const requirements = [
-    ["projects", "id,currency,app_data,finance,work_checklist,data_revision,media_revision"],
+    ["projects", "id,currency,app_data,work_checklist,data_revision,media_revision"],
     ["project_technical", "project_id,panel_serial_numbers,equipment_details"],
     ["project_materials", "id,app_data"],
     ["project_photos", "id,app_data,equipment_type,equipment_id"],
@@ -1233,7 +1216,7 @@ async function verifyPublicSchema() {
   ];
   for (const [table, columns] of requirements) {
     const { error } = await client.from(table).select(columns).limit(0);
-    if (error) throw new Error(`База потребує оновлення (${table}). Застосуйте міграцію build 35 перед початком роботи.`);
+    if (error) throw new Error(`База потребує оновлення (${table}). Застосуйте міграцію build 36 перед початком роботи.`);
   }
 }
 
@@ -1274,6 +1257,7 @@ async function syncCrmTasksToCloud() {
   if (!cloudState.ready) return;
 
   if (pendingCrmDeletes.length) {
+    if (!canCreateCrmTasks()) throw new Error("Видаляти задачі може менеджер, власник або адміністратор.");
     const idsToDelete = [...new Set(pendingCrmDeletes.map(normalizeProjectId))];
     const { error } = await writeClient
       .from("project_tasks")
@@ -1286,12 +1270,28 @@ async function syncCrmTasksToCloud() {
     savePendingCrmDeletes();
   }
 
-  if (crmTasks.length) {
-    const { error } = await writeClient
-      .from("project_tasks")
-      .upsert(crmTasks.map(crmTaskToDb), { onConflict: "company_id,client_task_id" });
+  for (const task of crmTasks) {
+    if (!canManageCrmTask(task)) continue;
+    const payload = crmTaskToDb(task);
+    const fingerprint = JSON.stringify(payload);
+    if (task.cloudTaskId && task.cloudSnapshot === fingerprint) continue;
+    let query;
+    if (task.cloudTaskId) {
+      const changes = canCreateCrmTasks() ? { ...payload } : { status: payload.status, note: payload.note };
+      delete changes.created_by;
+      query = writeClient.from("project_tasks").update(changes).eq("company_id", cloudState.companyId).eq("id", task.cloudTaskId).eq("updated_at", task.cloudUpdatedAt);
+    } else {
+      if (!canCreateCrmTasks()) throw new Error("Задача ще не завантажена з бази. Оновіть список задач.");
+      query = writeClient.from("project_tasks").insert(payload);
+    }
+    const { data, error } = await query.select("id,updated_at").maybeSingle();
     if (error) throw error;
+    if (!data) throw new Error("Задача змінилася на іншому пристрої. Оновіть список перед збереженням.");
+    task.cloudTaskId = data.id;
+    task.cloudUpdatedAt = data.updated_at;
+    task.cloudSnapshot = fingerprint;
   }
+  writeLocalStorage("solarObjectManager.crmTasks", JSON.stringify(crmTasks));
 
   cloudState.message = `CRM синхронізовано ${new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}`;
   renderProfileView();
@@ -1362,7 +1362,7 @@ async function syncProjectsCloudBatch() {
   const writeClient = guardedCloudWriteClient();
   if (!cloudState.ready) return;
   if (!window.SPARTA_LOCAL_WORKSPACE?.enabled && !canEditProjectData()) {
-    if (cloudState.memberRole === "installer") await syncFieldProjectsToCloud(writeClient);
+    if (["installer", "brigadier"].includes(cloudState.memberRole)) await syncFieldProjectsToCloud(writeClient);
     return;
   }
 
@@ -1412,7 +1412,7 @@ function normalizeFieldChecklist(value = {}) {
 }
 
 async function syncFieldProjectsToCloud(writeClient = guardedCloudWriteClient()) {
-  if (!cloudState.ready || cloudState.memberRole !== "installer") return;
+  if (!cloudState.ready || !["installer", "brigadier"].includes(cloudState.memberRole)) return;
   for (const project of projects) {
     const desired = normalizeFieldChecklist(project.workChecklist);
     const { data: remote, error: readError } = await writeClient.from("projects")
@@ -1447,29 +1447,36 @@ async function syncFieldProjectsToCloud(writeClient = guardedCloudWriteClient())
 }
 
 function canEditProjectData() {
-  return Boolean(window.SPARTA_LOCAL_WORKSPACE?.enabled || (cloudState.ready && ["owner", "admin", "engineer", "brigadier"].includes(cloudState.memberRole)));
+  return Boolean(window.SPARTA_LOCAL_WORKSPACE?.enabled || (cloudState.ready && ["owner", "admin", "engineer"].includes(cloudState.memberRole)));
 }
 
 function canEditProjectField() {
-  return canEditProjectData() || Boolean(cloudState.ready && cloudState.memberRole === "installer");
+  return canEditProjectData() || Boolean(cloudState.ready && ["installer", "brigadier"].includes(cloudState.memberRole));
+}
+
+function canManageProjectFinance() {
+  return Boolean(window.SPARTA_LOCAL_WORKSPACE?.enabled || (cloudState.ready && ["owner", "admin"].includes(cloudState.memberRole)));
 }
 
 function requireProjectRole(kind = "data") {
+  if (kind === "finance") { if (canManageProjectFinance()) return true; alert("Кошторис, договір і фінанси змінює власник або адміністратор."); return false; }
   if (kind === "field" ? canEditProjectField() : canEditProjectData()) return true;
   alert(kind === "field" ? "Для цієї ролі об’єкт доступний для перегляду." : "Дані об’єкта, обладнання та кошторис змінює менеджер. Монтажнику доступні чекліст, фото, документи й CRM-задачі.");
   return false;
 }
 
 const officeProjectControls = "#newProjectButton,#newProjectQuickButton,#editProjectInfoButton,#editTechnicalButton,#editStringsButton,#saveStringsEditButton,#editMaterialsButton,#saveMaterialsEditButton,#deleteProjectButton,#copyOfferToMaterialsButton,#projectStatusSelect,#projectForm,#projectInfoForm,#technicalForm,#materialForm,#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,#commercialOfferTotalsForm,.equipment-form,[data-delete-string-index],[data-delete-material-index],[data-delete-equipment-type],[data-delete-offer-line],[data-delete-expense-index]";
+const financeProjectControls = "#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,#commercialOfferTotalsForm,#copyOfferToMaterialsButton,[data-delete-offer-line],[data-delete-expense-index]";
 const fieldProjectControls = "[data-work-checklist-item],[data-checklist-action],#photoForm,#projectFileForm,[data-equipment-photo-id],[data-crm-task-photo],[data-delete-photo-index],[data-delete-file-index]";
 
 function applyProjectRoleControls() {
-  [[officeProjectControls, canEditProjectData()], [fieldProjectControls, canEditProjectField()]].forEach(([selector, allowed]) => {
+  [[officeProjectControls, canEditProjectData()], [fieldProjectControls, canEditProjectField()], [financeProjectControls, canManageProjectFinance()]].forEach(([selector, allowed]) => {
     document.querySelectorAll(selector).forEach((element) => {
       if (element.matches("input,select,textarea")) element.disabled = !allowed;
       else element.style.display = allowed ? "" : "none";
     });
   });
+  refreshTeamNavigation();
   const existing = projectDetail.querySelector("[data-project-role-note]");
   if (canEditProjectData()) existing?.remove();
   else if (selectedProject() && !existing) {
@@ -1481,11 +1488,12 @@ function applyProjectRoleControls() {
 
 function guardProjectRoleAction(event) {
   if (!event.target?.closest) return;
+  const financeBlocked = !canManageProjectFinance() && event.target.closest(financeProjectControls);
   const officeBlocked = !canEditProjectData() && event.target.closest(officeProjectControls);
   const fieldBlocked = !canEditProjectField() && event.target.closest(fieldProjectControls);
-  if (!officeBlocked && !fieldBlocked) return;
+  if (!officeBlocked && !fieldBlocked && !financeBlocked) return;
   event.preventDefault(); event.stopImmediatePropagation();
-  requireProjectRole(officeBlocked ? "data" : "field");
+  requireProjectRole(financeBlocked ? "finance" : officeBlocked ? "data" : "field");
 }
 
 function projectMediaPayload(project) {
@@ -2146,7 +2154,16 @@ function selectedProject() {
   return ensureProjectCollections(projects.find((project) => String(project.id) === String(selectedProjectId)) || projects[0]);
 }
 
+function refreshTeamNavigation() {
+  const allowed = !window.SPARTA_LOCAL_WORKSPACE?.enabled && cloudState.ready && ["owner", "admin"].includes(cloudState.memberRole) && portalMode !== "client";
+  document.querySelector('[data-section="team"]')?.classList.toggle("is-hidden", !allowed);
+  const card = document.querySelector(".user-card");
+  if (card) { card.querySelector("strong").textContent = renderRoleLabel(cloudState.memberRole); card.querySelector("small").textContent = cloudState.user?.email || "Потрібен вхід"; }
+}
+
 function showSection(sectionId) {
+  if (sectionId === "team" && !window.SpartaTeamAccess?.canManage()) sectionId = "profile";
+  if (sectionId === "team") window.SpartaTeamAccess?.render(document.querySelector("#teamView"));
   if (window.SPARTA_LOCAL_WORKSPACE?.enabled && window.spartaDemoRunning) return;
   if (sectionId === "cash" && (portalMode === "client" || !["owner", "admin"].includes(cloudState.memberRole))) sectionId = "home";
   if (sectionId === "cash") window.SpartaCashBook?.renderView();
@@ -2187,6 +2204,7 @@ function applyPortalMode(mode) {
       warehouse: ["▦", "Склад"],
       crm: ["☑", "CRM"],
       cash: ["$", "Каса"],
+      team: ["♙", "Команда і події"],
       profile: ["○", "Профіль"],
     };
   document.querySelectorAll(".nav-item").forEach((item) => {
@@ -2657,6 +2675,7 @@ function offerLineTotals(project) {
 }
 
 function renderCommercialOfferStage(project) {
+  if (!canManageProjectFinance()) return `<p class="calculation-note">Комерційну пропозицію та фінансові суми готує власник або адміністратор. Файли, які вам відкрито, доступні в документах об’єкта.</p>`;
   const totals = offerLineTotals(project);
   const offerItems = warehouseItems.filter((item) => (item.currency || "UAH") === (project.currency || "UAH"));
   const firstWarehouseItem = offerItems[0] || {};
@@ -2834,7 +2853,7 @@ async function shareCommercialOffer() {
 }
 
 function copyCommercialOfferToMaterials() {
-  if (!requireProjectRole()) return;
+  if (!requireProjectRole("finance")) return;
   const project = selectedProject();
   if (!project) return;
   const finance = normalizeProjectFinance(project.finance);
@@ -4319,7 +4338,7 @@ function renderHome() {
         <article class="metric-card"><span>У підготовці</span><strong>${preparation}</strong><small>виїзди та КП</small></article>
         <article class="metric-card warning"><span>На монтажі</span><strong>${mounting}</strong><small>об'єкти бригад</small></article>
         <article class="metric-card"><span>Потужність</span><strong>${projects.reduce((sum, project) => sum + Number(totalPower(project)), 0).toFixed(1)}</strong><small>кВт у базі</small></article>
-        <article class="metric-card success"><span>Прибуток / прогноз</span><strong>${financeByCurrency.filter((entry) => entry.currency === "USD" || projects.some((p) => (p.currency || "UAH") === entry.currency)).map((entry) => money(entry.profit, entry.currency)).join("<br>")}</strong><small>за кошторисами проєктів, не залишок каси</small></article>
+        ${canManageProjectFinance() ? `<article class="metric-card success"><span>Прибуток / прогноз</span><strong>${financeByCurrency.filter((entry) => entry.currency === "USD" || projects.some((p) => (p.currency || "UAH") === entry.currency)).map((entry) => money(entry.profit, entry.currency)).join("<br>")}</strong><small>за кошторисами проєктів, не залишок каси</small></article>` : ""}
       </div>
     </section>
 
@@ -4668,17 +4687,17 @@ function crmProjectName(projectId) {
 }
 
 function canViewAllCrmTasks() {
-  return ["owner", "admin"].includes(cloudState.memberRole);
+  return ["owner", "admin", "engineer"].includes(cloudState.memberRole);
 }
 
 function canCreateCrmTasks() {
-  return ["owner", "admin", "engineer", "brigadier", "installer"].includes(cloudState.memberRole);
+  return ["owner", "admin", "engineer"].includes(cloudState.memberRole);
 }
 
 function canManageCrmTask(task) {
   if (canViewAllCrmTasks()) return true;
   const userId = cloudState.user?.id || "";
-  return Boolean(userId && (task.assignedTo === userId || task.createdBy === userId));
+  return Boolean(userId && ["brigadier", "installer"].includes(cloudState.memberRole) && task.assignedTo === userId);
 }
 
 function crmVisibleTasks() {
@@ -4885,9 +4904,9 @@ function renderCrmTaskCard(task) {
           <div><span>Пріоритет</span><strong>${crmPriorityLabels[task.priority] || "Звичайний"}</strong></div>
         </div>
         <div class="crm-actions">
-          ${task.status !== "done" ? `<button class="secondary-button compact-button" data-crm-done="${escapeAttribute(task.id)}">Готово</button>` : ""}
+          ${task.status !== "done" && canManageCrmTask(task) ? `<button class="secondary-button compact-button" data-crm-done="${escapeAttribute(task.id)}">Готово</button>` : ""}
           ${canManageCrmTask(task) ? `<button class="secondary-button compact-button" data-crm-edit="${escapeAttribute(task.id)}">Редагувати</button>` : ""}
-          ${canViewAllCrmTasks() || task.createdBy === cloudState.user?.id ? `<button class="danger-button compact-button" data-crm-delete="${escapeAttribute(task.id)}">Видалити</button>` : ""}
+          ${canCreateCrmTasks() ? `<button class="danger-button compact-button" data-crm-delete="${escapeAttribute(task.id)}">Видалити</button>` : ""}
           ${project && canManageCrmTask(task) ? `<label class="secondary-button compact-button">Фото виконання<input type="file" accept="image/*" capture="environment" data-crm-task-photo="${escapeAttribute(task.id)}" style="display:none" /></label>` : ""}
         </div>
         ${evidence.length ? `<div class="serial-photo-preview">${evidence.map((photo) => `<figure><img src="${escapeAttribute(photo.src)}" alt="${escapeAttribute(photo.caption || "Фото виконання")}" /><figcaption>${escapeAttribute(photo.caption || photo.category || "Фото виконання")}</figcaption></figure>`).join("")}</div>` : ""}
@@ -5000,6 +5019,8 @@ function openCrmTaskDialog(task = null, defaults = {}) {
   fillCrmProjectOptions(source?.projectId || "");
   fillCrmAssigneeOptions(source?.assignedTo || cloudState.user?.id || "");
   crmTaskDialog.querySelector("h2").textContent = task ? "Редагувати задачу" : "Нова задача";
+  const office = canCreateCrmTasks();
+  crmTaskForm.querySelectorAll("input,select,textarea").forEach((field) => { field.disabled = !office && !["id", "status", "note"].includes(field.name); });
   crmTaskDialog.showModal();
 }
 
@@ -5033,6 +5054,11 @@ function saveCrmTaskFromForm() {
     createdAt: existingTask?.createdAt || new Date().toISOString(),
   };
 
+  if (!canCreateCrmTasks()) {
+    if (!existingTask || !canManageCrmTask(existingTask)) return;
+    const status = task.status, note = task.note;
+    Object.assign(task, existingTask, { status, note });
+  }
   const index = crmTasks.findIndex((item) => normalizeProjectId(item.id) === normalizeProjectId(id));
   if (index >= 0) {
     crmTasks[index] = { ...crmTasks[index], ...task };
@@ -5129,7 +5155,7 @@ function renderProfileView() {
   }
   const email = cloudState.user?.email || "Користувач не увійшов";
   const mode = cloudState.enabled ? cloudState.message : "Локальне збереження в браузері";
-  const canManageUsers = cloudState.memberRole === "owner";
+  const canManageUsers = ["owner", "admin"].includes(cloudState.memberRole);
   const canAcceptInvitation = Boolean(cloudState.user && cloudState.enabled && !cloudState.ready);
   const roleLabel = renderRoleLabel(cloudState.memberRole);
   profileView.innerHTML = `
@@ -5153,7 +5179,7 @@ function renderProfileView() {
         ${canManageUsers ? `<button id="inviteUserButton">Додати користувача <span>›</span></button>` : ""}
         ${cloudState.user ? `<button id="logoutButton">Вийти з акаунта <span>›</span></button>` : ""}
       </div>
-      ${renderCompanyUsers()}
+      ${window.SpartaTeamAccess?.profileMarkup() || renderCompanyUsers()}
     </section>
   `;
 }
@@ -5162,9 +5188,9 @@ function renderRoleLabel(role) {
   const labels = {
     owner: "Власник",
     admin: "Адмін",
-    engineer: "Інженер",
-    warehouse: "Склад",
-    brigadier: "Бригадир",
+    engineer: "Менеджер",
+    warehouse: "Комірник",
+    brigadier: "Майстер",
     installer: "Монтажник",
     viewer: "Перегляд",
   };
@@ -5393,7 +5419,7 @@ document.addEventListener("click", (event) => {
       return;
     }
     passwordForm.reset();
-    passwordMessage.textContent = "Пароль має містити щонайменше 6 символів.";
+    passwordMessage.textContent = "Пароль має містити щонайменше 8 символів.";
     passwordDialog.showModal();
   }
 
@@ -5403,22 +5429,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (event.target.closest("#logoutButton")) {
-    const client = cloudState.client;
-    clearCompanyContext();
-    cloudState.user = null;
-    cloudState.message = "Вихід з акаунта...";
-    updateAccessMode();
-    render();
-    client?.auth.signOut().then(({ error } = {}) => {
-      if (error) throw error;
-      cloudState.message = "Користувач вийшов з акаунта.";
-      updateAccessMode();
-      render();
-    }).catch((error) => {
-      cloudState.message = `Не вдалося завершити вихід: ${error.message}. Онови сторінку або повтори вхід.`;
-      updateAccessMode();
-      render();
-    });
+    void logoutCloudUser();
   }
 
   if (event.target.closest("#syncNowButton")) {
@@ -5435,20 +5446,24 @@ document.addEventListener("click", (event) => {
     });
   }
 
-  if (event.target.closest("#inviteUserButton")) {
+  if (event.target.closest("#inviteUserButton") || event.target.closest("[data-team-invite]")) {
     if (!cloudState.ready) {
       alert("Спочатку налаштуй Supabase і увійди в акаунт власника або адміністратора.");
       return;
     }
-    if (cloudState.memberRole !== "owner") {
-      alert("Додавати користувачів може тільки власник компанії.");
+    if (!["owner", "admin"].includes(cloudState.memberRole)) {
+      alert("Додавати користувачів може власник або адміністратор компанії.");
       return;
     }
     inviteForm.reset();
+    inviteForm.elements.role.querySelector('option[value="admin"]').disabled = cloudState.memberRole !== "owner";
     inviteMessage.textContent = "Додай email і роль. Користувач зможе створити акаунт із цим email та автоматично приєднається до компанії.";
     inviteDialog.showModal();
   }
 
+  if (event.target.closest("[data-team-open]")) { showSection("team"); }
+  const teamResend = event.target.closest("[data-team-resend]");
+  if (teamResend) resendInvitation(teamResend.dataset.teamResend).catch((error) => { alert(error.message); });
   if (event.target.closest("#companyUsersButton")) {
     openCompanyUsersDialog();
   }
@@ -5508,7 +5523,7 @@ document.addEventListener("click", (event) => {
   }
 
   const crmDeleteButton = event.target.closest("[data-crm-delete]");
-  if (crmDeleteButton) {
+  if (crmDeleteButton && canCreateCrmTasks()) {
     const taskId = normalizeProjectId(crmDeleteButton.dataset.crmDelete);
     const task = crmTasks.find((item) => normalizeProjectId(item.id) === taskId);
     if (task && confirm(`Видалити задачу "${task.title}"?`)) {
@@ -6239,7 +6254,7 @@ function addWarehouseMovement(formElement) {
 }
 
 function saveProjectFinance(formElement) {
-  if (!requireProjectRole()) return;
+  if (!requireProjectRole("finance")) return;
   const project = selectedProject();
   if (!project) return;
   const data = new FormData(formElement);
@@ -6268,7 +6283,7 @@ function fillCommercialOfferPrices(formElement) {
 }
 
 function addCommercialOfferLine(formElement) {
-  if (!requireProjectRole()) return;
+  if (!requireProjectRole("finance")) return;
   const project = selectedProject();
   if (!project) return;
   const data = new FormData(formElement);
@@ -6298,7 +6313,7 @@ function addCommercialOfferLine(formElement) {
 }
 
 function saveCommercialOfferTotals(formElement) {
-  if (!requireProjectRole()) return;
+  if (!requireProjectRole("finance")) return;
   const project = selectedProject();
   if (!project) return;
   const data = new FormData(formElement);
@@ -6322,7 +6337,7 @@ function syncCommercialOfferContractPrice(project) {
 }
 
 function addProjectExpense(formElement) {
-  if (!requireProjectRole()) return;
+  if (!requireProjectRole("finance")) return;
   const project = selectedProject();
   if (!project) return;
   const data = new FormData(formElement);
@@ -6681,127 +6696,33 @@ async function addProjectFile(formElement) {
 }
 
 async function inviteUser(email, role, fullName = "") {
-  if (!cloudState.ready) {
-    alert("Спочатку налаштуй Supabase і увійди в акаунт власника або адміністратора.");
-    return;
-  }
-  if (cloudState.memberRole !== "owner") {
-    alert("Додавати користувачів може тільки власник компанії.");
-    return;
-  }
-
-  if (!email?.trim()) return;
-  role = (role || "installer").trim();
-  const allowedRoles = ["engineer", "brigadier", "installer", "warehouse", "viewer", "admin"];
-  if (!allowedRoles.includes(role)) {
-    alert("Невідома роль. Доступні ролі: admin, engineer, brigadier, installer, viewer.");
-    return;
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const normalizedName = String(fullName || "").trim();
-  const invitationPayload = {
-    company_id: cloudState.companyId,
-    email: normalizedEmail,
-    full_name: normalizedName,
-    role,
-    accepted_at: null,
-    invited_by: cloudState.user.id,
-  };
-  let { error } = await cloudState.client.from("company_invitations").upsert(invitationPayload, { onConflict: "company_id,email" });
-  if (error && /full_name|schema cache/i.test(error.message || "")) {
-    delete invitationPayload.full_name;
-    ({ error } = await cloudState.client.from("company_invitations").upsert(invitationPayload, { onConflict: "company_id,email" }));
-    if (!error) {
-      cloudState.message = `Запрошення збережено. Щоб зберігати ім'я працівника, треба оновити SQL для запрошень.`;
-    }
-  }
-
-  if (!error) await loadCompanyPeople();
-  if (error) {
-    cloudState.message = `Помилка запрошення: ${error.message}`;
-  } else if (!cloudState.message.startsWith("Запрошення збережено. Щоб")) {
-    cloudState.message = `Запрошення для ${normalizedName || normalizedEmail} збережено. Створи цього користувача в Supabase Auth або дай йому увійти після реєстрації.`;
-  }
-  if (!error) {
-    await sendInvitationEmail(normalizedEmail);
-  }
+  if (!cloudState.ready || !["owner", "admin"].includes(cloudState.memberRole)) throw new Error("Запрошення створює власник або адміністратор.");
+  const { data, error } = await cloudState.client.rpc("sparta_team_invite", { p_company_id: cloudState.companyId, p_email: String(email || "").trim().toLowerCase(), p_full_name: String(fullName || "").trim(), p_role: role || "installer" });
+  if (error) throw error;
+  const invitation = data.invitation || data;
+  cloudState.message = "Запрошення збережено.";
+  await loadCompanyPeople();
+  await sendInvitationEmail(invitation.email || email, invitation.id);
+  await window.SpartaTeamAccess?.refresh();
   renderProfileView();
+  return invitation;
 }
 
-async function sendInvitationEmail(email) {
-  if (!cloudState.client || !email) return false;
-  const redirectTo = getInvitationRedirectUrl();
-  const serverResult = await sendInvitationEmailByServer(email, redirectTo);
-  if (serverResult.handled) {
-    cloudState.message += ` ${serverResult.message}`;
-    return serverResult.ok;
-  }
-
-  const { error } = await cloudState.client.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: redirectTo,
-      shouldCreateUser: true,
-    },
-  });
-  if (error) {
-    const resent = await resendSignupConfirmation(email, redirectTo);
-    if (!resent) {
-      cloudState.message += ` Лист не відправлено: ${error.message}`;
-      return false;
-    }
-    cloudState.message += " Повторний лист підтвердження відправлено на пошту.";
-    return true;
-  }
-  await resendSignupConfirmation(email, redirectTo);
-  cloudState.message += " Команда на відправку листа передана Supabase. Якщо лист не прийшов, перевір Спам або зачекай ліміт повторної відправки.";
-  return true;
+async function sendInvitationEmail(email, invitationId) {
+  const result = await sendInvitationEmailByServer(email, getInvitationRedirectUrl(), invitationId);
+  cloudState.message += " " + result.message;
+  return result.ok;
 }
 
-async function sendInvitationEmailByServer(email, redirectTo) {
-  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    return { handled: false, ok: false, message: "" };
-  }
-
+async function sendInvitationEmailByServer(email, redirectTo, invitationId) {
+  if (window.SPARTA_LOCAL_WORKSPACE?.enabled) return { handled: true, ok: false, message: "Запрошення доступні у публічній версії." };
   const { data } = await cloudState.client.auth.getSession();
-  const token = data?.session?.access_token;
-  if (!token) return { handled: false, ok: false, message: "" };
-
+  if (!data?.session?.access_token) return { handled: true, ok: false, message: "Увійдіть повторно перед надсиланням листа." };
   try {
-    const response = await fetch("/api/send-invitation", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        companyId: cloudState.companyId,
-        email,
-        fullName: (cloudState.invitations || []).find((item) => item.email === email)?.full_name || "",
-        redirectTo,
-      }),
-    });
-
-    if (response.status === 404) return { handled: false, ok: false, message: "" };
-
+    const response = await fetch("/api/send-invitation", { method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" }, body: JSON.stringify({ companyId: cloudState.companyId, invitationId, email }) });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      return {
-        handled: true,
-        ok: false,
-        message: payload.error || "Серверна відправка запрошення не вдалася.",
-      };
-    }
-
-    return {
-      handled: true,
-      ok: true,
-      message: payload.message || "Лист-запрошення відправлено на пошту.",
-    };
-  } catch (error) {
-    return { handled: false, ok: false, message: error.message };
-  }
+    return { handled: true, ok: response.ok, message: payload.message || payload.error || "Лист не надіслано. Запрошення збережене; перевірте поштові налаштування." };
+  } catch (_) { return { handled: true, ok: false, message: "Не вдалося зв’язатися із сервером. Запрошення збережене, лист можна надіслати повторно." }; }
 }
 
 function getInvitationRedirectUrl() {
@@ -6824,93 +6745,45 @@ async function resendSignupConfirmation(email, redirectTo) {
 }
 
 async function resendInvitation(email) {
-  if (!cloudState.ready || cloudState.memberRole !== "owner") {
-    alert("Повторно надсилати запрошення може тільки власник компанії.");
-    return;
-  }
   const invitation = (cloudState.invitations || []).find((item) => item.email === email);
-  if (!invitation) {
-    alert("Запрошення не знайдено.");
-    return;
-  }
-
-  let invitationPayload = {
-    company_id: cloudState.companyId,
-    email: invitation.email,
-    full_name: invitation.full_name || "",
-    role: invitation.role || "installer",
-    accepted_at: null,
-    invited_by: cloudState.user.id,
-  };
-  let { error } = await cloudState.client.from("company_invitations").upsert(invitationPayload, { onConflict: "company_id,email" });
-  if (error && /full_name/i.test(error.message || "")) {
-    delete invitationPayload.full_name;
-    ({ error } = await cloudState.client.from("company_invitations").upsert(invitationPayload, { onConflict: "company_id,email" }));
-  }
+  if (!invitation) { await loadCompanyPeople(); }
+  const current = (cloudState.invitations || []).find((item) => item.email === email);
+  if (!current) throw new Error("Запрошення не знайдено.");
+  const { data, error } = await cloudState.client.rpc("sparta_team_invite", { p_company_id: cloudState.companyId, p_email: email, p_full_name: current.full_name || "", p_role: current.role });
   if (error) throw error;
-
-  cloudState.message = `Запрошення для ${invitation.full_name || invitation.email} активовано повторно.`;
-  await sendInvitationEmail(invitation.email);
+  cloudState.message = "Запрошення поновлено.";
+  await sendInvitationEmail(email, (data.invitation || data).id);
   await loadCompanyPeople();
+  await window.SpartaTeamAccess?.refresh();
   renderProfileView();
 }
 
 async function cancelInvitation(email) {
-  if (!cloudState.ready || cloudState.memberRole !== "owner") {
-    alert("Відміняти запрошення може тільки власник компанії.");
-    return;
-  }
-  if (!email || !confirm(`Відмінити запрошення для ${email}?`)) return;
-
-  const { error } = await cloudState.client
-    .from("company_invitations")
-    .delete()
-    .eq("company_id", cloudState.companyId)
-    .eq("email", email)
-    .is("accepted_at", null);
+  const invitation = (cloudState.invitations || []).find((item) => item.email === email);
+  if (!invitation) return;
+  const { error } = await cloudState.client.rpc("sparta_team_revoke_invitation", { p_company_id: cloudState.companyId, p_invitation_id: invitation.id });
   if (error) throw error;
-
-  cloudState.message = `Запрошення для ${email} відмінено.`;
-  await loadCompanyPeople();
-  renderProfileView();
+  await loadCompanyPeople(); await window.SpartaTeamAccess?.refresh(); renderProfileView();
 }
 
 async function removeCompanyMember(userId) {
-  if (!cloudState.ready || cloudState.memberRole !== "owner") {
-    alert("Видаляти користувачів може тільки власник компанії.");
-    return;
-  }
-  if (!userId || userId === cloudState.user?.id) {
-    alert("Не можна видалити власний акаунт із компанії.");
-    return;
-  }
-
   const member = (cloudState.members || []).find((item) => item.user_id === userId);
-  if (!member || member.role === "owner") {
-    alert("Власника компанії не можна видалити з цього екрана.");
-    return;
-  }
-
-  const name = member.profiles?.full_name || member.profiles?.email || "цього користувача";
-  if (!confirm(`Видалити ${name} з компанії? Користувач втратить доступ до даних SPARTA power.`)) return;
-
-  const { error } = await cloudState.client
-    .from("company_members")
-    .update({ is_active: false })
-    .eq("company_id", cloudState.companyId)
-    .eq("user_id", userId);
+  if (!member) return;
+  const { error } = await cloudState.client.rpc("sparta_team_update_member", { p_company_id: cloudState.companyId, p_user_id: userId, p_role: member.role, p_is_active: false });
   if (error) throw error;
-
-  cloudState.members = (cloudState.members || []).filter((item) => item.user_id !== userId);
-  cloudState.message = `${name} видалено з компанії.`;
-  await loadCompanyPeople();
-  renderProfileView();
-  if (companyUsersDialog.open) {
-    openCompanyUsersDialog();
-  }
+  await loadCompanyPeople(); await window.SpartaTeamAccess?.refresh(); renderProfileView();
 }
 
-async function authenticateUser(email, password, mode, messageTarget) {
+async function logoutCloudUser() {
+  const client = cloudState.client;
+  try { await window.SpartaAuthFlow?.recordSession("logout"); } catch (_) { /* Offline logout must still be allowed. */ }
+  clearCompanyContext(); cloudState.user = null; cloudState.message = "Вихід з акаунта..."; updateAccessMode(); render();
+  const { error } = await (client?.auth.signOut() || Promise.resolve({}));
+  cloudState.message = error ? "Не вдалося завершити вихід. Оновіть сторінку й повторіть спробу." : "Користувач вийшов з акаунта.";
+  updateAccessMode(); render();
+}
+
+async function authenticateUser(email, password, mode, messageTarget, fullName = "") {
   if (!cloudState.client) {
     messageTarget.textContent = "Supabase не налаштовано.";
     return false;
@@ -6926,8 +6799,9 @@ async function authenticateUser(email, password, mode, messageTarget) {
         email: normalizedEmail,
         password: passwordValue,
         options: {
+          emailRedirectTo: PUBLIC_APP_URL + "?auth=signup",
           data: {
-            full_name: normalizedEmail.split("@")[0],
+            full_name: String(fullName || normalizedEmail.split("@")[0]).trim(),
           },
         },
       })
@@ -6939,7 +6813,7 @@ async function authenticateUser(email, password, mode, messageTarget) {
   const { data: authData, error } = await authRequest;
 
   if (error) {
-    messageTarget.textContent = error.message;
+    messageTarget.textContent = window.SpartaAuthFlow?.authError(error) || error.message;
     return false;
   }
 
@@ -6961,8 +6835,8 @@ async function changeCurrentUserPassword(password, passwordConfirm) {
 
   const nextPassword = String(password || "");
   const repeatedPassword = String(passwordConfirm || "");
-  if (nextPassword.length < 6) {
-    passwordMessage.textContent = "Пароль має містити щонайменше 6 символів.";
+  if (nextPassword.length < 8) {
+    passwordMessage.textContent = "Пароль має містити щонайменше 8 символів.";
     return false;
   }
   if (nextPassword !== repeatedPassword) {
@@ -6977,6 +6851,7 @@ async function changeCurrentUserPassword(password, passwordConfirm) {
     return false;
   }
 
+  window.SpartaAuthFlow?.passwordCompleted();
   cloudState.message = "Пароль оновлено.";
   renderProfileView();
   return true;
@@ -7013,12 +6888,14 @@ authForm.addEventListener("submit", async (event) => {
 gateAuthForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(gateAuthForm);
-  await authenticateUser(data.get("email"), data.get("password"), "signin", gateAuthMessage);
+  await window.SpartaAuthFlow.submitGate(gateAuthForm);
 });
 
 inviteForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(inviteForm);
+  if (!inviteForm.reportValidity()) return;
+  try {
   inviteMessage.textContent = "Зберігаю запрошення...";
   await inviteUser(data.get("email"), data.get("role"), data.get("fullName"));
   if (!cloudState.message.startsWith("Помилка")) {
@@ -7026,6 +6903,7 @@ inviteForm.addEventListener("submit", async (event) => {
   } else {
     inviteMessage.textContent = cloudState.message;
   }
+  } catch (error) { inviteMessage.textContent = error.message; }
 });
 
 passwordForm.addEventListener("submit", async (event) => {

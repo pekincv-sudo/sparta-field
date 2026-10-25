@@ -1,4 +1,4 @@
-const CACHE_NAME = "sparta-field-v35";
+const CACHE_NAME = "sparta-field-v36";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -6,6 +6,9 @@ const APP_SHELL = [
   "/app.js",
   "/local-workspace.js",
   "/money.js",
+  "/auth-flow.js",
+  "/team-access.js",
+  "/team-access.css",
   "/cash-ledger.js",
   "/cash-book.js",
   "/workspace-reset-core.js",
