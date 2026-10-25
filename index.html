@@ -12,7 +12,8 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/pwa/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/assets/pwa/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/assets/pwa/icon-512.png" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20261025-34" />
+    <link rel="stylesheet" href="./warehouse.css?v=20261025-34" />
   </head>
   <body class="auth-locked">
     <section class="auth-screen" aria-label="Вхід у SPARTA field">
@@ -34,7 +35,7 @@
         <button class="primary-button auth-submit" id="gateAuthSubmitButton" type="submit">Увійти</button>
         <button class="auth-link" type="button">Забули пароль?</button>
         <p class="auth-message" id="gateAuthMessage">Увійди, щоб працювати з об'єктами SPARTA power.</p>
-        <small>Версія 1.0.0</small>
+        <small>Версія 1.0.34</small>
       </form>
     </section>
 
@@ -53,23 +54,29 @@
           <button class="nav-item" data-section="projects"><span>▤</span>Об'єкти</button>
           <button class="nav-item" data-section="warehouse"><span>▦</span>Склад</button>
           <button class="nav-item" data-section="crm"><span>☑</span>CRM</button>
+          <button class="nav-item is-hidden" data-section="cash"><span>₴</span>Каса</button>
           <button class="nav-item" data-section="profile"><span>○</span>Профіль</button>
         </nav>
 
         <div class="user-card">
           <span class="label">Роль</span>
           <strong>Власник компанії</strong>
-          <small>Повний доступ до MVP</small>
+          <small>Робочий доступ</small>
         </div>
       </aside>
 
       <main class="main">
+        <p class="local-workspace-banner is-hidden" id="localWorkspaceBanner">Локальна база · дані на цьому комп’ютері</p>
         <section class="topbar">
           <div>
-            <p class="eyebrow">Прототип</p>
-            <h1>SPARTA field</h1>
+            <p class="eyebrow" id="portalModeLabel">Робочий простір</p>
+            <h1 id="portalTitle">SPARTA field</h1>
           </div>
           <div class="topbar-actions">
+            <div class="portal-tabs" role="tablist" aria-label="Режим застосунку">
+              <button type="button" role="tab" data-portal-mode="client" aria-selected="false">Клієнт</button>
+              <button type="button" role="tab" data-portal-mode="installer" aria-selected="true">Монтажник</button>
+            </div>
             <button class="notification-badge is-hidden" id="crmNotificationButton" type="button" aria-label="CRM нагадування">0</button>
             <button class="primary-button" id="newProjectButton">+ Новий об'єкт</button>
           </div>
@@ -114,6 +121,10 @@
 
         <section class="section" id="warehouse">
           <div id="warehouseView"></div>
+        </section>
+
+        <section class="section" id="cash">
+          <div id="cashView"></div>
         </section>
 
         <section class="section" id="map">
@@ -440,8 +451,17 @@
       </form>
     </dialog>
 
-    <script src="./supabase-config.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./app.js"></script>
+    <script src="./local-workspace.js?v=20261025-34"></script>
+    <script src="./supabase-config.js?v=20261025-34"></script>
+    <!-- Kept locally so authentication also works when a CDN is blocked or unavailable. -->
+    <script src="./supabase-js.umd.js?v=20261025-34"></script>
+    <script src="./cash-ledger.js?v=20261025-34"></script>
+    <script src="./cash-book.js?v=20261025-34"></script>
+    <script src="./workspace-reset-core.js?v=20261025-34"></script>
+    <script src="./workspace-maintenance.js?v=20261025-34"></script>
+    <script src="./warehouse-core.js?v=20261025-34"></script>
+    <script src="./warehouse-ui.js?v=20261025-34"></script>
+    <script src="./warehouse-cloud.js?v=20261025-34"></script>
+    <script src="./app.js?v=20261025-34"></script>
   </body>
 </html>
