@@ -29,11 +29,11 @@ async function runFieldProjectSyncTests(projectDirectory = path.resolve(__dirnam
     async syncProjectFilesToCloud(project, id) { calls.push({ kind: "media", project, id }); },
     renderProfileView() {}, alert(text) { alerts.push(text); }, Date,
   });
-  for (const name of ["normalizeFieldChecklist", "canEditProjectData", "canEditProjectField", "requireProjectRole", "guardProjectRoleAction", "syncFieldProjectsToCloud", "syncProjectsCloudBatch", "syncProjectsToCloud", "addMaterial", "saveProjectFinance"]) {
+  for (const name of ["normalizeFieldChecklist", "canEditProjectData", "canEditProjectField", "canManageProjectFinance", "requireProjectRole", "guardProjectRoleAction", "syncFieldProjectsToCloud", "syncProjectsCloudBatch", "syncProjectsToCloud", "addMaterial", "saveProjectFinance"]) {
     const match = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, name); vm.runInContext(match[0], context);
   }
-  for (const name of ["officeProjectControls", "fieldProjectControls"]) vm.runInContext(source.match(new RegExp(`const ${name} = [^\\n]+;`))[0], context);
+  for (const name of ["officeProjectControls", "fieldProjectControls", "financeProjectControls"]) vm.runInContext(source.match(new RegExp(`const ${name} = [^\\n]+;`))[0], context);
   let passed = 0;
   const check = async (test) => { await test(); passed += 1; };
   await check(async () => {
@@ -87,14 +87,18 @@ async function runFieldProjectSyncTests(projectDirectory = path.resolve(__dirnam
       await context.syncProjectsToCloud(); assert.equal(calls.length, 0);
       assert.equal(context.canEditProjectData(), false); assert.equal(context.canEditProjectField(), false);
     }
+    context.cloudState.memberRole = "brigadier";
+    assert.equal(context.canEditProjectData(), false); assert.equal(context.canEditProjectField(), true);
     context.cloudState.memberRole = "installer";
     assert.equal(context.canEditProjectData(), false); assert.equal(context.canEditProjectField(), true);
-    for (const role of ["owner", "admin", "engineer", "brigadier"]) { context.cloudState.memberRole = role; assert.equal(context.canEditProjectData(), true); }
+    for (const role of ["owner", "admin", "engineer"]) { context.cloudState.memberRole = role; assert.equal(context.canEditProjectData(), true); }
     context.cloudState.ready = false; assert.equal(context.canEditProjectData(), false);
     context.window.SPARTA_LOCAL_WORKSPACE = { enabled: true }; assert.equal(context.canEditProjectData(), true);
     context.window.SPARTA_LOCAL_WORKSPACE = null; context.cloudState.ready = true;
   });
   await check(async () => {
+    context.cloudState.memberRole = "brigadier";
+    assert.equal(context.canEditProjectData(), false); assert.equal(context.canEditProjectField(), true);
     context.cloudState.memberRole = "installer";
     context.addMaterial({}); context.saveProjectFinance({});
     assert.equal(alerts.length, 2, "Direct mutators reject edits unavailable for the current role");

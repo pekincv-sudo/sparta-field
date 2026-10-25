@@ -8,7 +8,7 @@ const vm = require("node:vm");
 module.exports = function runProposalStageTests() {
   const source = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
   const names = ["renderProjectStageContent", "renderTabById", "workflowFileCategories", "renderTab", "renderProjectFiles", "renderProjectFileCard", "projectFileCategoryLabel", "projectFileIcon", "formatFileSize", "formatProjectFileDate", "renderCommercialOfferStage", "offerLineTotals", "emptyProjectFinance", "normalizeProjectFinance", "warehouseUnitCost"];
-  const context = { selectedTab: "new", warehouseItems: [], money: (amount) => `${amount} грн`, escapeAttribute: (value) => String(value ?? "") };
+  const context = { canManageProjectFinance: () => true, selectedTab: "new", warehouseItems: [], money: (amount) => `${amount} грн`, escapeAttribute: (value) => String(value ?? "") };
   vm.createContext(context);
   names.forEach((name) => {
     const match = source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`));
