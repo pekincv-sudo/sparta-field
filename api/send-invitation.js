@@ -87,7 +87,7 @@ export default async function handler(request) {
         const recoveryUrl = new URL(`${SUPABASE_URL}/auth/v1/recover`);
         recoveryUrl.searchParams.set("redirect_to", `${APP_ORIGIN}/?auth=recovery`);
         const recovery = await fetchWithTimeout(recoveryUrl, {
-          method: "POST", headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+          method: "POST", headers: apiKeyHeaders(SUPABASE_ANON_KEY),
           body: JSON.stringify({ email }),
         });
         sent = recovery.ok;
@@ -121,7 +121,13 @@ function bearer(value) {
   return match && match[1].length <= 8192 ? match[1] : "";
 }
 function serviceHeaders() {
-  return { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" };
+  return apiKeyHeaders(SUPABASE_SERVICE_ROLE_KEY);
+}
+function apiKeyHeaders(key) {
+  const headers = { apikey: key, "Content-Type": "application/json" };
+  // New API keys are not JWTs; the gateway resolves their role from apikey.
+  if (!/^sb_(?:publishable|secret)_/.test(key)) headers.Authorization = `Bearer ${key}`;
+  return headers;
 }
 async function readJson(response) {
   try { return await response.json(); } catch (_) { return {}; }
