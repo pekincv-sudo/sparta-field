@@ -5,10 +5,10 @@ module.exports=async function(){
  const company="11111111-1111-4111-8111-111111111111",actor="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",invitation="22222222-2222-4222-8222-222222222222";
  const body={companyId:company,invitationId:invitation,email:"person@example.invalid",redirectTo:"https://untrusted.invalid"};let passed=0;
  function harness(options={}){
-  const calls=[];const context=vm.createContext({URL,Response,AbortController,setTimeout,clearTimeout,process:{env:{SUPABASE_SERVICE_ROLE_KEY:options.missingKey?"":"test-only-service-key"}},fetch:async(url,init={})=>{
-   const u=String(url);calls.push({url:u,body:init.body?JSON.parse(init.body):null});
+  const calls=[];const context=vm.createContext({URL,Response,AbortController,setTimeout,clearTimeout,process:{env:{SUPABASE_SERVICE_ROLE_KEY:options.missingKey?"":options.serviceKey||"test-only-service-key",...(options.anonKey?{SUPABASE_ANON_KEY:options.anonKey}:{})}},fetch:async(url,init={})=>{
+   const u=String(url);calls.push({url:u,headers:new Headers(init.headers),body:init.body?JSON.parse(init.body):null});
    const result=(payload,status=200)=>new Response(JSON.stringify(payload),{status});
-   if(u.endsWith('/auth/v1/user'))return result({id:actor,email_confirmed_at:options.unconfirmed?null:"2026-10-25T00:00:00Z"});
+   if(u.endsWith('/auth/v1/user'))return options.userError?result({},401):result({id:actor,email_confirmed_at:options.unconfirmed?null:"2026-10-25T00:00:00Z"});
    if(u.includes('/company_members?'))return result([{role:options.actorRole||"owner",is_active:true}]);
    if(u.endsWith('/sparta_team_prepare_invitation_email'))return options.prepareError?result(options.prepareError,400):result({id:invitation,company_id:company,email:body.email,full_name:"Person",role:options.inviteRole||"installer",accepted_at:null,revoked_at:null,expires_at:"2099-01-01T00:00:00Z"});
    if(u.includes('/auth/v1/invite?'))return options.inviteError?result(options.inviteError,400):result({id:actor});
@@ -31,5 +31,38 @@ module.exports=async function(){
  h=harness({prepareError:{code:"P0001",message:"Invitation email cooldown: wait 60 seconds"}});response=await h.post();assert.equal(response.status,429);assert.equal(response.headers.get('Retry-After'),"60");assert(!h.calls.some(c=>c.url.includes('/auth/v1/invite')));passed++;
  h=harness({prepareError:{code:"42501"}});assert.equal((await h.post()).status,403);assert(!h.calls.some(c=>c.url.includes('/auth/v1/invite')));passed++;
  h=harness({recordFailure:true});response=await h.post();const sent=await response.json();assert.equal(response.status,200);assert.equal(sent.deliveryRecorded,false);assert(sent.warning);passed++;
+ // Exercise the complete invite/recovery path for both new keys and legacy JWTs.
+ const legacyService="eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.test-signature";
+ const legacyAnon="eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.test-signature";
+ for(const keys of [
+  {serviceKey:"sb_secret_test-only",anonKey:"sb_publishable_test-only",legacy:false},
+  {serviceKey:legacyService,anonKey:legacyAnon,legacy:true},
+ ]){
+  for(const existingUser of [false,true]){
+   h=harness({...keys,...(existingUser?{inviteError:{code:"email_exists"}}:{})});
+   response=await h.post();assert.equal(response.status,200);assert.equal((await response.json()).mode,existingUser?"recovery":"invite");
+   const userCall=h.calls[0];assert(userCall.url.endsWith('/auth/v1/user'));
+   assert.equal(userCall.headers.get('apikey'),keys.anonKey);assert.equal(userCall.headers.get('authorization'),"Bearer test-session");
+   const serviceCalls=h.calls.filter(c=>c.url.includes('/rest/v1/')||c.url.includes('/auth/v1/invite?'));
+   assert.equal(serviceCalls.length,4); // Membership, prepare RPC, invite, delivery RPC.
+   for(const serviceCall of serviceCalls){
+    assert.equal(serviceCall.headers.get('apikey'),keys.serviceKey);
+    assert.equal(serviceCall.headers.get('authorization'),keys.legacy?`Bearer ${keys.serviceKey}`:null);
+    assert.equal(serviceCall.headers.get('content-type'),"application/json");
+   }
+   const recoveryCall=h.calls.find(c=>c.url.includes('/auth/v1/recover?'));
+   assert.equal(Boolean(recoveryCall),existingUser);
+   if(recoveryCall){
+    assert.equal(recoveryCall.headers.get('apikey'),keys.anonKey);
+    assert.equal(recoveryCall.headers.get('authorization'),keys.legacy?`Bearer ${keys.anonKey}`:null);
+    assert.equal(recoveryCall.headers.get('content-type'),"application/json");
+   }
+   passed++;
+  }
+ }
+ // The built-in publishable fallback must work without an anon-key env override.
+ h=harness({serviceKey:"sb_secret_test-only",inviteError:{code:"email_exists"}});response=await h.post();assert.equal(response.status,200);
+ call=h.calls.find(c=>c.url.includes('/auth/v1/recover?'));assert(call.headers.get('apikey').startsWith('sb_publishable_'));assert.equal(call.headers.get('authorization'),null);passed++;
+ h=harness({serviceKey:"sb_secret_test-only",userError:true});assert.equal((await h.post()).status,401);assert.equal(h.calls.length,1);assert.equal(h.calls[0].headers.get('authorization'),"Bearer test-session");passed++;
  return{passed};
 };
