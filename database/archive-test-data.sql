@@ -62,7 +62,12 @@ begin
   end loop;
   perform set_config('sparta.project_write_company',snapshot_row.company_id::text,true);
   for table_name in select unnest(array['projects','warehouse_items','project_tasks','material_catalog','company_invitations','project_technical','project_strings','project_materials','project_photos','project_files','warehouse_workspaces','warehouse_requests']) loop
-    execute format('insert into public.%1$I select * from jsonb_populate_recordset(null::public.%1$I,$1)',table_name) using coalesce(snapshot_row.data->table_name,'[]'::jsonb);
+    -- Pre-currency backups contain UAH values. Never apply the new USD default
+    -- to historical amounts, including when restoring a build 34 snapshot.
+    execute format('insert into public.%1$I select * from jsonb_populate_recordset(null::public.%1$I,$1)',table_name)
+      using case when table_name='projects' then
+        (select coalesce(jsonb_agg(jsonb_build_object('currency','UAH') || x),'[]'::jsonb) from jsonb_array_elements(coalesce(snapshot_row.data->table_name,'[]'::jsonb)) x)
+      else coalesce(snapshot_row.data->table_name,'[]'::jsonb) end;
   end loop;
   update sparta_archive.snapshots set restored_at=now() where id=p_snapshot;
 end $$;
