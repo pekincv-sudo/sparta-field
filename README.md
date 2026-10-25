@@ -4,7 +4,7 @@ This folder is the clean static web app for deployment.
 
 ## Local development
 
-The current work is a clean local data-entry workspace. Open `http://127.0.0.1:4174/?build=34`.
+The current work is a clean local data-entry workspace. Open `http://127.0.0.1:4174/?build=35`.
 On `localhost`, `127.0.0.1` and `::1`, `local-workspace.js` disables Supabase
 initialization. Projects, inventory, tasks and cash use the independent
 `sparta.local.v1.*` browser storage; local file blobs use
@@ -32,6 +32,10 @@ and are not counted twice.
 
 To check the financial rules with Node.js, run `node tests/run-tests.js`.
 The tests use isolated data and simulated services and do not access Supabase.
+
+## Currency update — build 35
+
+USD is the default for new projects, catalog cards, warehouse documents and cash entries. UAH remains optional. Existing records retain UAH; no exchange rate or relabeling is applied. Linked payments and material movements must use the project currency, and cash balances are separated by denomination. Apply `database/currency-usd-build35.sql` before the frontend. See [currency and recovery notes](docs/USD-build35.md).
 
 ## Public release 34
 

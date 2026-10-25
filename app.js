@@ -528,6 +528,7 @@ function projectToDb(project, includeChecklist = true) {
     client_id: normalizeProjectId(project.id),
     company_id: cloudState.companyId,
     title: project.title || "",
+    currency: project.currency || "UAH",
     client_name: project.clientName || "",
     client_phone: project.clientPhone || "",
     address: project.address || "",
@@ -666,6 +667,7 @@ function dbProjectToApp(row) {
     dataRevision: Number(row.data_revision || 0),
     mediaRevision: Number(row.media_revision || 0),
     title: row.title || "",
+    currency: row.currency || "UAH",
     clientName: row.client_name || "",
     clientPhone: row.client_phone || "",
     address: row.address || "",
@@ -775,6 +777,7 @@ function normalizeWarehouseItem(item) {
   const salePrice = Number(item?.retailPrice ?? item?.salePrice ?? 0);
   return {
     ...item,
+    currency: item?.currency || "UAH",
     id: item?.id || `wh-${Date.now()}`,
     name: item?.name || "",
     category: item?.category || "Інше",
@@ -1219,18 +1222,18 @@ async function verifyPublicSchema() {
   if (window.SPARTA_LOCAL_WORKSPACE?.enabled) return;
   const client = guardedCloudWriteClient();
   const requirements = [
-    ["projects", "id,app_data,finance,work_checklist,data_revision,media_revision"],
+    ["projects", "id,currency,app_data,finance,work_checklist,data_revision,media_revision"],
     ["project_technical", "project_id,panel_serial_numbers,equipment_details"],
     ["project_materials", "id,app_data"],
     ["project_photos", "id,app_data,equipment_type,equipment_id"],
     ["project_files", "id,app_data"],
     ["project_tasks", "id,assigned_to"],
     ["warehouse_items", "id,app_data"],
-    ["cash_transactions", "id"],
+    ["cash_transactions", "id,currency"],
   ];
   for (const [table, columns] of requirements) {
     const { error } = await client.from(table).select(columns).limit(0);
-    if (error) throw new Error(`База потребує оновлення (${table}). Застосуйте міграцію build 34 перед початком роботи.`);
+    if (error) throw new Error(`База потребує оновлення (${table}). Застосуйте міграцію build 35 перед початком роботи.`);
   }
 }
 
@@ -1824,6 +1827,7 @@ function normalizeProjectFinance(finance = {}) {
     offerLines: Array.isArray(finance.offerLines || finance.offer_lines) ? (finance.offerLines || finance.offer_lines).map((item) => ({
       id: item.id || `offer-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       warehouseItemId: item.warehouseItemId || item.warehouse_item_id || "",
+      currency: item.currency || null,
       category: item.category || "Інше",
       name: item.name || "",
       qty: Number(item.qty || 0),
@@ -1839,8 +1843,10 @@ function normalizeProjectFinance(finance = {}) {
   };
 }
 
-function money(value) {
-  return `${Number(value || 0).toLocaleString("uk-UA", { maximumFractionDigits: 0 })} грн`;
+function money(value, currency = "USD") {
+  if (window.SpartaMoney) return window.SpartaMoney.format(value, currency);
+  if (!Number.isFinite(Number(value))) return "—";
+  return `${Number(value || 0).toLocaleString("uk-UA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency === "USD" ? "USD" : "грн"}`;
 }
 
 function normalizeLookupValue(value) {
@@ -1873,9 +1879,11 @@ function warehouseItemForMaterial(material) {
 
 function projectMaterialsWithWarehousePrices(project) {
   return (project?.materials || []).map((material) => {
-    const warehouseItem = warehouseItemForMaterial(material);
+    const foundItem = warehouseItemForMaterial(material);
+    const warehouseItem = foundItem && (foundItem.currency || "UAH") === (material.currency || project?.currency || "UAH") ? foundItem : null;
     const qty = Math.max(0, Number(material.issuedQty ?? material.actualQty ?? 0));
     return {
+      currency: material.currency || project?.currency || "UAH",
       name: material.name || "",
       category: material.category || warehouseItem?.category || "Інше",
       qty,
@@ -1891,18 +1899,21 @@ function projectMaterialsWithWarehousePrices(project) {
 function projectFinanceTotals(project) {
   const finance = normalizeProjectFinance(project?.finance || {});
   const materialLines = projectMaterialsWithWarehousePrices(project);
-  const equipmentPurchase = materialLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
-  const equipmentSale = materialLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
+  const currencyMismatch = materialLines.some((item) => item.currency !== (project?.currency || "UAH"));
+  const equipmentPurchase = currencyMismatch ? NaN : materialLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
+  const equipmentSale = currencyMismatch ? NaN : materialLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
   const otherExpenses = finance.expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const revenue = Number(finance.contractPrice || 0) || equipmentSale + Number(finance.installationPrice || 0);
-  const cashPayments = window.SpartaCashBook?.projectTotals(project?.id) || { clientPaidMinor: 0, recordedPayrollMinor: 0, recordedExpensesMinor: 0, materialsMinor: 0 };
+  const cashPayments = window.SpartaCashBook?.projectTotals(project?.id, project?.currency || "UAH") || { clientPaidMinor: 0, recordedPayrollMinor: 0, recordedExpensesMinor: 0, materialsMinor: 0 };
   const receivedPayments = Math.round(Number(finance.advancePaid || 0) * 100 + cashPayments.clientPaidMinor) / 100;
   const balanceDue = Math.round((Math.round(revenue * 100) - Math.round(receivedPayments * 100))) / 100;
-  const cost = equipmentPurchase + Number(finance.crewPayroll || 0) + otherExpenses;
+  const cost = currencyMismatch ? NaN : equipmentPurchase + Number(finance.crewPayroll || 0) + otherExpenses;
   const profit = revenue - cost;
   const margin = revenue ? Math.round((profit / revenue) * 100) : 0;
   return {
     ...finance,
+    currency: project?.currency || "UAH",
+    currencyMismatch,
     equipment: materialLines,
     equipmentPurchase,
     equipmentSale,
@@ -1918,9 +1929,10 @@ function projectFinanceTotals(project) {
   };
 }
 
-function warehouseTotals() {
-  const purchaseValue = warehouseItems.reduce((sum, item) => sum + Number(item.qty || 0) * warehouseUnitCost(item), 0);
-  const saleValue = warehouseItems.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.retailPrice || item.salePrice || 0), 0);
+function warehouseTotals(currency = "USD") {
+  const items = warehouseItems.filter((item) => (item.currency || "UAH") === currency);
+  const purchaseValue = items.reduce((sum, item) => sum + Number(item.qty || 0) * warehouseUnitCost(item), 0);
+  const saleValue = items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.retailPrice || item.salePrice || 0), 0);
   const lowStock = warehouseItems.filter((item) => Number(item.qty || 0) <= Number(item.minQty || 0)).length;
   const movedToday = warehouseMovements.filter((movement) => (movement.createdAt || "").slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
   return {
@@ -2075,6 +2087,7 @@ function activeWarehouseProjects() {
 
 function addWarehouseItemToProjectMaterials(project, item, qty) {
   if (!project || !item || !qty) return;
+  if ((project.currency || "UAH") !== (item.currency || "UAH")) throw new Error("Валюта обладнання не збігається з валютою об’єкта.");
   ensureProjectCollections(project);
   const itemSku = normalizeLookupValue(item.sku);
   const itemName = normalizeLookupValue(item.name);
@@ -2085,6 +2098,8 @@ function addWarehouseItemToProjectMaterials(project, item, qty) {
   });
 
   if (existingMaterial) {
+    if ((existingMaterial.currency || "UAH") !== (project.currency || "UAH")) throw new Error("Матеріал має іншу валюту. Створіть окрему позицію.");
+    existingMaterial.currency = project.currency || "UAH";
     const priorIssued = Number(existingMaterial.issuedQty ?? existingMaterial.actualQty ?? 0);
     const priorActual = Number(existingMaterial.actualQty ?? priorIssued);
     const priorCost = Number(existingMaterial.purchasePriceSnapshot ?? warehouseUnitCost(item));
@@ -2102,6 +2117,7 @@ function addWarehouseItemToProjectMaterials(project, item, qty) {
   }
 
   project.materials.push({
+    currency: project.currency || "UAH",
     name: item.name,
     category: item.category || "Інше",
     sku: item.sku || "",
@@ -2170,7 +2186,7 @@ function applyPortalMode(mode) {
       projects: ["▤", "Об'єкти"],
       warehouse: ["▦", "Склад"],
       crm: ["☑", "CRM"],
-      cash: ["₴", "Каса"],
+      cash: ["$", "Каса"],
       profile: ["○", "Профіль"],
     };
   document.querySelectorAll(".nav-item").forEach((item) => {
@@ -2548,17 +2564,17 @@ function renderContractStage(project) {
   const contractDate = totals.contractDate ?? project.contractDate ?? "";
   return `<p class="workflow-contract-meta"><strong>${escapeAttribute(contractNumber || "Номер договору ще не внесено")}</strong><span>${contractDate ? `від ${escapeAttribute(contractDate)}` : "Дата не вказана"}</span></p>
     <div class="metric-grid compact finance-metrics">
-      <div class="metric-card"><span>Сума договору</span><strong>${money(totals.revenue)}</strong></div>
-      <div class="metric-card"><span>Отримано від клієнта</span><strong>${money(totals.receivedPayments)}</strong></div>
-      <div class="metric-card warning"><span>${totals.balanceDue < 0 ? "Переплата клієнта" : "Залишок до оплати"}</span><strong>${money(Math.abs(totals.balanceDue))}</strong></div>
+      <div class="metric-card"><span>Сума договору</span><strong>${money(totals.revenue, project.currency || "UAH")}</strong></div>
+      <div class="metric-card"><span>Отримано від клієнта</span><strong>${money(totals.receivedPayments, project.currency || "UAH")}</strong></div>
+      <div class="metric-card warning"><span>${totals.balanceDue < 0 ? "Переплата клієнта" : "Залишок до оплати"}</span><strong>${money(Math.abs(totals.balanceDue), project.currency || "UAH")}</strong></div>
     </div>
     <details class="workflow-details"><summary>Умови договору</summary>
       <form class="inline-form finance-form" id="projectFinanceForm">
         <label>Номер договору<input name="contractNumber" value="${escapeAttribute(contractNumber)}" /></label>
         <label>Дата договору<input name="contractDate" type="date" value="${escapeAttribute(contractDate)}" /></label>
-        <label>Сума договору<input name="contractPrice" type="number" min="0" step="1" value="${escapeAttribute(totals.contractPrice)}" /></label>
-        <label>Вартість монтажу<input name="installationPrice" type="number" min="0" step="1" value="${escapeAttribute(totals.installationPrice)}" /></label>
-        <label>Бюджет ЗП бригади<input name="crewPayroll" type="number" min="0" step="1" value="${escapeAttribute(totals.crewPayroll)}" /></label>
+        <label>Сума договору, ${project.currency || "UAH"}<input name="contractPrice" type="number" min="0" step="0.01" value="${escapeAttribute(totals.contractPrice)}" /></label>
+        <label>Вартість монтажу, ${project.currency || "UAH"}<input name="installationPrice" type="number" min="0" step="0.01" value="${escapeAttribute(totals.installationPrice)}" /></label>
+        <label>Бюджет ЗП бригади<input name="crewPayroll" type="number" min="0" step="0.01" value="${escapeAttribute(totals.crewPayroll)}" /></label>
         <div class="form-submit-cell"><button class="primary-button">Зберегти умови</button></div>
       </form>
     </details>
@@ -2621,11 +2637,12 @@ function renderMeasurementStage(project) {
 
 function offerLineTotals(project) {
   const finance = normalizeProjectFinance(project.finance);
+  const mismatched = finance.offerLines.some((item) => item.currency && item.currency !== (project.currency || "UAH"));
   const equipmentPurchase = finance.offerLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
   const equipmentSale = finance.offerLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
   const otherExpenses = finance.expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const installationPrice = Number(finance.installationPrice || 0);
-  const totalSale = equipmentSale + installationPrice;
+  const totalSale = mismatched ? NaN : equipmentSale + installationPrice;
   const totalCost = equipmentPurchase + otherExpenses + Number(finance.crewPayroll || 0);
   return {
     finance,
@@ -2641,41 +2658,43 @@ function offerLineTotals(project) {
 
 function renderCommercialOfferStage(project) {
   const totals = offerLineTotals(project);
-  const firstWarehouseItem = warehouseItems[0] || {};
+  const offerItems = warehouseItems.filter((item) => (item.currency || "UAH") === (project.currency || "UAH"));
+  const firstWarehouseItem = offerItems[0] || {};
   const firstSalePrice = Number(firstWarehouseItem.retailPrice || firstWarehouseItem.installerPrice || firstWarehouseItem.salePrice || 0);
   return `
+    <p class="calculation-note">Валюта комерційної пропозиції: ${project.currency || "UAH"}. Договір, матеріали та роботи в цій самій валюті.</p>
     <div class="proposal-actions">
       <button class="secondary-button" type="button" id="shareCommercialOfferButton">Надіслати</button>
       <button class="primary-button" type="button" id="printCommercialOfferButton">Друк / PDF</button>
     </div>
 
     <div class="metric-grid compact finance-metrics">
-      <div class="metric-card"><span>Закупка обладнання</span><strong>${money(totals.equipmentPurchase)}</strong></div>
-      <div class="metric-card"><span>Продаж обладнання</span><strong>${money(totals.equipmentSale)}</strong></div>
-      <div class="metric-card"><span>Монтаж</span><strong>${money(totals.installationPrice)}</strong></div>
-      <div class="metric-card"><span>Разом КП</span><strong>${money(totals.totalSale)}</strong></div>
+      <div class="metric-card"><span>Закупка обладнання</span><strong>${money(totals.equipmentPurchase, project.currency || "UAH")}</strong></div>
+      <div class="metric-card"><span>Продаж обладнання</span><strong>${money(totals.equipmentSale, project.currency || "UAH")}</strong></div>
+      <div class="metric-card"><span>Монтаж</span><strong>${money(totals.installationPrice, project.currency || "UAH")}</strong></div>
+      <div class="metric-card"><span>Разом КП</span><strong>${money(totals.totalSale, project.currency || "UAH")}</strong></div>
     </div>
 
     <details class="workflow-details"><summary>Додати обладнання до КП</summary>
     <form class="inline-form commercial-offer-form" id="commercialOfferLineForm">
       <label>Позиція зі складу
         <select name="warehouseItemId" id="commercialOfferItemSelect">
-          ${warehouseItems.length
-            ? warehouseItems.map((item) => `<option value="${escapeAttribute(item.id)}">${escapeAttribute(item.name)} / ${escapeAttribute(item.category)} / ${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)}</option>`).join("")
-            : `<option value="">Склад порожній</option>`}
+          ${offerItems.length
+            ? offerItems.map((item) => `<option value="${escapeAttribute(item.id)}">${escapeAttribute(item.name)} / ${escapeAttribute(item.category)} / ${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)}</option>`).join("")
+            : `<option value="">Немає обладнання у валюті об’єкта</option>`}
         </select>
       </label>
       <label>Кількість<input name="qty" type="number" min="0.01" step="0.01" value="1" required /></label>
-      <label>Ціна закупки<input name="purchasePrice" type="number" min="0" step="1" value="${escapeAttribute(warehouseUnitCost(firstWarehouseItem))}" /></label>
-      <label>Ціна продажу<input name="salePrice" type="number" min="0" step="1" value="${escapeAttribute(firstSalePrice)}" /></label>
+      <label>Ціна закупки, ${project.currency || "UAH"}<input name="purchasePrice" type="number" min="0" step="0.01" value="${escapeAttribute(warehouseUnitCost(firstWarehouseItem))}" /></label>
+      <label>Ціна продажу, ${project.currency || "UAH"}<input name="salePrice" type="number" min="0" step="0.01" value="${escapeAttribute(firstSalePrice)}" /></label>
       <label class="wide-field">Коментар<input name="note" placeholder="Комплектація, уточнення для клієнта..." /></label>
       <div class="form-submit-cell"><button class="primary-button">Додати в КП</button></div>
     </form>
     </details>
     <details class="workflow-details"><summary>Змінити вартість монтажу та ЗП</summary>
     <form class="inline-form commercial-offer-totals-form" id="commercialOfferTotalsForm">
-      <label>Вартість монтажу<input name="installationPrice" type="number" min="0" step="1" value="${escapeAttribute(totals.finance.installationPrice)}" /></label>
-      <label>ЗП бригади / собівартість робіт<input name="crewPayroll" type="number" min="0" step="1" value="${escapeAttribute(totals.finance.crewPayroll)}" /></label>
+      <label>Вартість монтажу, ${project.currency || "UAH"}<input name="installationPrice" type="number" min="0" step="0.01" value="${escapeAttribute(totals.finance.installationPrice)}" /></label>
+      <label>ЗП бригади / собівартість робіт, ${project.currency || "UAH"}<input name="crewPayroll" type="number" min="0" step="0.01" value="${escapeAttribute(totals.finance.crewPayroll)}" /></label>
       <div class="form-submit-cell"><button class="secondary-button">Зберегти суми</button></div>
     </form>
     </details>
@@ -2689,9 +2708,9 @@ function renderCommercialOfferStage(project) {
               <tr>
                 <td><strong>${escapeAttribute(item.name)}</strong><span>${escapeAttribute(item.category)}${item.note ? ` · ${escapeAttribute(item.note)}` : ""}</span></td>
                 <td>${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)}</td>
-                <td>${money(item.purchasePrice)}</td>
-                <td>${money(item.salePrice)}</td>
-                <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0))}</td>
+                <td>${money(item.purchasePrice, project.currency || "UAH")}</td>
+                <td>${money(item.salePrice, project.currency || "UAH")}</td>
+                <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0), project.currency || "UAH")}</td>
                 <td><button class="table-button danger-text" type="button" data-delete-offer-line="${index}">Видалити</button></td>
               </tr>
             `).join("")
@@ -2746,13 +2765,13 @@ function commercialOfferDocumentMarkup(project) {
                     <td>${escapeAttribute(item.name)}${item.note ? `<br><span class="muted-text">${escapeAttribute(item.note)}</span>` : ""}</td>
                     <td>${escapeAttribute(item.category)}</td>
                     <td>${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)}</td>
-                    <td>${money(item.salePrice)}</td>
-                    <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0))}</td>
+                    <td>${money(item.salePrice, project.currency || "UAH")}</td>
+                    <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0), project.currency || "UAH")}</td>
                   </tr>
                 `).join("")
                 : `<tr><td colspan="5">Позиції КП ще не додано.</td></tr>`}
-              <tr><td colspan="4"><strong>Монтажні роботи</strong></td><td>${money(totals.installationPrice)}</td></tr>
-              <tr><td colspan="4"><strong>Разом до оплати</strong></td><td><strong>${money(totals.totalSale)}</strong></td></tr>
+              <tr><td colspan="4"><strong>Монтажні роботи</strong></td><td>${money(totals.installationPrice, project.currency || "UAH")}</td></tr>
+              <tr><td colspan="4"><strong>Разом до оплати</strong></td><td><strong>${money(totals.totalSale, project.currency || "UAH")}</strong></td></tr>
             </tbody>
           </table>
         </div>
@@ -2803,7 +2822,7 @@ async function shareCommercialOffer() {
     `Комерційна пропозиція: ${project.title}`,
     `Клієнт: ${project.clientName || "-"}`,
     `Адреса: ${project.address || "-"}`,
-    `Сума: ${money(totals.totalSale)}`,
+    `Сума: ${money(totals.totalSale, project.currency || "UAH")}`,
     "Для PDF натисни 'Друк / PDF' у додатку.",
   ].join("\n");
   if (navigator.share) {
@@ -2823,6 +2842,11 @@ function copyCommercialOfferToMaterials() {
     alert("Спочатку додай позиції в КП.");
     return;
   }
+  if (finance.offerLines.some((item) => item.currency && item.currency !== (project.currency || "UAH")) ||
+      (project.materials || []).some((item) => item.currency && item.currency !== (project.currency || "UAH"))) {
+    alert("Валюта КП та матеріалів має збігатися з валютою об’єкта.");
+    return;
+  }
   project.materials ||= [];
   const plannedByItem = new Map();
   finance.offerLines.forEach((item) => {
@@ -2840,7 +2864,7 @@ function copyCommercialOfferToMaterials() {
       if (existing.purchasePriceSnapshot == null) existing.purchasePriceSnapshot = Number(item.purchasePrice || 0);
       if (existing.salePriceSnapshot == null) existing.salePriceSnapshot = Number(item.salePrice || 0);
     } else {
-      project.materials.push({ name: item.name, category: item.category, warehouseItemId: item.warehouseItemId || "", plannedQty: item.qty, issuedQty: 0, actualQty: 0, purchasePriceSnapshot: Number(item.purchasePrice || 0), salePriceSnapshot: Number(item.salePrice || 0), unit: item.unit || "шт" });
+      project.materials.push({ currency: project.currency || "UAH", name: item.name, category: item.category, warehouseItemId: item.warehouseItemId || "", plannedQty: item.qty, issuedQty: 0, actualQty: 0, purchasePriceSnapshot: Number(item.purchasePrice || 0), salePriceSnapshot: Number(item.salePrice || 0), unit: item.unit || "шт" });
     }
   });
   saveProjects();
@@ -3081,17 +3105,17 @@ function renderTab(project, isValid, stringsTotal, expected, options = {}) {
     return `
       ${options.financeReportOnly ? "" : `
       <div class="metric-grid compact finance-metrics">
-        <div class="metric-card"><span>Сума об'єкта</span><strong>${money(totals.revenue)}</strong></div>
+        <div class="metric-card"><span>Сума об'єкта</span><strong>${money(totals.revenue, project.currency || "UAH")}</strong></div>
         <div class="metric-card warning"><span>${totals.balanceDue < 0 ? "Переплата клієнта" : "До оплати клієнтом"}</span><strong>${window.SpartaCash.formatAmount(Math.round(Math.abs(totals.balanceDue) * 100))}</strong></div>
-        <div class="metric-card ${totals.profit >= 0 ? "success" : "danger"}"><span>${isClosedProjectStatus(project.status) ? "Прибуток за кошторисом" : "Прогноз прибутку"}</span><strong>${money(totals.profit)}</strong></div>
+        <div class="metric-card ${totals.profit >= 0 ? "success" : "danger"}"><span>${isClosedProjectStatus(project.status) ? "Прибуток за кошторисом" : "Прогноз прибутку"}</span><strong>${money(totals.profit, project.currency || "UAH")}</strong></div>
         <div class="metric-card"><span>Маржа</span><strong>${totals.margin}%</strong></div>
       </div>
 
       <form class="inline-form finance-form" id="projectFinanceForm">
-        <label>Сума договору<input name="contractPrice" type="number" min="0" step="1" value="${escapeAttribute(totals.contractPrice)}" /></label>
-        <label>Вартість монтажу<input name="installationPrice" type="number" min="0" step="1" value="${escapeAttribute(totals.installationPrice)}" /></label>
+        <label>Сума договору, ${project.currency || "UAH"}<input name="contractPrice" type="number" min="0" step="0.01" value="${escapeAttribute(totals.contractPrice)}" /></label>
+        <label>Вартість монтажу, ${project.currency || "UAH"}<input name="installationPrice" type="number" min="0" step="0.01" value="${escapeAttribute(totals.installationPrice)}" /></label>
         <label>Аванс до запуску журналу<input name="advancePaid" type="number" min="0" step="0.01" value="${escapeAttribute(totals.advancePaid)}" readonly /></label>
-        <label>ЗП бригади<input name="crewPayroll" type="number" min="0" step="1" value="${escapeAttribute(totals.crewPayroll)}" /></label>
+        <label>ЗП бригади<input name="crewPayroll" type="number" min="0" step="0.01" value="${escapeAttribute(totals.crewPayroll)}" /></label>
         <div class="form-submit-cell"><button class="primary-button">Зберегти фінанси</button></div>
       </form>
 
@@ -3104,17 +3128,17 @@ function renderTab(project, isValid, stringsTotal, expected, options = {}) {
             <p class="eyebrow">Розрахунок</p>
             <h3>Заробіток по об'єкту</h3>
           </div>
-          <span class="chip">${money(totals.revenue)} − ${money(totals.cost)}</span>
+          <span class="chip">${money(totals.revenue, project.currency || "UAH")} − ${money(totals.cost, project.currency || "UAH")}</span>
         </div>
         <div class="data-grid">
-          <div class="data-item"><span>Сума об'єкта</span><strong>${money(totals.revenue)}</strong></div>
-          <div class="data-item"><span>Вартість обладнання</span><strong>${money(totals.equipmentPurchase)}</strong></div>
-          <div class="data-item"><span>Додаткові витрати</span><strong>${money(totals.otherExpenses)}</strong></div>
-          <div class="data-item"><span>ЗП монтажників</span><strong>${money(totals.crewPayroll)}</strong></div>
-          <div class="data-item"><span>Всі витрати</span><strong>${money(totals.cost)}</strong></div>
+          <div class="data-item"><span>Сума об'єкта</span><strong>${money(totals.revenue, project.currency || "UAH")}</strong></div>
+          <div class="data-item"><span>Вартість обладнання</span><strong>${money(totals.equipmentPurchase, project.currency || "UAH")}</strong></div>
+          <div class="data-item"><span>Додаткові витрати</span><strong>${money(totals.otherExpenses, project.currency || "UAH")}</strong></div>
+          <div class="data-item"><span>ЗП монтажників</span><strong>${money(totals.crewPayroll, project.currency || "UAH")}</strong></div>
+          <div class="data-item"><span>Всі витрати</span><strong>${money(totals.cost, project.currency || "UAH")}</strong></div>
           <div class="data-item"><span>Всього отримано від клієнта</span><strong>${window.SpartaCash.formatAmount(Math.round(totals.receivedPayments * 100))}</strong></div>
           <div class="data-item"><span>${totals.balanceDue < 0 ? "Переплата клієнта" : "До оплати клієнтом"}</span><strong>${window.SpartaCash.formatAmount(Math.round(Math.abs(totals.balanceDue) * 100))}</strong></div>
-          <div class="data-item"><span>${isClosedProjectStatus(project.status) ? "Прибуток за кошторисом" : "Прогноз прибутку"}</span><strong>${money(totals.profit)}</strong></div>
+          <div class="data-item"><span>${isClosedProjectStatus(project.status) ? "Прибуток за кошторисом" : "Прогноз прибутку"}</span><strong>${money(totals.profit, project.currency || "UAH")}</strong></div>
         </div>
         <p class="calculation-note">Заробіток = сума об'єкта − вартість обладнання − додаткові витрати − ЗП монтажників. До оплати = сума об'єкта − попередній аванс − оплати клієнта в касі + повернення.</p>
         <p class="calculation-note">Виплачено бригаді через касу: ${window.SpartaCash.formatAmount(totals.cashPayments.recordedPayrollMinor)}. Залишилось виплатити бригаді: ${window.SpartaCash.formatAmount(Math.max(0, Math.round(totals.crewPayroll * 100) - totals.cashPayments.recordedPayrollMinor))}. Оплати матеріалів у касі: ${window.SpartaCash.formatAmount(totals.cashPayments.materialsMinor)}. Ці платежі показують рух грошей і не додаються вдруге до собівартості кошторису.</p>
@@ -3127,7 +3151,7 @@ function renderTab(project, isValid, stringsTotal, expected, options = {}) {
               <p class="eyebrow">Матеріали</p>
               <h3>Матеріали з фіксованою собівартістю</h3>
             </div>
-            <span class="chip">Продаж: ${money(totals.equipmentSale)}</span>
+            <span class="chip">Продаж: ${money(totals.equipmentSale, project.currency || "UAH")}</span>
           </div>
           <div class="table-wrap">
             <table>
@@ -3139,9 +3163,9 @@ function renderTab(project, isValid, stringsTotal, expected, options = {}) {
                       <td>${escapeAttribute(item.name)}</td>
                       <td>${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)}</td>
                       <td>${item.hasWarehousePrice ? escapeAttribute(item.warehouseName) : `<span class="chip amber">Немає на складі</span>`}</td>
-                      <td>${item.hasWarehousePrice ? money(item.purchasePrice) : "-"}</td>
-                      <td>${item.hasWarehousePrice ? money(item.salePrice) : "-"}</td>
-                      <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0))}</td>
+                      <td>${item.hasWarehousePrice ? money(item.purchasePrice, project.currency || "UAH") : "-"}</td>
+                      <td>${item.hasWarehousePrice ? money(item.salePrice, project.currency || "UAH") : "-"}</td>
+                      <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0), project.currency || "UAH")}</td>
                     </tr>
                   `).join("")
                   : `<tr><td colspan="6">Матеріали ще не додано у вкладці “Матеріали”.</td></tr>`}
@@ -3156,11 +3180,11 @@ function renderTab(project, isValid, stringsTotal, expected, options = {}) {
               <p class="eyebrow">Витрати</p>
               <h3>Додаткові витрати</h3>
             </div>
-            <span class="chip">Разом: ${money(totals.otherExpenses)}</span>
+            <span class="chip">Разом: ${money(totals.otherExpenses, project.currency || "UAH")}</span>
           </div>
           <form class="inline-form finance-line-form" id="projectExpenseForm">
             <label>Назва<input name="name" required placeholder="Доставка, проживання, пальне..." /></label>
-            <label>Сума<input name="amount" type="number" min="0" step="1" required /></label>
+            <label>Сума<input name="amount" type="number" min="0" step="0.01" required /></label>
             <button class="primary-button">Додати</button>
           </form>
           <div class="table-wrap">
@@ -3171,7 +3195,7 @@ function renderTab(project, isValid, stringsTotal, expected, options = {}) {
                   ? totals.expenses.map((item, index) => `
                     <tr>
                       <td>${escapeAttribute(item.name)}</td>
-                      <td>${money(item.amount)}</td>
+                      <td>${money(item.amount, project.currency || "UAH")}</td>
                       <td><button class="table-button danger-text" data-delete-expense-index="${index}">Видалити</button></td>
                     </tr>
                   `).join("")
@@ -3664,6 +3688,9 @@ function openProjectInfoDialog() {
   if (!project) return;
 
   projectInfoForm.reset();
+  projectInfoForm.elements.currency.value = project.currency || "UAH";
+  projectInfoForm.elements.currency.disabled = true;
+  projectInfoForm.elements.currency.title = "Валюта фіксується під час створення об’єкта.";
   ["title", "clientName", "clientPhone", "address", "objectType", "installationDate", "teamName", "comment"].forEach((key) => {
     if (projectInfoForm.elements[key]) {
       projectInfoForm.elements[key].value = project[key] ?? "";
@@ -4082,10 +4109,10 @@ function renderSolarCalculatorPanel(project) {
         </form>
         ${solarEstimateMessage ? `<p class="solar-calculator-message">${escapeAttribute(solarEstimateMessage)}</p>` : ""}
         ${estimate ? `
-        <div class="solar-estimate-summary"><div><span>За рік виробить</span><strong>${Math.round(estimate.annualGeneration).toLocaleString("uk-UA")} кВт·год</strong></div><div><span>Економія за рік</span><strong>${money(estimate.annualSavings)}</strong></div><div><span>Надлишок</span><strong>${Math.round(estimate.annualSurplus).toLocaleString("uk-UA")} кВт·год</strong></div></div>
+        <div class="solar-estimate-summary"><div><span>За рік виробить</span><strong>${Math.round(estimate.annualGeneration).toLocaleString("uk-UA")} кВт·год</strong></div><div><span>Економія за рік</span><strong>${money(estimate.annualSavings, "UAH")}</strong></div><div><span>Надлишок</span><strong>${Math.round(estimate.annualSurplus).toLocaleString("uk-UA")} кВт·год</strong></div></div>
         ${Array.isArray(estimate.dailyGeneration) && estimate.dailyGeneration.some((day) => Number(String(day.date).slice(5, 7)) - 1 === new Date().getMonth()) && !/^Орієнтовний профіль/i.test(estimate.source || "") ? renderDailyGenerationChart(estimate) : `<p class="solar-data-source">Щоденних даних про випромінювання немає. Нижче наведено лише помісячний прогноз.</p>`}
         <p class="solar-data-source">${escapeAttribute(estimate.source)} · Результат орієнтовний: він не замінює проєктування, замір даху та розрахунок затінення.</p>
-        <div class="solar-table-wrap"><table class="solar-estimate-table"><thead><tr><th>Місяць</th><th>Генерація</th><th>Власне споживання</th><th>Економія</th></tr></thead><tbody>${estimate.monthly.map((item) => `<tr><td>${escapeAttribute(item.month)}</td><td>${Math.round(item.generation).toLocaleString("uk-UA")} кВт·год</td><td>${Math.round(item.selfConsumption).toLocaleString("uk-UA")} кВт·год</td><td>${money(item.savings)}</td></tr>`).join("")}</tbody><tfoot><tr><th>Разом</th><th>${Math.round(estimate.annualGeneration).toLocaleString("uk-UA")} кВт·год</th><th>${Math.round(estimate.annualSelfConsumption).toLocaleString("uk-UA")} кВт·год</th><th>${money(estimate.annualSavings)}</th></tr></tfoot></table></div>
+        <div class="solar-table-wrap"><table class="solar-estimate-table"><thead><tr><th>Місяць</th><th>Генерація</th><th>Власне споживання</th><th>Економія</th></tr></thead><tbody>${estimate.monthly.map((item) => `<tr><td>${escapeAttribute(item.month)}</td><td>${Math.round(item.generation).toLocaleString("uk-UA")} кВт·год</td><td>${Math.round(item.selfConsumption).toLocaleString("uk-UA")} кВт·год</td><td>${money(item.savings, "UAH")}</td></tr>`).join("")}</tbody><tfoot><tr><th>Разом</th><th>${Math.round(estimate.annualGeneration).toLocaleString("uk-UA")} кВт·год</th><th>${Math.round(estimate.annualSelfConsumption).toLocaleString("uk-UA")} кВт·год</th><th>${money(estimate.annualSavings, "UAH")}</th></tr></tfoot></table></div>
         ` : `<div class="empty-state"><strong>Розрахунок ще не виконано</strong><span>Після внесення параметрів тут з’являться прогноз генерації, економія та таблиця за місяцями.</span></div>`}
       </article>
     </section>
@@ -4105,7 +4132,7 @@ function renderClientHome() {
       ${generation ? `
         <p>Середній день · ${escapeAttribute(month)}</p>
         <div class="client-generation-value">${generation.forecast}<span>кВт·год</span></div>
-        <span class="client-savings">Орієнтовна економія: ${money(generation.savings)} / день</span>
+        <span class="client-savings">Орієнтовна економія: ${money(generation.savings, "UAH")} / день</span>
         <small>${escapeAttribute(solarEstimate.config?.location || "Обрана локація")} · ${generation.power} кВт</small>
         <p class="calculation-note">Прогноз за збереженим розрахунком, а не фактичні показники інвертора.</p>
       ` : `
@@ -4181,11 +4208,11 @@ function renderClientStatistics() {
         ${solarEstimateMessage ? `<p class="solar-calculator-message">${escapeAttribute(solarEstimateMessage)}</p>` : ""}
         <div class="solar-estimate-summary">
           <div><span>За рік виробить</span><strong>${Math.round(estimate.annualGeneration).toLocaleString("uk-UA")} кВт·год</strong></div>
-          <div><span>Економія за рік</span><strong>${money(estimate.annualSavings)}</strong></div>
+          <div><span>Економія за рік</span><strong>${money(estimate.annualSavings, "UAH")}</strong></div>
           <div><span>Надлишок</span><strong>${Math.round(estimate.annualSurplus).toLocaleString("uk-UA")} кВт·год</strong></div>
         </div>
         <p class="solar-data-source">${escapeAttribute(estimate.source)} · Результат орієнтовний: він не замінює проєктування, замір даху та розрахунок затінення.</p>
-        <div class="solar-table-wrap"><table class="solar-estimate-table"><thead><tr><th>Місяць</th><th>Генерація</th><th>Власне споживання</th><th>Економія</th></tr></thead><tbody>${estimate.monthly.map((item) => `<tr><td>${escapeAttribute(item.month)}</td><td>${Math.round(item.generation).toLocaleString("uk-UA")} кВт·год</td><td>${Math.round(item.selfConsumption).toLocaleString("uk-UA")} кВт·год</td><td>${money(item.savings)}</td></tr>`).join("")}</tbody><tfoot><tr><th>Разом</th><th>${Math.round(estimate.annualGeneration).toLocaleString("uk-UA")} кВт·год</th><th>${Math.round(estimate.annualSelfConsumption).toLocaleString("uk-UA")} кВт·год</th><th>${money(estimate.annualSavings)}</th></tr></tfoot></table></div>
+        <div class="solar-table-wrap"><table class="solar-estimate-table"><thead><tr><th>Місяць</th><th>Генерація</th><th>Власне споживання</th><th>Економія</th></tr></thead><tbody>${estimate.monthly.map((item) => `<tr><td>${escapeAttribute(item.month)}</td><td>${Math.round(item.generation).toLocaleString("uk-UA")} кВт·год</td><td>${Math.round(item.selfConsumption).toLocaleString("uk-UA")} кВт·год</td><td>${money(item.savings, "UAH")}</td></tr>`).join("")}</tbody><tfoot><tr><th>Разом</th><th>${Math.round(estimate.annualGeneration).toLocaleString("uk-UA")} кВт·год</th><th>${Math.round(estimate.annualSelfConsumption).toLocaleString("uk-UA")} кВт·год</th><th>${money(estimate.annualSavings, "UAH")}</th></tr></tfoot></table></div>
       </article>
       <article class="client-chart-card">
         <div class="panel-heading"><div><span class="eyebrow">Генерація за тиждень</span><h3>Виробіток, кВт·год</h3></div><span class="chip">Прогноз</span></div>
@@ -4220,7 +4247,7 @@ function renderClientShop() {
         <div class="client-category-grid">${items.map((item) => {
           const available = core ? core.availableQty(item, reservations) : Number(item.qty || 0);
           const price = Number(item.retailPrice ?? item.salePrice ?? 0);
-          return `<article><span>▦</span><strong>${escapeAttribute(item.name)}</strong><small>${escapeAttribute([item.sku, item.brand, item.model].filter(Boolean).join(" · "))}</small><small>${available > 0 ? "Є в наявності" : "Наявність уточнюється"}</small><strong>${price > 0 ? money(price) : "Ціна не вказана"}</strong></article>`;
+          return `<article><span>▦</span><strong>${escapeAttribute(item.name)}</strong><small>${escapeAttribute([item.sku, item.brand, item.model].filter(Boolean).join(" · "))}</small><small>${available > 0 ? "Є в наявності" : "Наявність уточнюється"}</small><strong>${price > 0 ? money(price, item.currency || "UAH") : "Ціна не вказана"}</strong></article>`;
         }).join("")}</div>
       ` : `
         <article class="client-info-card"><h2>Каталог ще не заповнений</h2><p>Обладнання та ціни з’являться після внесення номенклатури компанії.</p></article>
@@ -4253,13 +4280,16 @@ function renderHome() {
   const preparation = projects.filter((project) => ["new", "planned", "proposal", "contract"].includes(project.status)).length;
   const mounting = projects.filter((project) => ["in_progress", "waiting_review"].includes(project.status)).length;
   const activeCount = projects.filter((project) => !isClosedProjectStatus(project.status)).length;
-  const financeTotals = projects.reduce((result, project) => {
+  const financeByCurrency = ["USD", "UAH"].map((currency) => {
+    const financeTotals = projects.filter((project) => (project.currency || "UAH") === currency).reduce((result, project) => {
     const totals = projectFinanceTotals(project);
     result.revenue += totals.revenue;
     result.profit += totals.profit;
     result.balanceDue += totals.balanceDue;
     return result;
   }, { revenue: 0, profit: 0, balanceDue: 0 });
+    return { currency, ...financeTotals };
+  });
   const activeProjects = projects
     .filter((project) => !isClosedProjectStatus(project.status))
     .slice(0, 4);
@@ -4289,7 +4319,7 @@ function renderHome() {
         <article class="metric-card"><span>У підготовці</span><strong>${preparation}</strong><small>виїзди та КП</small></article>
         <article class="metric-card warning"><span>На монтажі</span><strong>${mounting}</strong><small>об'єкти бригад</small></article>
         <article class="metric-card"><span>Потужність</span><strong>${projects.reduce((sum, project) => sum + Number(totalPower(project)), 0).toFixed(1)}</strong><small>кВт у базі</small></article>
-        <article class="metric-card success"><span>Прибуток / прогноз</span><strong>${money(financeTotals.profit)}</strong><small>за кошторисами проєктів, не залишок каси</small></article>
+        <article class="metric-card success"><span>Прибуток / прогноз</span><strong>${financeByCurrency.filter((entry) => entry.currency === "USD" || projects.some((p) => (p.currency || "UAH") === entry.currency)).map((entry) => money(entry.profit, entry.currency)).join("<br>")}</strong><small>за кошторисами проєктів, не залишок каси</small></article>
       </div>
     </section>
 
@@ -4361,7 +4391,7 @@ function renderWarehouseView() {
     renderClientShop();
     return;
   }
-  if (window.SpartaWarehouseUI && (!window.SPARTA_LOCAL_WORKSPACE?.enabled || readLocalStorage("solarObjectManager.warehouseLayout") !== "classic")) {
+  if (window.SpartaWarehouseUI) {
     window.SpartaWarehouseUI.render(warehouseView);
     return;
   }
@@ -4382,9 +4412,9 @@ function renderWarehouseView() {
       </div>
 
       <div class="metric-grid compact">
-        <div class="metric-card"><span>Собівартість складу</span><strong>${money(totals.purchaseValue)}</strong></div>
-        <div class="metric-card"><span>Потенційний продаж</span><strong>${money(totals.saleValue)}</strong></div>
-        <div class="metric-card success"><span>Потенційна маржа</span><strong>${money(totals.potentialProfit)}</strong></div>
+        <div class="metric-card"><span>Собівартість складу</span><strong>${money(totals.purchaseValue, "USD")}</strong></div>
+        <div class="metric-card"><span>Потенційний продаж</span><strong>${money(totals.saleValue, "USD")}</strong></div>
+        <div class="metric-card success"><span>Потенційна маржа</span><strong>${money(totals.potentialProfit, "USD")}</strong></div>
         <div class="metric-card warning"><span>Рухів сьогодні</span><strong>${totals.movedToday}</strong></div>
       </div>
 
@@ -4412,7 +4442,7 @@ function renderWarehouseView() {
         </label>
         <label class="warehouse-sale-target" hidden>Клієнт<input name="customer" placeholder="Ім'я або телефон клієнта" /></label>
         <label>К-сть<input name="qty" type="number" min="0.01" step="0.01" required /></label>
-        <label>Ціна продажу<input name="salePrice" type="number" min="0" step="1" value="${escapeAttribute(movementDefaultPrice)}" /></label>
+        <label>Ціна продажу, ${movementDefaultItem.currency || "UAH"}<input name="salePrice" type="number" min="0" step="0.01" value="${escapeAttribute(movementDefaultPrice)}" /></label>
         <label class="wide-field">Коментар<input name="note" placeholder="Накладна, хто забрав, умови..." /></label>
         <div class="form-submit-cell"><button class="primary-button">Провести рух</button></div>
       </form>
@@ -4437,8 +4467,8 @@ function renderWarehouseView() {
                     <td>${escapeAttribute(movement.itemName)}</td>
                     <td>${escapeAttribute(movement.qty)} ${escapeAttribute(movement.unit)}</td>
                     <td>${escapeAttribute(warehouseMovementTarget(movement))}</td>
-                    <td>${money(Number(movement.qty || 0) * Number(movement.unitCost || 0))}</td>
-                    <td>${movement.type === "sale" ? money(Number(movement.qty || 0) * Number(movement.salePrice || 0)) : "—"}</td>
+                    <td>${money(Number(movement.qty || 0) * Number(movement.unitCost || 0), movement.currency || "UAH")}</td>
+                    <td>${movement.type === "sale" ? money(Number(movement.qty || 0) * Number(movement.salePrice || 0), movement.currency || "UAH") : "—"}</td>
                     <td>${escapeAttribute(movement.note || "")}</td>
                   </tr>
                 `).join("")
@@ -4554,7 +4584,7 @@ function renderWarehouseItemForm(section, formState, filteredItems = []) {
       <label class="warehouse-custom-product" ${formState.isEditing || !productOptions.length ? "" : "hidden"}>Нова назва<input name="name" placeholder="Назва позиції" value="${escapeAttribute(formItem.name || "")}" /></label>
       <label>К-сть<input name="qty" type="number" min="0" step="0.01" required value="${escapeAttribute(formState.isEditing ? formItem.qty ?? "" : "")}" placeholder="0" /></label>
       <label>Од.<input name="unit" value="${escapeAttribute(selectedItem.unit || formItem.unit || "шт")}" required /></label>
-      <label>Закупка<input name="purchasePrice" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.purchasePrice ?? formItem.purchasePrice ?? "")}" /></label>
+      <label>Закупка<input name="purchasePrice" type="number" min="0" step="0.01" value="${escapeAttribute(selectedItem.purchasePrice ?? formItem.purchasePrice ?? "")}" /></label>
       <label>Продаж<input name="retailPrice" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.retailPrice ?? selectedItem.salePrice ?? formItem.retailPrice ?? "")}" /></label>
       <details class="warehouse-extra-fields">
         <summary>Додатково</summary>
@@ -4588,8 +4618,8 @@ function renderWarehousePickerRow(item, index, sectionId) {
       <td>${escapeAttribute(item.category)}</td>
       <td>${escapeAttribute([brand, ...tags].filter(Boolean).join(" / ") || "-")}</td>
       <td>${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)}</td>
-      <td>${Number(item.purchasePrice || 0) ? money(item.purchasePrice) : "-"}</td>
-      <td>${Number(item.retailPrice || item.salePrice || 0) ? money(item.retailPrice || item.salePrice) : "-"}</td>
+      <td>${Number(item.purchasePrice || 0) ? money(item.purchasePrice, item.currency || "UAH") : "-"}</td>
+      <td>${Number(item.retailPrice || item.salePrice || 0) ? money(item.retailPrice || item.salePrice, item.currency || "UAH") : "-"}</td>
       <td class="warehouse-actions">
         <button class="table-button" data-pick-warehouse-id="${escapeAttribute(item.id)}">Вибрати</button>
         <button class="table-button" data-edit-warehouse-index="${index}">Ред.</button>
@@ -4612,12 +4642,12 @@ function renderWarehouseItemCard(item, index) {
         <span class="chip ${isLow ? "amber" : ""}">${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)}</span>
       </div>
       <div class="warehouse-card-specs">
-        <span><b>Собівартість</b>${money(unitCost)}</span>
-        <span><b>Закупка</b>${money(item.purchasePrice)}</span>
-        <span><b>Доставка</b>${money(item.deliveryCost)}</span>
-        <span><b>Дод. витрати</b>${money(item.extraCost)}</span>
-        <span><b>Монтажникам</b>${Number(item.installerPrice || 0) ? money(item.installerPrice) : "-"}</span>
-        <span><b>Розниця</b>${Number(item.retailPrice || item.salePrice || 0) ? money(item.retailPrice || item.salePrice) : "-"}</span>
+        <span><b>Собівартість</b>${money(unitCost, item.currency || "UAH")}</span>
+        <span><b>Закупка</b>${money(item.purchasePrice, item.currency || "UAH")}</span>
+        <span><b>Доставка</b>${money(item.deliveryCost, item.currency || "UAH")}</span>
+        <span><b>Дод. витрати</b>${money(item.extraCost, item.currency || "UAH")}</span>
+        <span><b>Монтажникам</b>${Number(item.installerPrice || 0) ? money(item.installerPrice, item.currency || "UAH") : "-"}</span>
+        <span><b>Розниця</b>${Number(item.retailPrice || item.salePrice || 0) ? money(item.retailPrice || item.salePrice, item.currency || "UAH") : "-"}</span>
         <span><b>Серійний</b>${escapeAttribute(item.serialNumber || "-")}</span>
         <span><b>Постачальник</b>${escapeAttribute(item.supplier || "-")}</span>
         <span><b>Місце</b>${escapeAttribute(item.location || "-")}</span>
@@ -6246,7 +6276,9 @@ function addCommercialOfferLine(formElement) {
   if (!item) return;
 
   project.finance = normalizeProjectFinance(project.finance);
+  if ((project.currency || "UAH") !== (item.currency || "UAH")) { window.alert("Оберіть обладнання у валюті об’єкта: " + (project.currency || "UAH")); return; }
   project.finance.offerLines.push({
+    currency: project.currency || "UAH",
     id: `offer-${Date.now()}`,
     warehouseItemId: item.id,
     category: item.category || "Інше",
@@ -6313,6 +6345,7 @@ function addMaterial(formElement) {
   const data = new FormData(formElement);
   const materialName = data.get("name").trim() || data.get("catalogMaterial");
   project.materials.push({
+    currency: project.currency || "UAH",
     name: materialName,
     category: data.get("category"),
     actualQty: window.SPARTA_LOCAL_WORKSPACE?.enabled ? Number(data.get("actualQty") || 0) : 0,
@@ -7017,6 +7050,7 @@ form.addEventListener("submit", (event) => {
   const data = new FormData(form);
   const nextProject = {
     id: normalizeProjectId(Date.now()),
+    currency: String(data.get("currency") || "USD"),
     title: data.get("title"),
     clientName: data.get("clientName"),
     clientPhone: data.get("clientPhone"),

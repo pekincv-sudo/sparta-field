@@ -21,6 +21,11 @@
   const scalarFields = ["name", "category", "sku", "unit", "brand", "model", "barcode", "location", "supplier", "characteristics", "serialNumber", "image", "imageUrl"];
   const nonnegativeFields = ["minQty", "purchasePrice", "deliveryCost", "extraCost", "salePrice", "retailPrice", "installerPrice", "powerW", "powerKw", "capacityKwh", "voltageV", "phases", "crossSectionMm2"];
 
+  function currency(value, fallback = "UAH") {
+    const code = String(value || fallback).toUpperCase();
+    if (!["USD", "UAH"].includes(code)) fail("Підтримуються валюти USD та UAH.");
+    return code;
+  }
   function fail(message) { throw new Error(message); }
   function normalizeText(value) {
     return String(value == null ? "" : value).normalize("NFKC").toLocaleLowerCase("uk-UA").replace(/[’`ʼ]/g, "'").replace(/\s+/g, " ").trim();
@@ -108,6 +113,8 @@
     const existing = (items || []).find(function (item) { return id(item.id) === id(input.id) && id(input.id); });
     const result = existing ? clone(existing) : { qty: 0 };
     result.id = id(input.id);
+    result.currency = currency(input.currency, existing ? currency(existing.currency) : "USD");
+    if (existing && result.currency !== currency(existing.currency)) fail("Валюту наявного товару змінювати не можна. Створіть окрему картку, щоб зберегти історію цін.");
     if (!result.id) fail("Товар повинен мати ідентифікатор.");
     scalarFields.forEach(function (field) { if (Object.prototype.hasOwnProperty.call(input, field)) result[field] = String(input[field] == null ? "" : input[field]).trim(); });
     if (!result.name) fail("Вкажіть назву обладнання.");
@@ -160,6 +167,7 @@
       (state.movements || []).some(function (entry) { return id(entry.documentId) === documentId; })) fail("Цей документ уже проведено.");
     if (!Array.isArray(doc.lines) || !doc.lines.length) fail("Додайте хоча б одну позицію документа.");
     const result = {
+      currency: currency(doc.currency || state.items.find((item) => id(item.id) === id(doc.lines[0]?.itemId))?.currency),
       id: documentId, type: type, status: "posted", number: id(doc.number) || documentId,
       date: checkedDate(doc.date), supplier: id(doc.supplier), note: id(doc.note), reason: id(doc.reason),
       location: id(doc.location), attachments: clone(Array.isArray(doc.attachments) ? doc.attachments : []),
@@ -175,7 +183,7 @@
   function movementFor(document, item, line, index, type) {
     return { id: document.id + "-line-" + (index + 1), type: type, documentId: document.id, documentNumber: document.number,
       date: document.date, createdAt: document.createdAt, createdBy: document.createdBy, itemId: item.id, itemName: item.name,
-      qty: line.qty, unit: item.unit || "шт", unitCost: line.unitCost, supplier: document.supplier,
+      qty: line.qty, currency: document.currency, unit: item.unit || "шт", unitCost: line.unitCost, supplier: document.supplier,
       location: document.location || item.location || "", note: document.note || document.reason || "", serialNumbers: clone(line.serialNumbers || []) };
   }
   function postReceipt(state, doc) {
@@ -187,6 +195,7 @@
     doc.lines.forEach(function (raw, index) {
       const item = items.find(function (entry) { return id(entry.id) === id(raw.itemId); });
       if (!item || !isStockItem(item)) fail("Позицію " + (index + 1) + " не знайдено в каталозі обладнання.");
+      if (currency(item.currency) !== document.currency) fail("Усі товари документа мають бути в одній валюті: " + document.currency);
       if (seenItems.has(id(item.id))) fail("Об’єднайте повторні рядки одного товару в документі.");
       seenItems.add(id(item.id));
       const qty = quantity(raw.qty, item.unit);
@@ -204,7 +213,7 @@
       });
       const beforeQty = quantity(item.qty == null ? 0 : item.qty, item.unit, { allowZero: true });
       const afterQty = quantity(roundQuantity(beforeQty + qty), item.unit);
-      const line = { itemId: item.id, itemName: item.name, qty: qty, unit: item.unit || "шт", purchasePrice: purchasePrice,
+      const line = { currency: document.currency, itemId: item.id, itemName: item.name, qty: qty, unit: item.unit || "шт", purchasePrice: purchasePrice,
         deliveryCost: deliveryCost, extraCost: extraCost, unitCost: purchasePrice + deliveryCost + extraCost,
         beforeQty: beforeQty, afterQty: afterQty, previousUnitCost: unitCost(item), serialNumbers: incomingSerials };
       ["purchasePrice", "deliveryCost", "extraCost"].forEach(function (field) {
@@ -230,6 +239,7 @@
     doc.lines.forEach(function (raw, index) {
       const item = items.find(function (entry) { return id(entry.id) === id(raw.itemId); });
       if (!item || !isStockItem(item)) fail("Позицію " + (index + 1) + " не знайдено в каталозі обладнання.");
+      if (currency(item.currency) !== document.currency) fail("Усі товари документа мають бути в одній валюті: " + document.currency);
       if (seenItems.has(id(item.id))) fail("Товар можна перерахувати лише один раз у документі.");
       seenItems.add(id(item.id));
       const beforeQty = quantity(item.qty == null ? 0 : item.qty, item.unit, { allowZero: true });
@@ -237,7 +247,7 @@
       const reserved = reservedQty(state.reservations || [], item.id);
       if (countedQty < reserved) fail("Фактичний залишок менший за резерв. Спочатку перегляньте резервування.");
       const delta = roundQuantity(countedQty - beforeQty);
-      const line = { itemId: item.id, itemName: item.name, unit: item.unit || "шт", beforeQty: beforeQty,
+      const line = { currency: document.currency, itemId: item.id, itemName: item.name, unit: item.unit || "шт", beforeQty: beforeQty,
         countedQty: countedQty, afterQty: countedQty, qty: delta, delta: delta, unitCost: unitCost(item) };
       item.qty = countedQty;
       document.lines.push(line);
@@ -254,7 +264,7 @@
     const reservations = state.reservations || [];
     if (reservations.some(function (entry) { return id(entry.id) === id(input.id); })) fail("Резерв із таким ідентифікатором уже існує.");
     if (qty > availableQty(item, reservations)) fail("Недостатньо вільного залишку для резервування.");
-    const reservation = { id: id(input.id), itemId: item.id, projectId: id(input.projectId), qty: qty,
+    const reservation = { currency: currency(item.currency), id: id(input.id), itemId: item.id, projectId: id(input.projectId), qty: qty,
       createdAt: timestamp(input.createdAt), createdBy: id(input.createdBy) };
     return { items: state.items, reservations: reservations.concat([reservation]), reservation: reservation };
   }

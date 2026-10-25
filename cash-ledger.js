@@ -91,11 +91,17 @@
     return minor;
   }
 
-  function formatAmount(amountMinor) {
-    if (!Number.isSafeInteger(amountMinor)) fail("Некоректна сума в копійках.");
+  function formatAmount(amountMinor, currency = "USD") {
+    if (!Number.isSafeInteger(amountMinor)) fail("Некоректна сума в мінімальних одиницях валюти.");
     const absolute = Math.abs(amountMinor);
     const whole = Math.floor(absolute / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0");
-    return (amountMinor < 0 ? "−" : "") + whole + "," + String(absolute % 100).padStart(2, "0") + " грн";
+    return (amountMinor < 0 ? "−" : "") + whole + "," + String(absolute % 100).padStart(2, "0") + (currencyCode(currency) === "USD" ? " USD" : " грн");
+  }
+
+  function currencyCode(value, fallback = "UAH") {
+    const code = String(value || fallback).toUpperCase();
+    if (!["USD", "UAH"].includes(code)) fail("Підтримуються валюти USD та UAH.");
+    return code;
   }
 
   // The returned snapshot contains scalar values only and cannot be edited.
@@ -111,7 +117,7 @@
       fail("Категорія не відповідає типу операції.");
     }
     if (!methods.includes(method)) fail("Невідомий спосіб оплати.");
-    if (!Number.isSafeInteger(entry.amountMinor) || entry.amountMinor <= 0) fail("Некоректна сума в копійках.");
+    if (!Number.isSafeInteger(entry.amountMinor) || entry.amountMinor <= 0) fail("Некоректна сума в мінімальних одиницях валюти.");
     const projectId = text(entry.projectId, "Об’єкт", false, 200) || null;
     const normalized = {
       id: text(entry.id, "ID", true, 200),
@@ -121,6 +127,7 @@
       direction: direction,
       category: category,
       amountMinor: entry.amountMinor,
+      currency: currencyCode(entry.currency),
       counterparty: text(entry.counterparty, "Від кого / кому", true, 300),
       purpose: text(entry.purpose, "Призначення платежу", true, 2000),
       occurredAt: isoDate(entry.occurredAt, "Дата оплати"),
@@ -137,6 +144,7 @@
     const opts = options || {};
     return validateEntry(Object.assign({}, input, {
       id: input.id || opts.id,
+      currency: currencyCode(input.currency, "USD"),
       amountMinor: input.amountMinor == null ? parseAmount(input.amount) : input.amountMinor,
       createdAt: input.createdAt || opts.now,
     }));
@@ -157,7 +165,7 @@
       if (!original || original.reversesId) fail("Не знайдено початкову операцію для сторнування.");
       if (reversed.has(original.id)) fail("Операція вже сторнована.");
       if (entry.companyId !== original.companyId || entry.projectId !== original.projectId || entry.projectTitle !== original.projectTitle ||
-          entry.category !== original.category || entry.amountMinor !== original.amountMinor ||
+          entry.category !== original.category || entry.amountMinor !== original.amountMinor || entry.currency !== original.currency ||
           entry.direction === original.direction || entry.method !== original.method) {
         fail("Сторнування не відповідає початковій операції.");
       }
@@ -166,10 +174,14 @@
     return Object.freeze(normalized);
   }
 
-  function totals(entries) {
+  function totals(entries, currency) {
+    const codes = new Set(entries.map((entry) => currencyCode(entry.currency)));
+    if (!currency && codes.size > 1) fail("Підсумки USD та гривні потрібно рахувати окремо.");
+    const selected = currencyCode(currency || [...codes][0], "USD");
     const result = { incomeMinor: 0, expenseMinor: 0, balanceMinor: 0 };
     entries.forEach(function (raw) {
       const entry = validateEntry(raw);
+      if (entry.currency !== selected) return;
       const key = entry.direction === "income" ? "incomeMinor" : "expenseMinor";
       result[key] = safeAdd(result[key], entry.amountMinor);
       result.balanceMinor = safeAdd(result.balanceMinor, entry.direction === "income" ? entry.amountMinor : -entry.amountMinor);
@@ -177,11 +189,15 @@
     return Object.freeze(result);
   }
 
-  function projectTotals(entries, projectId) {
+  function projectTotals(entries, projectId, currency) {
+    const codes = new Set(entries.filter((entry) => entry.projectId === String(projectId)).map((entry) => currencyCode(entry.currency)));
+    if (!currency && codes.size > 1) fail("Платежі об’єкта мають різні валюти.");
+    currency = currency || [...codes][0] || "USD";
     const result = { clientPaidMinor: 0, recordedPayrollMinor: 0, recordedExpensesMinor: 0, materialsMinor: 0, otherExpensesMinor: 0 };
     entries.forEach(function (raw) {
       const entry = validateEntry(raw);
       if (!projectId || entry.projectId !== String(projectId)) return;
+      if (entry.currency !== currencyCode(currency)) fail("Валюта платежу не збігається з валютою об’єкта.");
       const income = entry.direction === "income" ? entry.amountMinor : -entry.amountMinor;
       if (entry.category === "client_payment" || entry.category === "client_refund") result.clientPaidMinor = safeAdd(result.clientPaidMinor, income);
       if (entry.category === "labor") result.recordedPayrollMinor = safeAdd(result.recordedPayrollMinor, -income);
@@ -240,6 +256,7 @@
       const occurredAt = new Date(entry.occurredAt).getTime();
       if (options.projectId === "__none" ? Boolean(entry.projectId) : options.projectId && entry.projectId !== String(options.projectId)) return false;
       if (options.direction && options.direction !== "all" && entry.direction !== options.direction) return false;
+      if (options.currency && entry.currency !== currencyCode(options.currency)) return false;
       if (options.method && options.method !== "all" && entry.method !== options.method) return false;
       if (from != null && occurredAt < from || to != null && occurredAt > to) return false;
       return !query || [entry.counterparty, entry.purpose, entry.projectTitle, entry.id].join(" ").toLocaleLowerCase("uk-UA").includes(query);
@@ -256,10 +273,10 @@
   }
   function decimalAmount(minor) { return Math.floor(minor / 100) + "," + String(minor % 100).padStart(2, "0"); }
   function exportCsv(entries) {
-    const rows = [["ID", "Дата оплати (UTC)", "Тип", "Категорія", "Сума, грн", "Спосіб оплати", "Від кого / кому", "Призначення", "ID об’єкта", "Об’єкт", "Дата запису (UTC)", "Автор", "Сторнує ID"]];
+    const rows = [["ID", "Дата оплати (UTC)", "Тип", "Категорія", "Сума", "Валюта", "Спосіб оплати", "Від кого / кому", "Призначення", "ID об’єкта", "Об’єкт", "Дата запису (UTC)", "Автор", "Сторнує ID"]];
     entries.forEach(function (raw) {
       const entry = validateEntry(raw);
-      rows.push([entry.id, entry.occurredAt, entry.direction === "income" ? "Надходження" : "Витрата", categoryLabels[entry.category], decimalAmount(entry.amountMinor), methodLabels[entry.method], entry.counterparty, entry.purpose, entry.projectId || "", entry.projectTitle, entry.createdAt, entry.createdBy, entry.reversesId || ""]);
+      rows.push([entry.id, entry.occurredAt, entry.direction === "income" ? "Надходження" : "Витрата", categoryLabels[entry.category], decimalAmount(entry.amountMinor), entry.currency, methodLabels[entry.method], entry.counterparty, entry.purpose, entry.projectId || "", entry.projectTitle, entry.createdAt, entry.createdBy, entry.reversesId || ""]);
     });
     return "\ufeff" + rows.map(function (row) { return row.map(csvCell).join(";"); }).join("\r\n") + "\r\n";
   }
