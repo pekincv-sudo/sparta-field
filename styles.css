@@ -3604,3 +3604,5 @@ dialog::backdrop {
 .maintenance-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .workspace-clean-dialog { width: min(780px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow: auto; }
 .workspace-clean-dialog p { line-height: 1.6; }
+
+.auth-card [hidden] { display: none !important; }

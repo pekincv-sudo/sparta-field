@@ -12,8 +12,9 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/pwa/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/assets/pwa/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/assets/pwa/icon-512.png" />
-    <link rel="stylesheet" href="./styles.css?v=20261025-35" />
-    <link rel="stylesheet" href="./warehouse.css?v=20261025-35" />
+    <link rel="stylesheet" href="./styles.css?v=20261025-36" />
+    <link rel="stylesheet" href="./warehouse.css?v=20261025-36" />
+    <link rel="stylesheet" href="./team-access.css?v=20261025-36" />
   </head>
   <body class="auth-locked">
     <section class="auth-screen" aria-label="Вхід у SPARTA field">
@@ -23,19 +24,22 @@
           <strong>SPARTA</strong>
           <span>power</span>
         </div>
+        <div class="segmented" aria-label="Вхід або реєстрація"><button type="button" class="active" data-gate-mode="signin">Увійти</button><button type="button" data-gate-mode="signup">Реєстрація</button></div>
+        <label class="auth-field" data-signup-only hidden><span>Ваше ім’я</span><input name="fullName" maxlength="120" autocomplete="name" /></label>
         <input name="authMode" type="hidden" value="signin" />
         <label class="auth-field">
           <span>Email</span>
           <input name="email" type="email" required autocomplete="email" />
         </label>
-        <label class="auth-field">
+        <label class="auth-field" data-password-field>
           <span>Пароль</span>
           <input name="password" type="password" required autocomplete="current-password" />
         </label>
+        <label class="auth-field" data-signup-only hidden><span>Повторіть пароль</span><input name="passwordConfirm" type="password" minlength="8" autocomplete="new-password" /></label>
         <button class="primary-button auth-submit" id="gateAuthSubmitButton" type="submit">Увійти</button>
-        <button class="auth-link" type="button">Забули пароль?</button>
+        <button class="auth-link" type="button" data-gate-mode="recover">Забули пароль?</button><button class="auth-link" type="button" data-auth-resend>Надіслати підтвердження повторно</button><button class="auth-link" type="button" data-auth-retry>Перевірити запрошення</button><button class="auth-link" type="button" data-auth-signout>Інший акаунт</button>
         <p class="auth-message" id="gateAuthMessage">Увійди, щоб працювати з об'єктами SPARTA power.</p>
-        <small>Версія 1.0.34</small>
+        <small>Версія 1.0.36</small>
       </form>
     </section>
 
@@ -55,6 +59,7 @@
           <button class="nav-item" data-section="warehouse"><span>▦</span>Склад</button>
           <button class="nav-item" data-section="crm"><span>☑</span>CRM</button>
           <button class="nav-item is-hidden" data-section="cash"><span>$</span>Каса</button>
+          <button class="nav-item is-hidden" data-section="team"><span>♙</span>Команда і події</button>
           <button class="nav-item" data-section="profile"><span>○</span>Профіль</button>
         </nav>
 
@@ -82,6 +87,7 @@
           </div>
         </section>
 
+        <section class="section" id="team"><div id="teamView"></div></section>
         <section class="section active" id="home">
           <div id="homeView"></div>
         </section>
@@ -218,14 +224,14 @@
           <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
         </div>
         <div class="form-grid">
-          <label>Ім'я<input name="fullName" type="text" autocomplete="name" placeholder="Іван Петренко" /></label>
+          <label>Ім'я<input name="fullName" type="text" required autocomplete="name" placeholder="Іван Петренко" /></label>
           <label>Email<input name="email" type="email" required autocomplete="email" /></label>
           <label>Роль
             <select name="role">
               <option value="installer">Монтажник</option>
-              <option value="warehouse">Склад</option>
-              <option value="brigadier">Бригадир</option>
-              <option value="engineer">Інженер</option>
+              <option value="warehouse">Комірник</option>
+              <option value="brigadier">Майстер</option>
+              <option value="engineer">Менеджер</option>
               <option value="viewer">Тільки перегляд</option>
               <option value="admin">Адміністратор</option>
             </select>
@@ -246,10 +252,10 @@
           <button type="button" class="ghost-button" data-close-dialog onclick="this.closest('dialog').close()" aria-label="Закрити">×</button>
         </div>
         <div class="form-grid">
-          <label>Новий пароль<input name="password" type="password" required minlength="6" autocomplete="new-password" /></label>
-          <label>Повторити пароль<input name="passwordConfirm" type="password" required minlength="6" autocomplete="new-password" /></label>
+          <label>Новий пароль<input name="password" type="password" required minlength="8" autocomplete="new-password" /></label>
+          <label>Повторити пароль<input name="passwordConfirm" type="password" required minlength="8" autocomplete="new-password" /></label>
         </div>
-        <p class="calculation-note" id="passwordMessage">Пароль має містити щонайменше 6 символів.</p>
+        <p class="calculation-note" id="passwordMessage">Пароль має містити щонайменше 8 символів.</p>
         <div class="modal-actions">
           <button type="button" class="secondary-button" data-close-dialog onclick="this.closest('dialog').close()">Скасувати</button>
           <button type="submit" class="primary-button">Зберегти пароль</button>
@@ -453,18 +459,20 @@
       </form>
     </dialog>
 
-    <script src="./local-workspace.js?v=20261025-35"></script>
-    <script src="./supabase-config.js?v=20261025-35"></script>
+    <script src="./local-workspace.js?v=20261025-36"></script>
+    <script src="./supabase-config.js?v=20261025-36"></script>
     <!-- Kept locally so authentication also works when a CDN is blocked or unavailable. -->
-    <script src="./supabase-js.umd.js?v=20261025-35"></script>
-    <script src="./money.js?v=20261025-35"></script>
-    <script src="./cash-ledger.js?v=20261025-35"></script>
-    <script src="./cash-book.js?v=20261025-35"></script>
-    <script src="./workspace-reset-core.js?v=20261025-35"></script>
-    <script src="./workspace-maintenance.js?v=20261025-35"></script>
-    <script src="./warehouse-core.js?v=20261025-35"></script>
-    <script src="./warehouse-ui.js?v=20261025-35"></script>
-    <script src="./warehouse-cloud.js?v=20261025-35"></script>
-    <script src="./app.js?v=20261025-35"></script>
+    <script src="./supabase-js.umd.js?v=20261025-36"></script>
+    <script src="./money.js?v=20261025-36"></script>
+    <script src="./cash-ledger.js?v=20261025-36"></script>
+    <script src="./cash-book.js?v=20261025-36"></script>
+    <script src="./workspace-reset-core.js?v=20261025-36"></script>
+    <script src="./workspace-maintenance.js?v=20261025-36"></script>
+    <script src="./warehouse-core.js?v=20261025-36"></script>
+    <script src="./warehouse-ui.js?v=20261025-36"></script>
+    <script src="./warehouse-cloud.js?v=20261025-36"></script>
+    <script src="./auth-flow.js?v=20261025-36"></script>
+    <script src="./team-access.js?v=20261025-36"></script>
+    <script src="./app.js?v=20261025-36"></script>
   </body>
 </html>

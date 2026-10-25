@@ -107,7 +107,7 @@ declare
   field_name text; collection_name text; incoming_ids text[];
 begin
   if auth.uid() is null or not public.has_company_role(p_company_id,
-    array['owner','admin','warehouse','engineer','brigadier']::public.member_role[]) then
+    array['owner','admin','warehouse','engineer']::public.member_role[]) then
     raise exception 'Only an active company owner, admin or warehouse worker can post warehouse documents' using errcode = '42501';
   end if;
   if p_request_id is null or p_expected_revision is null then raise exception 'Missing request identity'; end if;

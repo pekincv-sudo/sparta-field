@@ -12,8 +12,9 @@ function runRenderSafetyTests(sourceFile = path.join(__dirname, "..", "app.js"))
   const project = { id: payload, title: payload, address: payload, clientName: payload, clientPhone: payload, objectType: payload, comment: payload, installationDate: payload, teamName: payload, status: "new", strings: [], photos: [], materials: [item], files: [], technical: { panelManufacturer: payload, panelModel: payload, panelCount: 10, panelPowerW: 500, inverterManufacturer: payload, inverterModel: payload, inverterPowerKw: 5, batteryManufacturer: payload, batteryModel: payload, batteryModulesCount: 1, batteryCapacityKwh: 5, batterySerialNumbers: payload, hasBattery: true } };
   const projectList = { innerHTML: "" }, projectDetail = { innerHTML: "" }, homeView = { innerHTML: "" };
   const photo = { src: payload, caption: payload, category: payload };
-  const context = vm.createContext({
+  const context = vm.createContext({ canManageProjectFinance: () => true, canCreateCrmTasks: () => true,
     applyProjectRoleControls() {}, canEditProjectField() { return true; },
+    canManageProjectFinance: () => true, canCreateCrmTasks: () => true,
     window: {}, portalMode: "installer", selectedProjectId: payload, selectedTab: "technical", projectList, projectDetail, homeView,
     projects: [project], warehouseItems: [item], cloudState: { ready: true, memberRole: "owner", user: { id: "owner" }, members: [] },
     companyContacts: { name: "SPARTA power", location: "Office", email: "office@example.test", phone: "+380000000000" },

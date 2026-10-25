@@ -4,7 +4,7 @@ This folder is the clean static web app for deployment.
 
 ## Local development
 
-The current work is a clean local data-entry workspace. Open `http://127.0.0.1:4174/?build=35`.
+The current work is a clean local data-entry workspace. Open `http://127.0.0.1:4174/?build=36`.
 On `localhost`, `127.0.0.1` and `::1`, `local-workspace.js` disables Supabase
 initialization. Projects, inventory, tasks and cash use the independent
 `sparta.local.v1.*` browser storage; local file blobs use
@@ -32,6 +32,10 @@ and are not counted twice.
 
 To check the financial rules with Node.js, run `node tests/run-tests.js`.
 The tests use isolated data and simulated services and do not access Supabase.
+
+## Team access — build 36
+
+Staff use individual email/password accounts, verified invitations and explicit roles. Owners/admins manage the team and read the activity journal under «Команда і події». Apply `database/team-build36.sql` before release. See [roles, validation and required mail setup](docs/TEAM-ACCESS-build36.md). SMTP and the server-only Vercel key are required to complete mail delivery.
 
 ## Currency update — build 35
 

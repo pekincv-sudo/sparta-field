@@ -49,7 +49,7 @@ async function runProjectSaveSqlTests(PGlite, migrationFile = path.resolve(__dir
     for (const role of ["installer","warehouse","viewer","outsider"]) { await login(people[role]);await assert.rejects(save(updated,2),/Only active office staff/); } passed++;
     const staffPayload=copy(updated); delete staffPayload.project.finance;
     await login(people.engineer);await assert.rejects(save({...updated,project:{...updated.project,finance:{contractPrice:9999}}},2),/Only owner or admin/); result=await save(staffPayload,2);assert.equal(result.dataRevision,3);
-    await login(people.brigadier);result=await save(staffPayload,3);assert.equal(result.dataRevision,4);passed++;
+    await login(people.brigadier);await assert.rejects(save(staffPayload,3),/Only active office staff/);await login(people.owner);result=await save(updated,3);assert.equal(result.dataRevision,4);passed++;
     await login(people.owner);
     const negative=copy(updated);negative.technical.panel_count=-1;await assert.rejects(save(negative,4),/Negative technical/);
     const coerced=copy(updated);coerced.technical.panel_count="10";await assert.rejects(save(coerced,4),/Invalid technical/);passed++;
