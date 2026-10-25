@@ -1,4 +1,6 @@
 {
+  "buildCommand": "node scripts/build-public.js",
+  "outputDirectory": "public-build",
   "cleanUrls": true,
   "headers": [
     {
@@ -33,6 +35,10 @@
         {
           "key": "X-Content-Type-Options",
           "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
         }
       ]
     }

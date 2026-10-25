@@ -1,10 +1,20 @@
-const CACHE_NAME = "sparta-field-v17";
+const CACHE_NAME = "sparta-field-v34";
 const APP_SHELL = [
   "/",
   "/index.html",
   "/styles.css",
   "/app.js",
+  "/local-workspace.js",
+  "/cash-ledger.js",
+  "/cash-book.js",
+  "/workspace-reset-core.js",
+  "/workspace-maintenance.js",
+  "/warehouse-core.js",
+  "/warehouse-ui.js",
+  "/warehouse-cloud.js",
+  "/warehouse.css",
   "/supabase-config.js",
+  "/supabase-js.umd.js",
   "/assets/solar-background.png",
   "/assets/sparta-logo.jpeg",
   "/assets/pwa/apple-touch-icon.png",
@@ -12,6 +22,7 @@ const APP_SHELL = [
   "/assets/pwa/icon-512.png",
   "/manifest.webmanifest"
 ];
+const SHELL_PATHS = new Set(APP_SHELL);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -23,42 +34,24 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      Promise.all(keys.filter((key) => key.startsWith("sparta-field-") && key !== CACHE_NAME).map((key) => caches.delete(key)))
     )
   );
   self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
-  const requestUrl = new URL(event.request.url);
-
-  if (requestUrl.origin !== self.location.origin) return;
-
-  if (event.request.method !== "GET") return;
-
-  if (
-    event.request.mode === "navigate" ||
-    ["/", "/index.html", "/app.js", "/styles.css", "/supabase-config.js", "/manifest.webmanifest"].includes(requestUrl.pathname)
-  ) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/index.html")))
-    );
-    return;
-  }
-
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
-      });
-    })
-  );
+  const request = event.request;
+  const url = new URL(request.url);
+  // Only known application assets belong in the offline cache. APIs, signed
+  // downloads, documents and unknown routes always pass through to the network.
+  if (request.method !== "GET" || url.origin !== self.location.origin || !SHELL_PATHS.has(url.pathname)) return;
+  const key = url.pathname;
+  event.respondWith(fetch(request).then((response) => {
+    if (response.ok && response.type !== "opaque") {
+      const copy = response.clone();
+      event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(key, copy)));
+    }
+    return response;
+  }).catch(() => caches.match(key).then((cached) => cached || Response.error())));
 });
