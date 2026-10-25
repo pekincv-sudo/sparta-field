@@ -39,7 +39,7 @@ async function runTests(directory = path.resolve(__dirname, ".."), baseSchema = 
       await db.query("insert into public.profiles(id,full_name) values($1,$2)", [id, role]);
       await db.query("insert into public.company_members(company_id,user_id,role) values($1,$2,$3)", [memberCompany, id, role]);
     }
-    await db.query("insert into public.projects(company_id,client_id,title) values($1,'project','Station'),($2,'foreign-project','Other station')", [company, otherCompany]);
+    await db.query("insert into public.projects(company_id,client_id,title,currency) values($1,'project','Station','UAH'),($2,'foreign-project','Other station','UAH')", [company, otherCompany]);
     await db.query("insert into public.warehouse_items(company_id,client_item_id,category,name,sku,unit,quantity,purchase_price,sale_price,min_quantity,app_data) values($1,'cable','Кабелі','Cable','C6','м',2.375,20,0,0,$2)", [company, { brand: "Cable maker", powerW: 0, qty: 2.375, installerPrice: 0, serialNumbers: [] }]);
     async function identity(user, role = "authenticated") {
       await db.exec("reset role");

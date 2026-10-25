@@ -47,7 +47,7 @@ function harness(storage = new Map(), remote = null, options = {}) {
       },
       addEventListener(name, callback) { (events[name] ||= []).push(callback); },
     },
-    cloudState: state, portalMode: "installer", projects: [{ id: "taras", title: "Тарас Сусід", clientName: "Тарас", finance: { advancePaid: 500 } }],
+    cloudState: state, portalMode: "installer", projects: [{ id: "taras", currency: "USD", title: "Тарас Сусід", clientName: "Тарас", finance: { advancePaid: 500 } }],
     readJsonStorage(key, fallback) { return storage.has(key) ? JSON.parse(storage.get(key)) : fallback; },
     writeLocalStorage(key, value) { storage.set(key, value); return true; },
     crypto: { randomUUID() { return "00000000-0000-4000-8000-" + String(++harnessUuid).padStart(12, "0"); } },
@@ -62,7 +62,7 @@ function harness(storage = new Map(), remote = null, options = {}) {
   async function post(overrides = {}) {
     const form = {
       id: "cashEntryForm",
-      data: { direction: "income", category: "client_payment", amount: "1000,25", occurredAt: "2026-10-24T12:30", counterparty: "Тарас", projectId: "taras", method: "cash", purpose: "Аванс за станцію", ...overrides },
+      data: { currency: "USD", direction: "income", category: "client_payment", amount: "1000,25", occurredAt: "2026-10-24T12:30", counterparty: "Тарас", projectId: "taras", method: "cash", purpose: "Аванс за станцію", ...overrides },
       querySelector(selector) { return selector === '[type="submit"]' ? submit : error; },
     };
     for (const listener of events.submit) listener({ target: form, preventDefault() {} });
@@ -192,7 +192,7 @@ async function runCashBookIntegrationTests() {
   const competingReverse = JSON.parse([...competing.storage.values()][0]).entries[1];
   const toRemote = (entry) => ({ id: entry.id, company_id: entry.companyId, project_client_id: entry.projectId,
     project_title: entry.projectTitle, direction: entry.direction, category: entry.category,
-    amount_minor: entry.amountMinor, counterparty: entry.counterparty, purpose: entry.purpose,
+    amount_minor: entry.amountMinor, currency: entry.currency, counterparty: entry.counterparty, purpose: entry.purpose,
     occurred_at: entry.occurredAt, payment_method: entry.method, created_at: entry.createdAt,
     created_by: "owner-1", reverses_id: entry.reversesId });
   const competingRemote = [toRemote(competingOriginal), toRemote({ ...competingReverse,
@@ -220,7 +220,7 @@ async function runCashBookIntegrationTests() {
   const end = appSource.indexOf("\nfunction warehouseTotals(", start);
   online.state.memberRole = "owner";
   online.context.normalizeProjectFinance = (finance) => ({ expenses: [], contractPrice: 2000, crewPayroll: 100, ...finance });
-  online.context.projectMaterialsWithWarehousePrices = () => [{ qty: 1, purchasePrice: 700, salePrice: 1000 }];
+  online.context.projectMaterialsWithWarehousePrices = () => [{ currency: "USD", qty: 1, purchasePrice: 700, salePrice: 1000 }];
   vm.runInContext(appSource.slice(start, end), online.context);
   const totals = vm.runInContext("projectFinanceTotals(projects[0])", online.context);
   assert.equal(totals.receivedPayments, 449.75);
