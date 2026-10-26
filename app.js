@@ -325,6 +325,8 @@ const gateAuthMessage = document.querySelector("#gateAuthMessage");
 const inviteDialog = document.querySelector("#inviteDialog");
 const inviteForm = document.querySelector("#inviteForm");
 const inviteMessage = document.querySelector("#inviteMessage");
+const invitationEmailTasks = new Map();
+let invitationFormBusy = false;
 const passwordDialog = document.querySelector("#passwordDialog");
 const passwordForm = document.querySelector("#passwordForm");
 const passwordMessage = document.querySelector("#passwordMessage");
@@ -5447,6 +5449,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (event.target.closest("#inviteUserButton") || event.target.closest("[data-team-invite]")) {
+    if (invitationFormBusy) return;
     if (!cloudState.ready) {
       alert("Спочатку налаштуй Supabase і увійди в акаунт власника або адміністратора.");
       return;
@@ -6696,32 +6699,60 @@ async function addProjectFile(formElement) {
 }
 
 async function inviteUser(email, role, fullName = "") {
-  if (!cloudState.ready || !["owner", "admin"].includes(cloudState.memberRole)) throw new Error("Запрошення створює власник або адміністратор.");
-  const { data, error } = await cloudState.client.rpc("sparta_team_invite", { p_company_id: cloudState.companyId, p_email: String(email || "").trim().toLowerCase(), p_full_name: String(fullName || "").trim(), p_role: role || "installer" });
-  if (error) throw error;
-  const invitation = data.invitation || data;
-  cloudState.message = "Запрошення збережено.";
-  await loadCompanyPeople();
-  await sendInvitationEmail(invitation.email || email, invitation.id);
-  await window.SpartaTeamAccess?.refresh();
-  renderProfileView();
-  return invitation;
+  return runInvitationEmailAction(email, async () => {
+    if (!cloudState.ready || !["owner", "admin"].includes(cloudState.memberRole)) throw new Error("Запрошення створює власник або адміністратор.");
+    const { data, error } = await cloudState.client.rpc("sparta_team_invite", { p_company_id: cloudState.companyId, p_email: String(email || "").trim().toLowerCase(), p_full_name: String(fullName || "").trim(), p_role: role || "installer" });
+    if (error) throw error;
+    const invitation = data.invitation || data;
+    cloudState.message = "Запрошення збережено.";
+    const delivery = await sendInvitationEmail(invitation.email || email, invitation.id);
+    let message = `Запрошення збережено. ${delivery.message}`;
+    try { await loadCompanyPeople(); await window.SpartaTeamAccess?.refresh(); }
+    catch (_) { message += " Оновіть список запрошень, щоб перевірити його стан."; }
+    cloudState.message = message;
+    renderProfileView();
+    return { ...invitation, delivery, message };
+  });
+}
+
+function runInvitationEmailAction(email, action) {
+  const userId = cloudState.user?.id, companyId = cloudState.companyId;
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const key = `${userId || ""}:${companyId}:${normalizedEmail}`;
+  if (invitationEmailTasks.has(key)) return invitationEmailTasks.get(key);
+  const report = (state) => {
+    if (cloudState.user?.id === userId && cloudState.companyId === companyId) {
+      window.SpartaTeamAccess?.setInvitationDelivery?.(normalizedEmail, state);
+    }
+  };
+  const task = Promise.resolve().then(async () => {
+    report({ pending: true });
+    try {
+      const result = await action();
+      report({ pending: false, ok: result.delivery.ok, message: result.message });
+      return result;
+    } catch (error) {
+      report({ pending: false, ok: false, message: error?.message || "Не вдалося обробити запрошення. Спробуйте ще раз." });
+      throw error;
+    }
+  }).finally(() => invitationEmailTasks.delete(key));
+  invitationEmailTasks.set(key, task);
+  return task;
 }
 
 async function sendInvitationEmail(email, invitationId) {
-  const result = await sendInvitationEmailByServer(email, getInvitationRedirectUrl(), invitationId);
-  cloudState.message += " " + result.message;
-  return result.ok;
+  return sendInvitationEmailByServer(email, getInvitationRedirectUrl(), invitationId);
 }
 
 async function sendInvitationEmailByServer(email, redirectTo, invitationId) {
   if (window.SPARTA_LOCAL_WORKSPACE?.enabled) return { handled: true, ok: false, message: "Запрошення доступні у публічній версії." };
-  const { data } = await cloudState.client.auth.getSession();
-  if (!data?.session?.access_token) return { handled: true, ok: false, message: "Увійдіть повторно перед надсиланням листа." };
   try {
+    const { data } = await cloudState.client.auth.getSession();
+    if (!data?.session?.access_token) return { handled: true, ok: false, message: "Увійдіть повторно перед надсиланням листа." };
     const response = await fetch("/api/send-invitation", { method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" }, body: JSON.stringify({ companyId: cloudState.companyId, invitationId, email }) });
     const payload = await response.json().catch(() => ({}));
-    return { handled: true, ok: response.ok, message: payload.message || payload.error || "Лист не надіслано. Запрошення збережене; перевірте поштові налаштування." };
+    const message = payload?.message || payload?.error || (response.ok ? "Сервер прийняв запит на надсилання листа." : "Лист не надіслано. Запрошення збережене; перевірте поштові налаштування.");
+    return { handled: true, ok: response.ok, message: payload?.warning ? `${message} ${payload.warning}` : message };
   } catch (_) { return { handled: true, ok: false, message: "Не вдалося зв’язатися із сервером. Запрошення збережене, лист можна надіслати повторно." }; }
 }
 
@@ -6745,17 +6776,23 @@ async function resendSignupConfirmation(email, redirectTo) {
 }
 
 async function resendInvitation(email) {
-  const invitation = (cloudState.invitations || []).find((item) => item.email === email);
-  if (!invitation) { await loadCompanyPeople(); }
-  const current = (cloudState.invitations || []).find((item) => item.email === email);
-  if (!current) throw new Error("Запрошення не знайдено.");
-  const { data, error } = await cloudState.client.rpc("sparta_team_invite", { p_company_id: cloudState.companyId, p_email: email, p_full_name: current.full_name || "", p_role: current.role });
-  if (error) throw error;
-  cloudState.message = "Запрошення поновлено.";
-  await sendInvitationEmail(email, (data.invitation || data).id);
-  await loadCompanyPeople();
-  await window.SpartaTeamAccess?.refresh();
-  renderProfileView();
+  return runInvitationEmailAction(email, async () => {
+    const listedInvitation = (cloudState.invitations || []).find((item) => item.email === email);
+    if (!listedInvitation) { await loadCompanyPeople(); }
+    const current = (cloudState.invitations || []).find((item) => item.email === email);
+    if (!current) throw new Error("Запрошення не знайдено.");
+    const { data, error } = await cloudState.client.rpc("sparta_team_invite", { p_company_id: cloudState.companyId, p_email: email, p_full_name: current.full_name || "", p_role: current.role });
+    if (error) throw error;
+    const invitation = data.invitation || data;
+    cloudState.message = "Запрошення поновлено.";
+    const delivery = await sendInvitationEmail(email, invitation.id);
+    let message = `Запрошення поновлено. ${delivery.message}`;
+    try { await loadCompanyPeople(); await window.SpartaTeamAccess?.refresh(); }
+    catch (_) { message += " Оновіть список запрошень, щоб перевірити його стан."; }
+    cloudState.message = message;
+    renderProfileView();
+    return { ...invitation, delivery, message };
+  });
 }
 
 async function cancelInvitation(email) {
@@ -6891,20 +6928,27 @@ gateAuthForm.addEventListener("submit", async (event) => {
   await window.SpartaAuthFlow.submitGate(gateAuthForm);
 });
 
-inviteForm.addEventListener("submit", async (event) => {
+async function submitInvitationForm(event) {
   event.preventDefault();
-  const data = new FormData(inviteForm);
+  if (invitationFormBusy) return;
   if (!inviteForm.reportValidity()) return;
+  const data = new FormData(inviteForm);
+  const submit = inviteForm.querySelector("button[type='submit']");
+  const label = submit?.textContent;
+  invitationFormBusy = true;
+  if (submit) { submit.disabled = true; submit.textContent = "Зберігаю…"; }
   try {
-  inviteMessage.textContent = "Зберігаю запрошення...";
-  await inviteUser(data.get("email"), data.get("role"), data.get("fullName"));
-  if (!cloudState.message.startsWith("Помилка")) {
-    inviteDialog.close();
-  } else {
-    inviteMessage.textContent = cloudState.message;
+    inviteMessage.textContent = "Зберігаю запрошення...";
+    const result = await inviteUser(data.get("email"), data.get("role"), data.get("fullName"));
+    if (result.delivery.ok) inviteDialog.close();
+    else inviteMessage.textContent = result.message;
+  } catch (error) { inviteMessage.textContent = error?.message || "Не вдалося обробити запрошення. Спробуйте ще раз."; }
+  finally {
+    invitationFormBusy = false;
+    if (submit) { submit.disabled = false; submit.textContent = label; }
   }
-  } catch (error) { inviteMessage.textContent = error.message; }
-});
+}
+inviteForm.addEventListener("submit", submitInvitationForm);
 
 passwordForm.addEventListener("submit", async (event) => {
   event.preventDefault();

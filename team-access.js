@@ -13,6 +13,8 @@
   let loading = false, auditLoading = false, loadTask = null, error = "", notice = "";
   let cursor = null, priorCursors = [], filters = emptyFilters(), memberQuery = "", memberStatus = "active";
   let pendingMember = "", pendingInvitation = "", auditSerial = 0;
+  const pendingInvitationEmails = new Set();
+  const invitationEmail = (email) => String(email || "").trim().toLowerCase();
 
   function context() {
     const cloud = typeof cloudState !== "undefined" ? cloudState : null;
@@ -24,6 +26,7 @@
     epoch++; auditSerial++; identity = ""; team = null; audit = null; loading = false; auditLoading = false; loadTask = null;
     error = ""; notice = ""; cursor = null; priorCursors = []; filters = emptyFilters();
     memberQuery = ""; memberStatus = "active"; pendingMember = ""; pendingInvitation = ""; tab = "members";
+    pendingInvitationEmails.clear();
     if (target) target.innerHTML = "";
   }
   function ensureContext() { const ctx = context(); if (ctx.key !== identity) { reset(); identity = ctx.key; } return ctx; }
@@ -34,6 +37,20 @@
     return caught?.message || "Не вдалося отримати дані. Перевірте підключення та повторіть спробу.";
   }
   async function rpc(ctx, name, params) { const result = await ctx.client.rpc(name, params); if (result.error) throw result.error; return result.data; }
+  function setInvitationDelivery(email, { pending = false, ok = false, message = "" } = {}) {
+    ensureContext();
+    if (!canManage()) { render(); return; }
+    const recipient = invitationEmail(email);
+    if (!recipient) return;
+    error = ""; notice = "";
+    if (pending) pendingInvitationEmails.add(recipient);
+    else {
+      pendingInvitationEmails.delete(recipient);
+      if (ok) notice = String(message || "Лист надіслано.");
+      else error = String(message || "Не вдалося надіслати лист. Спробуйте повторно.");
+    }
+    render();
+  }
   function profileMarkup() {
     const ctx = context(); if (!ctx.ready) return "";
     return `<article class="team-profile-access"><h3>Ваш доступ: ${safe(roleLabel(ctx.role))}</h3><p>${safe(descriptions[ctx.role] || "Зверніться до власника компанії.")}</p>${canManage() ? `<button type="button" class="secondary-button" data-team-open>Команда та журнал дій</button>` : ""}</article>`;
@@ -68,8 +85,9 @@
     return `<p class="team-muted">Працівник отримує власний обліковий запис за email із запрошення. Роль призначається компанією після підтвердження адреси.</p><div class="team-invitation-list">${(team?.invitations || []).map((invitation) => {
       const pending = !["accepted", "revoked", "expired"].includes(invitation.status) && (!invitation.expiresAt || new Date(invitation.expiresAt).getTime() >= Date.now());
       const manageable = ctx.role === "owner" || !["owner", "admin"].includes(invitation.role);
+      const sending = pendingInvitationEmails.has(invitationEmail(invitation.email));
       const delivery = { unsent: "Лист ще не надіслано", sending: "Лист надсилається…", sent: "Лист надіслано", failed: "Не вдалося надіслати лист" }[invitation.lastSendStatus] || "";
-      return `<article class="team-invitation-card"><div><h3>${safe(invitation.fullName || invitation.email)}</h3><p>${safe(invitation.email)}</p><span class="team-badge">${safe(roleLabel(invitation.role))}</span><small>Створено: ${safe(dateLabel(invitation.createdAt))}${invitation.expiresAt ? `<br>Чинне до: ${safe(dateLabel(invitation.expiresAt))}` : ""}${delivery ? `<br>${safe(delivery)}${invitation.lastSentAt ? ` · ${safe(dateLabel(invitation.lastSentAt))}` : ""}` : ""}</small></div><div class="team-invitation-actions"><strong>${safe(invitationStatus(invitation))}</strong>${manageable && invitation.status !== "accepted" ? `<button type="button" class="secondary-button" data-team-resend="${safe(invitation.email)}" ${invitation.lastSendStatus === "sending" ? "disabled" : ""}>${pending ? invitation.lastSendStatus === "unsent" ? "Надіслати лист" : "Повторити лист" : "Запросити повторно"}</button>` : ""}${pending && manageable ? `<button type="button" class="secondary-button" data-team-revoke="${safe(invitation.id)}" ${pendingInvitation ? "disabled" : ""}>${pendingInvitation === invitation.id ? "Відкликаю…" : "Відкликати"}</button>` : ""}</div></article>`;
+      return `<article class="team-invitation-card"><div><h3>${safe(invitation.fullName || invitation.email)}</h3><p>${safe(invitation.email)}</p><span class="team-badge">${safe(roleLabel(invitation.role))}</span><small>Створено: ${safe(dateLabel(invitation.createdAt))}${invitation.expiresAt ? `<br>Чинне до: ${safe(dateLabel(invitation.expiresAt))}` : ""}${delivery ? `<br>${safe(delivery)}${invitation.lastSentAt ? ` · ${safe(dateLabel(invitation.lastSentAt))}` : ""}` : ""}</small></div><div class="team-invitation-actions"><strong>${safe(invitationStatus(invitation))}</strong>${manageable && invitation.status !== "accepted" ? `<button type="button" class="secondary-button" data-team-resend="${safe(invitation.email)}" ${sending ? "disabled" : ""}>${sending ? "Надсилаю…" : pending ? invitation.lastSendStatus === "unsent" ? "Надіслати лист" : "Повторити лист" : "Запросити повторно"}</button>` : ""}${pending && manageable ? `<button type="button" class="secondary-button" data-team-revoke="${safe(invitation.id)}" ${pendingInvitation ? "disabled" : ""}>${pendingInvitation === invitation.id ? "Відкликаю…" : "Відкликати"}</button>` : ""}</div></article>`;
     }).join("") || `<p class="team-empty">Запрошень ще немає. Додайте працівника кнопкою «Запросити працівника».</p>`}</div>`;
   }
   function changedValue(value, field) {
@@ -154,5 +172,5 @@
     if(form.hasAttribute("data-team-member-filter")){event.preventDefault();const data=new FormData(form);memberQuery=String(data.get("query")||"");memberStatus=["active","inactive","all"].includes(data.get("status"))?data.get("status"):"active";render();}
     if(form.hasAttribute("data-team-audit-filter")){event.preventDefault();const data=new FormData(form);filters=Object.fromEntries(["actor","entity","action","from","to"].map(key=>[key,String(data.get(key)||"")]));cursor=null;priorCursors=[];audit=null;void loadAudit();}
   });
-  window.SpartaTeamAccess=Object.freeze({render,refresh,reset,profileMarkup,roleLabel,canManage,updateMember,revokeInvitation,loadAudit,roles,descriptions});
+  window.SpartaTeamAccess=Object.freeze({render,refresh,reset,profileMarkup,roleLabel,canManage,updateMember,revokeInvitation,setInvitationDelivery,loadAudit,roles,descriptions});
 })();

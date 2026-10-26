@@ -4,6 +4,7 @@ async function runTests() {
   const taskAccess = await require("./task-access.test.js")();
   const authFlow = await require("./auth-flow.test.js")();
   const invitationApi = await require("./send-invitation.test.js")();
+  const invitationDelivery = await require("./invitation-delivery.test.js")();
   const team = await require("./team-access.test.js")();
   const currency = require("./currency.test.js")();
   const domain = require("./cash-ledger.test.js")();
@@ -22,7 +23,7 @@ async function runTests() {
   const privateStorage = await require("./private-storage.test.js")();
   const publicBuild = await require("./public-build.test.js")();
   const field = await require("./field-project-sync.test.js")();
-  return { passed: taskAccess.passed + authFlow.passed + invitationApi.passed + team.passed + currency.passed + domain.passed + integration.passed + isolation.passed + workflow.passed + proposal.passed + stages.passed + warehouse.passed + warehouseIntegration.passed + cleanUi.passed + cleanReset.passed + auth.passed + renderSafety.passed + warehouseCloud.passed + privateStorage.passed + publicBuild.passed + field.passed, taskAccess, authFlow, invitationApi, team, currency, domain, integration, isolation, workflow, proposal, stages, warehouse, warehouseIntegration, cleanUi, cleanReset, auth, renderSafety, warehouseCloud, privateStorage, publicBuild, field };
+  return { passed: taskAccess.passed + authFlow.passed + invitationApi.passed + invitationDelivery.passed + team.passed + currency.passed + domain.passed + integration.passed + isolation.passed + workflow.passed + proposal.passed + stages.passed + warehouse.passed + warehouseIntegration.passed + cleanUi.passed + cleanReset.passed + auth.passed + renderSafety.passed + warehouseCloud.passed + privateStorage.passed + publicBuild.passed + field.passed, taskAccess, authFlow, invitationApi, invitationDelivery, team, currency, domain, integration, isolation, workflow, proposal, stages, warehouse, warehouseIntegration, cleanUi, cleanReset, auth, renderSafety, warehouseCloud, privateStorage, publicBuild, field };
 }
 
 if (require.main === module) {
