@@ -58,6 +58,23 @@ async function run(directory=path.resolve(__dirname,".."),cashDirectory=director
   stale.state.memberRole="installer";stale.api.render(stale.target);assert(!stale.api.canManage());assert.doesNotMatch(stale.target.innerHTML,/Company B owner|data-team-member=/);passed++;
   const unavailable=harness();unavailable.fail({code:"PGRST202",message:"Missing migration"});unavailable.api.render(unavailable.target);await unavailable.api.refresh();assert.match(unavailable.target.innerHTML,/ще не налаштовано/);assert.doesNotMatch(unavailable.target.innerHTML,/worker@example/);assert.equal(unavailable.calls.length,1);passed++;
   const revoked=harness();revoked.api.render(revoked.target);await revoked.api.refresh();revoked.click("teamTab","activity");await flush();assert.match(revoked.target.innerHTML,/worker@example/);revoked.fail({code:"42501",message:"Permission changed"});await revoked.api.refresh();assert.match(revoked.target.innerHTML,/Доступ до керування командою змінився/);assert.doesNotMatch(revoked.target.innerHTML,/worker@example|&lt;script&gt;/);passed++;
+  const resendButton=(instance,email)=>{const match=[...instance.target.innerHTML.matchAll(/<button\b[^>]*data-team-resend="([^"]+)"[^>]*>/g)].find(item=>item[1]===email);assert(match,`Missing resend button for ${email}`);return match[0];};
+  const delivery=harness();const sendingTeam=delivery.team();sendingTeam.invitations[0].lastSendStatus="sending";delivery.setTeam(sendingTeam);
+  delivery.api.render(delivery.target);await delivery.api.refresh();delivery.click("teamTab","invitations");
+  assert.match(delivery.target.innerHTML,/Лист надсилається/);assert.match(resendButton(delivery,"new@example.invalid"),/data-team-resend=/);assert.doesNotMatch(resendButton(delivery,"new@example.invalid"),/\bdisabled\b/);passed++;
+  const callsBeforeDelivery=delivery.calls.length;
+  delivery.api.setInvitationDelivery(" NEW@EXAMPLE.INVALID ",{pending:true});
+  assert.match(resendButton(delivery,"new@example.invalid"),/\bdisabled\b/);assert.doesNotMatch(resendButton(delivery,"admin2@example.invalid"),/\bdisabled\b/);assert.match(delivery.target.innerHTML,/Надсилаю…/);assert.equal(delivery.calls.length,callsBeforeDelivery);passed++;
+  await delivery.api.refresh();assert.match(resendButton(delivery,"new@example.invalid"),/\bdisabled\b/);
+  delivery.api.setInvitationDelivery("admin2@example.invalid",{pending:true});assert.match(resendButton(delivery,"admin2@example.invalid"),/\bdisabled\b/);
+  delivery.api.setInvitationDelivery("new@example.invalid",{pending:false,ok:false,message:'Не надіслано <script>bad()</script>'});
+  assert.match(delivery.target.innerHTML,/role="alert">Не надіслано &lt;script&gt;/);assert.doesNotMatch(delivery.target.innerHTML,/<script>/);assert.doesNotMatch(resendButton(delivery,"new@example.invalid"),/\bdisabled\b/);assert.match(resendButton(delivery,"admin2@example.invalid"),/\bdisabled\b/);passed++;
+  await delivery.api.refresh();delivery.api.setInvitationDelivery("admin2@example.invalid",{pending:false,ok:true,message:"Лист для адміністратора надіслано."});
+  assert.match(delivery.target.innerHTML,/role="status">Лист для адміністратора надіслано\./);assert.doesNotMatch(delivery.target.innerHTML,/role="alert"/);assert.doesNotMatch(resendButton(delivery,"new@example.invalid"),/\bdisabled\b/);assert.doesNotMatch(resendButton(delivery,"admin2@example.invalid"),/\bdisabled\b/);passed++;
+  delivery.api.setInvitationDelivery("new@example.invalid",{pending:true});delivery.api.setInvitationDelivery("admin2@example.invalid",{pending:true});
+  delivery.state.companyId="company-b";delivery.api.render(delivery.target);await delivery.api.refresh();delivery.click("teamTab","invitations");
+  assert.doesNotMatch(resendButton(delivery,"new@example.invalid"),/\bdisabled\b/);assert.doesNotMatch(resendButton(delivery,"admin2@example.invalid"),/\bdisabled\b/);assert.doesNotMatch(delivery.target.innerHTML,/Лист для адміністратора надіслано\./);passed++;
+  staff.api.setInvitationDelivery("new@example.invalid",{pending:false,ok:false,message:"Private delivery result"});assert.equal(staff.calls.length,0);assert.doesNotMatch(staff.target.innerHTML,/Private delivery result|data-team-resend=/);passed++;
   return{passed};
 }
 module.exports=run;
