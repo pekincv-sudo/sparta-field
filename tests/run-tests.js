@@ -1,6 +1,8 @@
 "use strict";
 
 async function runTests() {
+  const inventoryImport = require("./inventory-import.test.js")();
+  const inventoryImportUI = await require("./inventory-import-ui.test.js")();
   const buyerAuth = await require("./buyer-auth.test.js")();
   const buyerCloud = await require("./buyer-cloud.test.js")();
   const buyerUi = await require("./buyer-ui.test.js")();
@@ -27,7 +29,7 @@ async function runTests() {
   const privateStorage = await require("./private-storage.test.js")();
   const publicBuild = await require("./public-build.test.js")();
   const field = await require("./field-project-sync.test.js")();
-  return { passed: buyerAuth.passed + buyerCloud.passed + buyerUi.passed + buyerStock.passed + taskAccess.passed + authFlow.passed + invitationApi.passed + invitationDelivery.passed + team.passed + currency.passed + domain.passed + integration.passed + isolation.passed + workflow.passed + proposal.passed + stages.passed + warehouse.passed + warehouseIntegration.passed + cleanUi.passed + cleanReset.passed + auth.passed + renderSafety.passed + warehouseCloud.passed + privateStorage.passed + publicBuild.passed + field.passed, buyerAuth, buyerCloud, buyerUi, buyerStock, taskAccess, authFlow, invitationApi, invitationDelivery, team, currency, domain, integration, isolation, workflow, proposal, stages, warehouse, warehouseIntegration, cleanUi, cleanReset, auth, renderSafety, warehouseCloud, privateStorage, publicBuild, field };
+  return { passed: inventoryImport.passed + inventoryImportUI.passed + buyerAuth.passed + buyerCloud.passed + buyerUi.passed + buyerStock.passed + taskAccess.passed + authFlow.passed + invitationApi.passed + invitationDelivery.passed + team.passed + currency.passed + domain.passed + integration.passed + isolation.passed + workflow.passed + proposal.passed + stages.passed + warehouse.passed + warehouseIntegration.passed + cleanUi.passed + cleanReset.passed + auth.passed + renderSafety.passed + warehouseCloud.passed + privateStorage.passed + publicBuild.passed + field.passed, inventoryImport, inventoryImportUI, buyerAuth, buyerCloud, buyerUi, buyerStock, taskAccess, authFlow, invitationApi, invitationDelivery, team, currency, domain, integration, isolation, workflow, proposal, stages, warehouse, warehouseIntegration, cleanUi, cleanReset, auth, renderSafety, warehouseCloud, privateStorage, publicBuild, field };
 }
 
 if (require.main === module) {

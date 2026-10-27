@@ -293,6 +293,7 @@ function clearCompanyContext() {
   cloudLoading = false;
   window.SpartaWarehouseCloud?.reset();
   window.SpartaWarehouseUI?.reset?.();
+  window.SpartaInventoryImportUI?.reset();
   window.SpartaTeamAccess?.reset();
   window.SpartaBuyerCloud?.reset();
   // A different identity must not inherit rendered staff data.
