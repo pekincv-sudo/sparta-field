@@ -262,6 +262,7 @@ if (window.spartaStorageWarning) {
 }
 
 function clearCompanyContext() {
+  window.SpartaSunGame?.reset();
   cloudContextRevision += 1;
   clearCloudMediaUrls();
   cloudStorageScope = "";
@@ -527,6 +528,7 @@ function updateAccessMode() {
   const locked = !window.SPARTA_LOCAL_WORKSPACE?.enabled &&
     !(cloudState.enabled && cloudState.user && (cloudState.ready || window.SpartaBuyerCloud?.isBuyerReady()) && !cloudState.sessionLoading);
   document.body.classList.toggle("auth-locked", locked);
+  if (locked) window.SpartaSunGame?.reset();
   document.body.classList.toggle("buyer-audience", Boolean(window.SpartaBuyerCloud?.isBuyerReady()));
   if (locked && gateAuthMessage) gateAuthMessage.textContent = cloudState.message;
 }
