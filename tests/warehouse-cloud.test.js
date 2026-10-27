@@ -107,10 +107,13 @@ async function runTests(directory = path.resolve(__dirname, "..")) {
   loseResponse = true;
   await assert.rejects(a.api.transact((state) => { state.items[0].brand = "Committed"; return state; }), /Network response lost/);
   const committedRevision = server.revision;
+  a.api.invalidate();
+  assert.equal(a.api.snapshot(), null);
+  await a.api.load();
   await assert.rejects(a.api.transact((state) => { throw new Error("Must not repeat callback"); }), /Попередню операцію підтверджено/);
   assert.equal(server.revision, committedRevision);
   assert.equal(a.api.snapshot().items[0].brand, "Committed");
-  checks.push("Retry after a lost response reuses the request ID and does not post twice");
+  checks.push("Availability invalidation preserves a lost write request; retry does not post twice");
 
   failMigration = true;
   const callsBefore = writeCalls;
