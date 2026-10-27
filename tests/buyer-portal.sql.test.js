@@ -470,6 +470,32 @@ async function run(PGlite, root = path.resolve(__dirname, ".."), base = process.
     }
     assert.deepEqual((await db.query("select state from public.warehouse_workspaces where company_id=$1",[company])).rows[0].state,beforeWholesale);
     checked("The warehouse trigger validates wholesale prices even for writers predating the new field and rolls back malformed writes");
+    phase = "authenticated batch inventory import with buyer protections installed";
+    await login("owner");
+    const importApi = require(path.join(root,"inventory-import.js")).create(require(path.join(root,"warehouse-core.js")));
+    const sourceBytes = process.env.SPARTA_IMPORT_CSV ? fs.readFileSync(process.env.SPARTA_IMPORT_CSV) : Buffer.from("isolated-inventory-test");
+    const importRows = process.env.SPARTA_IMPORT_CSV ? importApi.parseCsv(sourceBytes.toString("utf8")) : [
+      {name:"Сонячна панель імпорт",sku:"IMPORT-PV",unit:"шт",category:"Фотомодулі",currency:"UAH",purchasePrice:3000,installerPrice:3300,retailPrice:3600,wholesalePrice:null,qty:100,sourceRow:3},
+      {name:"Гібридний інвертор імпорт",sku:"IMPORT-INV",unit:"шт",category:"Інвертори",currency:"UAH",purchasePrice:null,installerPrice:null,retailPrice:null,wholesalePrice:null,qty:100,sourceRow:4}
+    ];
+    const importInput={sourceName:"Номенклатура СЕС.csv",sourceHash:crypto.createHash("sha256").update(sourceBytes).digest("hex"),items:importRows};
+    const beforeImport=await staffRead(), planned=importApi.plan(beforeImport.state,importInput,{date:"2026-10-27"});
+    const afterImport=await staffWrite(planned.state,beforeImport.revision);
+    assert.equal(afterImport.state.items.length,beforeImport.state.items.length+importRows.length);
+    for(const row of planned.summary.rows){
+      const saved=afterImport.state.items.find(item=>item.id===row.itemId);
+      assert.equal(saved.qty,row.afterQty); assert.equal(saved.currency,row.currency);
+      if(!row.purchasePriceKnown) assert.equal(saved.purchasePriceKnown,false);
+    }
+    for(const doc of afterImport.state.documents.filter(doc=>planned.summary.documentIds.includes(doc.id))){
+      assert.equal(doc.createdBy,ids.owner); assert(doc.recordedAt);
+    }
+    assert.equal((await db.query("select count(*)::int n from public.cash_transactions")).rows[0].n,0);
+    const replayed=importApi.plan(afterImport.state,importInput,{date:"2026-10-27"});
+    assert.equal(replayed.alreadyImported,true); assert.deepEqual(replayed.state,afterImport.state);
+    for(const existing of beforeImport.state.items) assert.deepEqual(afterImport.state.items.find(item=>item.id===existing.id),existing);
+    assert.deepEqual(afterImport.state.reservations,beforeImport.state.reservations);
+    checked("A complete batch import posts known/unknown costs, mirror rows and real owner audit atomically; replay preserves stock, history, project holds and cash");
     return { passed: checks.length, checks };
   } catch (error) {
     error.message = phase + ": " + error.message;
