@@ -11,7 +11,7 @@ const files = [
   "index.html", "styles.css", "warehouse.css", "app.js", "sw.js",
   "local-workspace.js", "money.js", "cash-ledger.js", "cash-book.js",
   "workspace-reset-core.js", "workspace-maintenance.js",
-  "warehouse-core.js", "warehouse-ui.js", "warehouse-cloud.js",
+  "warehouse-core.js", "warehouse-ui.js", "warehouse-cloud.js", "inventory-import.js", "inventory-import-ui.js",
   "supabase-config.js", "supabase-js.umd.js", "manifest.webmanifest",
   "assets/solar-background.png", "assets/sparta-logo.jpeg",
   "assets/pwa/apple-touch-icon.png", "assets/pwa/icon-192.png", "assets/pwa/icon-512.png",
