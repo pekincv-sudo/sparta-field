@@ -94,3 +94,9 @@ Do not put `service_role` keys into this frontend app.
 ## Repeat-buyer cabinets — build 38
 
 Public staff now manage external purchasers under «Продажі». Buyers have separate membership and see only their own catalog price tier, orders and purchase history. Retail, installer and wholesale prices are independent; the account tier is assigned by owner/admin. Confirmation reserves stock; fulfilment deducts it once, without an automatic cash entry. Apply `database/buyer-portal.sql` before the frontend. See [buyer rollout and operations](docs/BUYER-PORTAL-build38.md).
+
+## Catalog and opening-stock import — build 39
+
+Owner/admin/warehouse users can import a prepared UTF-8 semicolon CSV through Warehouse → Other operations → Import nomenclature. The preview validates fixed currencies, variants, matching existing cards and explicit 100-unit additions, then requires a downloaded current warehouse backup. One authenticated warehouse transaction posts the whole batch; deterministic source/document identities prevent adding it again after a reload or lost response. Posted documents and actor history remain intact.
+
+Required columns: `name;sku;unit;category;currency;purchasePrice;installerPrice;retailPrice;wholesalePrice;qty;sourceRow`. Blank prices remain unset; zero is distinct from missing. Source currency is explicit USD or UAH; prices are never converted or relabelled. Existing cards retain sale tiers, unit costs and reservations. New known-cost goods get an opening receipt; new goods with unknown acquisition cost get an explicitly unvalued opening adjustment. Such cards show “Не задано” for unit cost, and affected documents state that valuation is incomplete. Warehouse stock entries create no cash payment. Spreadsheet selection/conversion is reviewed before import; source catalogs are not bundled or seeded in the public application.
