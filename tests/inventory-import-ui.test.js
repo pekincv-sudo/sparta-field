@@ -20,7 +20,13 @@ module.exports=async function(directory=path.resolve(__dirname,'..')){
   const dialog=()=>nodes.findLast(n=>n.tag==='dialog'&&!n.removed);
   const dispatch=async(type,target)=>{dialog().listeners[type]?.({target,preventDefault(){}});await flush();};
   const click=action=>dispatch('click',{dataset:{whImportAction:action},closest(){return this;}});
-  const choose=async(text=csv)=>{const b=Buffer.from(text);await dispatch('change',{id:'whImportFile',files:[{name:'Номенклатура СЕС.csv',size:b.length,arrayBuffer:async()=>b.buffer.slice(b.byteOffset,b.byteOffset+b.length)}]});};
+  const choose=async(text=csv)=>{const b=Buffer.from(text);await dispatch('change',{id:'whImportFile',files:[{name:'Номенклатура СЕС.csv',size:b.length,arrayBuffer:async()=>b.buffer.slice(b.byteOffset,b.byteOffset+b.length)}]});
+   // WebCrypto completes on the worker pool, not after a fixed number of
+   // immediate callbacks. Wait for its observable result, including cancellation.
+   const deadline=Date.now()+2000;
+   while(dialog()?.innerHTML.includes('Перевіряємо файл')&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,1));
+   if(dialog()?.innerHTML.includes('Перевіряємо файл'))throw new Error('File preview did not settle');
+  };
   const ack=()=>dispatch('change',{id:'whImportBackupAck',checked:true});
   const submit=()=>dispatch('submit',{});
   return {ui,state,calls,sandbox,dialog,click,choose,ack,submit,server:()=>server,setRevision(){server.revision++;},block(p){blockRead=p;}};
