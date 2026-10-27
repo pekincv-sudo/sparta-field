@@ -241,6 +241,8 @@ const cloudState = {
   user: null,
   companyId: null,
   memberRole: null,
+  audience: "staff",
+  buyerAccountId: null,
   supportsProjectChecklist: true,
   supportsProjectFinance: true,
   supportsPanelSerialNumbers: true,
@@ -271,6 +273,8 @@ function clearCompanyContext() {
   cloudSyncTimer = crmSyncTimer = warehouseSyncTimer = null;
   cloudState.companyId = supabaseConfig()?.companyId || null;
   cloudState.memberRole = null;
+  cloudState.audience = "staff";
+  cloudState.buyerAccountId = null;
   cloudState.ready = false;
   cloudState.members = [];
   cloudState.invitations = [];
@@ -288,7 +292,16 @@ function clearCompanyContext() {
   selectedTab = "";
   cloudLoading = false;
   window.SpartaWarehouseCloud?.reset();
+  window.SpartaWarehouseUI?.reset?.();
   window.SpartaTeamAccess?.reset();
+  window.SpartaBuyerCloud?.reset();
+  // A different identity must not inherit rendered staff data.
+  for (const id of ["homeView", "projectList", "projectDetail", "passportPreview", "crmView", "warehouseView", "mapView", "serviceView", "monitoringView", "profileView", "teamView", "statsGrid", "cashView", "salesView", "buyerPortalView"]) {
+    const target = document.getElementById(id); if (target) target.innerHTML = "";
+  }
+  document.querySelectorAll(".user-card strong, .user-card small").forEach((node) => { node.textContent = ""; });
+  document.body.classList.remove("buyer-audience");
+  document.querySelectorAll("dialog form").forEach((form) => form.reset?.());
   document.querySelectorAll("dialog[open]").forEach((item) => item.close());
   window.SpartaCashBook?.refreshAccess();
 }
@@ -511,8 +524,9 @@ function queueWarehouseSync() {
 
 function updateAccessMode() {
   const locked = !window.SPARTA_LOCAL_WORKSPACE?.enabled &&
-    !(cloudState.enabled && cloudState.user && cloudState.ready && !cloudState.sessionLoading);
+    !(cloudState.enabled && cloudState.user && (cloudState.ready || window.SpartaBuyerCloud?.isBuyerReady()) && !cloudState.sessionLoading);
   document.body.classList.toggle("auth-locked", locked);
+  document.body.classList.toggle("buyer-audience", Boolean(window.SpartaBuyerCloud?.isBuyerReady()));
   if (locked && gateAuthMessage) gateAuthMessage.textContent = cloudState.message;
 }
 
@@ -791,7 +805,8 @@ function normalizeWarehouseItem(item) {
     qty: Number(item?.qty || 0),
     purchasePrice: Number(item?.purchasePrice || 0),
     salePrice,
-    installerPrice: Number(item?.installerPrice ?? salePrice ?? 0),
+    installerPrice: Number(item?.installerPrice ?? 0),
+    wholesalePrice: Number(item?.wholesalePrice ?? 0),
     retailPrice: Number(item?.retailPrice ?? salePrice ?? 0),
     deliveryCost: Number(item?.deliveryCost || 0),
     extraCost: Number(item?.extraCost || 0),
@@ -814,7 +829,8 @@ function dbWarehouseItemToApp(row) {
     qty: Number(row.quantity || 0),
     purchasePrice: Number(row.purchase_price || 0),
     salePrice: Number(row.sale_price || 0),
-    installerPrice: Number(row.app_data?.installerPrice ?? row.sale_price ?? 0),
+    installerPrice: Number(row.app_data?.installerPrice ?? 0),
+    wholesalePrice: Number(row.app_data?.wholesalePrice ?? 0),
     retailPrice: Number(row.app_data?.retailPrice ?? row.sale_price ?? 0),
     deliveryCost: Number(row.app_data?.deliveryCost ?? 0),
     extraCost: Number(row.app_data?.extraCost ?? 0),
@@ -934,7 +950,7 @@ async function applyCloudSession(session) {
   const user = session?.user || null;
   if (window.SPARTA_LOCAL_WORKSPACE?.enabled) return true;
   if (user?.id && cloudSessionTask && cloudSessionUserId === user.id) return cloudSessionTask;
-  if (user?.id && cloudState.user?.id === user.id && cloudState.ready && !cloudState.sessionLoading) { window.SpartaAuthFlow?.afterSession(); return true; }
+  if (user?.id && cloudState.user?.id === user.id && (cloudState.ready || window.SpartaBuyerCloud?.isBuyerReady()) && !cloudState.sessionLoading) { window.SpartaAuthFlow?.afterSession(); return true; }
   clearCompanyContext();
   cloudState.user = user;
   cloudState.sessionLoading = Boolean(user);
@@ -946,7 +962,14 @@ async function applyCloudSession(session) {
   const task = (async () => {
     try {
       await loadCompanyContext();
-      if (revision !== cloudContextRevision || !cloudState.ready) return false;
+      if (revision !== cloudContextRevision) return false;
+      if (window.SpartaBuyerCloud?.isBuyerReady()) {
+        cloudState.sessionLoading = false;
+        await window.SpartaAuthFlow?.recordSession("login").catch(() => {});
+        window.SpartaAuthFlow?.afterSession(); updateAccessMode(); render();
+        return true;
+      }
+      if (!cloudState.ready) return false;
       await verifyPublicSchema();
       if (revision !== cloudContextRevision) return false;
       await loadProjectsFromCloud();
@@ -974,7 +997,7 @@ async function applyCloudSession(session) {
     } finally {
       if (cloudState.user?.id === user.id) window.SpartaAuthFlow?.afterSession();
       if (cloudSessionTask === task) { cloudSessionTask = null; cloudSessionUserId = ""; }
-      if (revision === cloudContextRevision && !cloudState.ready) {
+      if (revision === cloudContextRevision && !cloudState.ready && !window.SpartaBuyerCloud?.isBuyerReady()) {
         cloudState.sessionLoading = false;
         updateAccessMode();
         render();
@@ -1006,8 +1029,20 @@ async function loadCompanyContext() {
     if (revision !== cloudContextRevision) return;
     if (accepted) return loadCompanyContext();
 
+    const buyer = await window.SpartaBuyerCloud?.restore();
+    if (revision !== cloudContextRevision) return;
+    if (buyer) {
+      cloudState.audience = "buyer";
+      cloudState.buyerAccountId = buyer.id;
+      cloudState.companyId = buyer.companyId;
+      cloudState.memberRole = null;
+      // ready is deliberately staff-only; buyer access has its own verified context.
+      cloudState.ready = false;
+      cloudState.message = "Кабінет покупця підключено.";
+      return;
+    }
     clearCompanyContext();
-    cloudState.message = `Користувач не доданий до компанії. Запрошення для ${cloudState.user.email || "цього email"} не знайдено або ще не активне.`;
+    cloudState.message = "Для цього email немає активного доступу. Попросіть компанію надіслати запрошення працівника або покупця.";
     updateAccessMode();
     render();
     return;
@@ -1015,6 +1050,7 @@ async function loadCompanyContext() {
 
   cloudState.companyId = member.company_id;
   cloudState.memberRole = member.role;
+  cloudState.audience = "staff";
   cloudStorageScope = `sparta.cloud.v1.${encodeURIComponent(cloudState.user.id)}.${encodeURIComponent(member.company_id)}.`;
   cloudState.ready = true;
   cloudState.message = `Онлайн: ${member.companies?.name || "компанія"} / ${member.role}`;
@@ -2159,11 +2195,18 @@ function selectedProject() {
 function refreshTeamNavigation() {
   const allowed = !window.SPARTA_LOCAL_WORKSPACE?.enabled && cloudState.ready && ["owner", "admin"].includes(cloudState.memberRole) && portalMode !== "client";
   document.querySelector('[data-section="team"]')?.classList.toggle("is-hidden", !allowed);
+  const salesAllowed = !window.SPARTA_LOCAL_WORKSPACE?.enabled && cloudState.ready && ["owner", "admin", "engineer", "warehouse"].includes(cloudState.memberRole) && portalMode !== "client";
+  document.querySelector('[data-section="sales"]')?.classList.toggle("is-hidden", !salesAllowed);
   const card = document.querySelector(".user-card");
   if (card) { card.querySelector("strong").textContent = renderRoleLabel(cloudState.memberRole); card.querySelector("small").textContent = cloudState.user?.email || "Потрібен вхід"; }
 }
 
 function showSection(sectionId) {
+  if (window.SpartaBuyerCloud?.isBuyerReady()) { window.SpartaBuyerUI?.renderBuyer(document.querySelector("#buyerPortalView")); return; }
+  if (sectionId === "sales") {
+    if (!cloudState.ready || !["owner", "admin", "engineer", "warehouse"].includes(cloudState.memberRole) || window.SPARTA_LOCAL_WORKSPACE?.enabled) sectionId = "home";
+    else window.SpartaBuyerUI?.renderSales(document.querySelector("#salesView"));
+  }
   if (sectionId === "team" && !window.SpartaTeamAccess?.canManage()) sectionId = "profile";
   if (sectionId === "team") window.SpartaTeamAccess?.render(document.querySelector("#teamView"));
   if (window.SPARTA_LOCAL_WORKSPACE?.enabled && window.spartaDemoRunning) return;
@@ -2207,6 +2250,7 @@ function applyPortalMode(mode) {
       crm: ["☑", "CRM"],
       cash: ["$", "Каса"],
       team: ["♙", "Команда і події"],
+      sales: ["▣", "Продажі"],
       profile: ["○", "Профіль"],
     };
   document.querySelectorAll(".nav-item").forEach((item) => {
@@ -2216,6 +2260,7 @@ function applyPortalMode(mode) {
   });
   document.querySelector("#newProjectButton")?.classList.toggle("is-hidden", portalMode === "client");
   window.SpartaCashBook?.refreshAccess();
+  refreshTeamNavigation();
   applyProjectRoleControls();
 }
 
@@ -4606,14 +4651,15 @@ function renderWarehouseItemForm(section, formState, filteredItems = []) {
       <label>К-сть<input name="qty" type="number" min="0" step="0.01" required value="${escapeAttribute(formState.isEditing ? formItem.qty ?? "" : "")}" placeholder="0" /></label>
       <label>Од.<input name="unit" value="${escapeAttribute(selectedItem.unit || formItem.unit || "шт")}" required /></label>
       <label>Закупка<input name="purchasePrice" type="number" min="0" step="0.01" value="${escapeAttribute(selectedItem.purchasePrice ?? formItem.purchasePrice ?? "")}" /></label>
-      <label>Продаж<input name="retailPrice" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.retailPrice ?? selectedItem.salePrice ?? formItem.retailPrice ?? "")}" /></label>
+      <label>Роздріб<input name="retailPrice" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.retailPrice ?? selectedItem.salePrice ?? formItem.retailPrice ?? "")}" /></label>
       <details class="warehouse-extra-fields">
         <summary>Додатково</summary>
         <div class="warehouse-extra-grid">
           <label>Артикул<input name="sku" placeholder="SKU" value="${escapeAttribute(selectedItem.sku || formItem.sku || "")}" /></label>
           <label>Доставка / од.<input name="deliveryCost" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.deliveryCost ?? formItem.deliveryCost ?? "")}" /></label>
           <label>Дод. витрати / од.<input name="extraCost" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.extraCost ?? formItem.extraCost ?? "")}" /></label>
-          <label>Монтажникам<input name="installerPrice" type="number" min="0" step="1" value="${escapeAttribute(selectedItem.installerPrice ?? selectedItem.salePrice ?? formItem.installerPrice ?? "")}" /></label>
+          <label>Монтажникам<input name="installerPrice" type="number" min="0" step="0.01" value="${escapeAttribute(selectedItem.installerPrice ?? formItem.installerPrice ?? "")}" /></label>
+          <label>Опт<input name="wholesalePrice" type="number" min="0" step="0.01" value="${escapeAttribute(selectedItem.wholesalePrice ?? formItem.wholesalePrice ?? "")}" /></label>
           <label>Мін. залишок<input name="minQty" type="number" min="0" step="0.01" value="${escapeAttribute(selectedItem.minQty ?? formItem.minQty ?? "")}" /></label>
           <label>Місце<input name="location" placeholder="Стелаж, склад, авто" value="${escapeAttribute(selectedItem.location || formItem.location || "")}" /></label>
           <label>Серійний номер<input name="serialNumber" placeholder="SN / партія" value="${escapeAttribute(selectedItem.serialNumber || formItem.serialNumber || "")}" /></label>
@@ -5327,6 +5373,12 @@ function renderStats() {
 }
 
 function render() {
+  if (window.SpartaBuyerCloud?.isBuyerReady()) {
+    document.body.classList.add("buyer-audience");
+    window.SpartaBuyerUI?.renderBuyer(document.querySelector("#buyerPortalView"));
+    return;
+  }
+  document.body.classList.remove("buyer-audience");
   if (window.SPARTA_LOCAL_WORKSPACE?.enabled && window.spartaDemoRunning) return;
   renderHome();
   renderProjectList();
@@ -5341,6 +5393,7 @@ function render() {
   renderCrmNotification();
   renderStats();
   window.SpartaCashBook?.renderView();
+  if (document.querySelector("#sales")?.classList.contains("active")) window.SpartaBuyerUI?.renderSales(document.querySelector("#salesView"));
   applyProjectRoleControls();
 }
 
@@ -6089,7 +6142,8 @@ function fillWarehouseFormFromItem(formElement, item) {
   formElement.elements.purchasePrice.value = Number(item.purchasePrice || 0);
   formElement.elements.deliveryCost.value = Number(item.deliveryCost || 0);
   formElement.elements.extraCost.value = Number(item.extraCost || 0);
-  formElement.elements.installerPrice.value = Number(item.installerPrice || item.salePrice || 0);
+  formElement.elements.installerPrice.value = Number(item.installerPrice ?? 0);
+  if (formElement.elements.wholesalePrice) formElement.elements.wholesalePrice.value = Number(item.wholesalePrice ?? 0);
   formElement.elements.retailPrice.value = Number(item.retailPrice || item.salePrice || 0);
   formElement.elements.minQty.value = Number(item.minQty || 0);
   formElement.elements.location.value = item.location || "";
@@ -6123,7 +6177,8 @@ function warehouseItemFromForm(formElement, currentItem = null) {
     purchasePrice: Number(data.get("purchasePrice") || catalogItem?.purchasePrice || 0),
     deliveryCost: Number(data.get("deliveryCost") || catalogItem?.deliveryCost || 0),
     extraCost: Number(data.get("extraCost") || catalogItem?.extraCost || 0),
-    installerPrice: Number(data.get("installerPrice") || catalogItem?.installerPrice || catalogItem?.salePrice || 0),
+    installerPrice: Number(data.get("installerPrice") ?? catalogItem?.installerPrice ?? currentItem?.installerPrice ?? 0),
+    wholesalePrice: Number(data.get("wholesalePrice") ?? catalogItem?.wholesalePrice ?? currentItem?.wholesalePrice ?? 0),
     retailPrice,
     salePrice: retailPrice,
     minQty: Number(data.get("minQty") || catalogItem?.minQty || 0),
@@ -6197,7 +6252,7 @@ function addWarehouseMovement(formElement) {
   }
   if (type !== "return" && window.SPARTA_LOCAL_WORKSPACE?.enabled && window.SpartaWarehouseCore) {
     const reservations = readJsonStorage("solarObjectManager.warehouseWorkspace.v31", {})?.reservations || [];
-    const available = window.SpartaWarehouseCore.availableQty(item, reservations, type === "project" ? data.get("projectId") : undefined);
+    const available = window.SpartaWarehouseCore.availableQty(item, reservations, type === "project" ? data.get("projectId") : undefined, window.SpartaWarehouseCloud?.snapshot()?.orderReservations);
     if (qty > available) {
       alert(`Вільного залишку тільки ${available} ${item.unit}. Решта зарезервована під інші об’єкти.`);
       return;
@@ -7193,3 +7248,11 @@ window.setInterval(() => {
     renderCrmView();
   }
 }, 60 * 1000);
+
+// Availability refresh never submits orders and does not disturb an edited cart.
+window.setInterval(() => {
+  if (window.SpartaBuyerCloud?.isBuyerReady() && document.visibilityState !== "hidden") void window.SpartaBuyerUI?.refreshBuyer?.().catch(() => {});
+}, 60000);
+window.addEventListener("focus", () => {
+  if (window.SpartaBuyerCloud?.isBuyerReady()) void window.SpartaBuyerUI?.refreshBuyer?.().catch(() => {});
+});

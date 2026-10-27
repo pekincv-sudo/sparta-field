@@ -90,3 +90,7 @@ schema fixture.
 
 The app uses the public Supabase publishable key in `supabase-config.js`.
 Do not put `service_role` keys into this frontend app.
+
+## Repeat-buyer cabinets — build 38
+
+Public staff now manage external purchasers under «Продажі». Buyers have separate membership and see only their own catalog price tier, orders and purchase history. Retail, installer and wholesale prices are independent; the account tier is assigned by owner/admin. Confirmation reserves stock; fulfilment deducts it once, without an automatic cash entry. Apply `database/buyer-portal.sql` before the frontend. See [buyer rollout and operations](docs/BUYER-PORTAL-build38.md).

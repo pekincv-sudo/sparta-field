@@ -23,7 +23,7 @@
     form.elements.fullName.required = gateMode === "signup";
     form.elements.passwordConfirm.required = gateMode === "signup";
     form.querySelector('[type="submit"]').textContent = gateMode === "signup" ? "Створити акаунт" : gateMode === "recover" ? "Надіслати посилання" : "Увійти";
-    message().textContent = gateMode === "signup" ? "Зареєструйте email із запрошення, підтвердьте його в листі й увійдіть. Роль призначає власник компанії." : gateMode === "recover" ? "Введіть email свого акаунта — надішлемо посилання для нового пароля." : "Увійдіть зі своїм email і паролем.";
+    message().textContent = gateMode === "signup" ? "Зареєструйте email із запрошення, підтвердьте його в листі й увійдіть. Доступ призначає компанія." : gateMode === "recover" ? "Введіть email свого акаунта — надішлемо посилання для нового пароля." : "Увійдіть зі своїм email і паролем.";
   }
 
   async function submitGate(form) {
@@ -78,13 +78,21 @@
     if (url.searchParams.has("auth")) { url.searchParams.delete("auth"); window.history.replaceState({}, "", url.pathname + url.search); }
   }
   async function recordSession(event) {
-    if (isLocal() || !cloudState.ready || !cloudState.client || !cloudState.user) return;
+    if (isLocal() || !cloudState.client || !cloudState.user) return;
+    if (window.SpartaBuyerCloud?.isBuyerReady()) return window.SpartaBuyerCloud.recordSession(event);
+    if (!cloudState.ready) return;
     const { error } = await cloudState.client.rpc("sparta_record_session_event", { p_company_id: cloudState.companyId, p_event: event });
     if (error) throw new Error("Не вдалося записати подію сеансу. Перевірте зв’язок із базою.");
   }
 
   async function refreshAccess() {
-    if (refreshing || isLocal() || !cloudState.ready || !cloudState.client || !cloudState.user) return;
+    if (refreshing || isLocal() || !cloudState.client || !cloudState.user) return;
+    if (window.SpartaBuyerCloud?.isBuyerReady()) {
+      refreshing = true;
+      try { await window.SpartaBuyerCloud.refreshAccess(); } finally { refreshing = false; }
+      return;
+    }
+    if (!cloudState.ready) return;
     refreshing = true;
     const client = cloudState.client, company = cloudState.companyId, user = cloudState.user.id;
     try {
