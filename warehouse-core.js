@@ -19,7 +19,7 @@
   ].map(function (entry) { Object.freeze(entry.aliases); return Object.freeze(entry); }));
   const serviceCategories = ["роботи", "робота", "послуги", "послуга", "витрати", "витрата", "зарплата", "services", "expenses"];
   const scalarFields = ["name", "category", "sku", "unit", "brand", "model", "barcode", "location", "supplier", "characteristics", "serialNumber", "image", "imageUrl"];
-  const nonnegativeFields = ["minQty", "purchasePrice", "deliveryCost", "extraCost", "salePrice", "retailPrice", "installerPrice", "powerW", "powerKw", "capacityKwh", "voltageV", "phases", "crossSectionMm2"];
+  const nonnegativeFields = ["minQty", "purchasePrice", "deliveryCost", "extraCost", "salePrice", "retailPrice", "installerPrice", "wholesalePrice", "powerW", "powerKw", "capacityKwh", "voltageV", "phases", "crossSectionMm2"];
 
   function currency(value, fallback = "UAH") {
     const code = String(value || fallback).toUpperCase();
@@ -75,18 +75,22 @@
   function isStockItem(item) {
     return Boolean(item) && !serviceCategories.includes(normalizeText(item.category)) && item.type !== "service" && item.isStockItem !== false;
   }
-  function reservedQty(reservations, itemId, projectId) {
-    return roundQuantity((reservations || []).reduce(function (sum, reservation) {
+  function reservedQty(reservations, itemId, projectId, orderReservations) {
+    const projectQty = (reservations || []).reduce(function (sum, reservation) {
       if (id(reservation.itemId) !== id(itemId) || (projectId != null && id(reservation.projectId) !== id(projectId))) return sum;
       return sum + quantity(reservation.qty, "м", { allowZero: true });
-    }, 0));
+    }, 0);
+    const buyerQty = projectId != null ? 0 : (orderReservations || []).reduce(function (sum, hold) {
+      return id(hold.itemId) === id(itemId) ? sum + quantity(hold.qty, "м", { allowZero: true }) : sum;
+    }, 0);
+    return roundQuantity(projectQty + buyerQty);
   }
-  // A project's own reservation remains available when it receives its goods.
-  function availableQty(item, reservations, projectId) {
+  // Only a project's OWN hold is added back; buyer holds are never its property.
+  function availableQty(item, reservations, projectId, orderReservations) {
     const own = projectId == null ? 0 : reservedQty(reservations, item.id, projectId);
-    return Math.max(0, roundQuantity(quantity(item.qty == null ? 0 : item.qty, item.unit, { allowZero: true }) - reservedQty(reservations, item.id) + own));
+    return Math.max(0, roundQuantity(quantity(item.qty == null ? 0 : item.qty, item.unit, { allowZero: true }) - reservedQty(reservations, item.id, undefined, orderReservations) + own));
   }
-  function filterItems(items, filters, reservations) {
+  function filterItems(items, filters, reservations, orderReservations) {
     const criteria = filters || {};
     const queryWords = normalizeText(criteria.query).split(" ").filter(Boolean);
     return (items || []).filter(function (item) {
@@ -97,12 +101,12 @@
         (item.serialNumbers || []).join(" "), item.characteristics, item.location, item.powerW, item.powerKw, item.capacityKwh, item.voltageV, item.phases, item.crossSectionMm2].join(" "));
       if (!queryWords.every(function (word) { return search.includes(word); })) return false;
       const physical = Number(item.qty || 0);
-      const available = availableQty(item, reservations);
+      const available = availableQty(item, reservations, undefined, orderReservations);
       const availability = criteria.availability;
       if (["in_stock", "stock"].includes(availability) && physical <= 0) return false;
       if (["available", "available_only"].includes(availability) && available <= 0) return false;
       if (["out", "out_of_stock", "zero"].includes(availability) && physical > 0) return false;
-      if (availability === "reserved" && reservedQty(reservations, item.id) <= 0) return false;
+      if (availability === "reserved" && reservedQty(reservations, item.id, undefined, orderReservations) <= 0) return false;
       if (["low", "low_stock"].includes(availability) && available > Number(item.minQty || 0)) return false;
       return true;
     });
@@ -244,7 +248,7 @@
       seenItems.add(id(item.id));
       const beforeQty = quantity(item.qty == null ? 0 : item.qty, item.unit, { allowZero: true });
       const countedQty = quantity(raw.countedQty, item.unit, { allowZero: true });
-      const reserved = reservedQty(state.reservations || [], item.id);
+      const reserved = reservedQty(state.reservations || [], item.id, undefined, state.orderReservations);
       if (countedQty < reserved) fail("Фактичний залишок менший за резерв. Спочатку перегляньте резервування.");
       const delta = roundQuantity(countedQty - beforeQty);
       const line = { currency: document.currency, itemId: item.id, itemName: item.name, unit: item.unit || "шт", beforeQty: beforeQty,
@@ -263,7 +267,7 @@
     const qty = quantity(input.qty, item.unit);
     const reservations = state.reservations || [];
     if (reservations.some(function (entry) { return id(entry.id) === id(input.id); })) fail("Резерв із таким ідентифікатором уже існує.");
-    if (qty > availableQty(item, reservations)) fail("Недостатньо вільного залишку для резервування.");
+    if (qty > availableQty(item, reservations, undefined, state.orderReservations)) fail("Недостатньо вільного залишку для резервування.");
     const reservation = { currency: currency(item.currency), id: id(input.id), itemId: item.id, projectId: id(input.projectId), qty: qty,
       createdAt: timestamp(input.createdAt), createdBy: id(input.createdBy) };
     return { items: state.items, reservations: reservations.concat([reservation]), reservation: reservation };

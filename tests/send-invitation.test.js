@@ -13,7 +13,8 @@ module.exports=async function(){
    if(u.endsWith('/sparta_team_prepare_invitation_email'))return options.prepareError?result(options.prepareError,400):result({id:invitation,company_id:company,email:body.email,full_name:"Person",role:options.inviteRole||"installer",accepted_at:null,revoked_at:null,expires_at:"2099-01-01T00:00:00Z"});
    if(u.includes('/auth/v1/invite?'))return options.inviteError?result(options.inviteError,400):result({id:actor});
    if(u.includes('/auth/v1/recover?'))return result({});
-   if(u.endsWith('/sparta_team_record_invitation_delivery'))return result(null,options.recordFailure?500:200);
+   if(u.endsWith('/sparta_buyer_prepare_invitation_email'))return options.prepareError?result(options.prepareError,400):result({id:invitation,company_id:company,buyer_id:options.badBuyerId?'invalid':'33333333-3333-4333-8333-333333333333',email:body.email,full_name:'Buyer',accepted_at:null,revoked_at:null,expires_at:'2099-01-01T00:00:00Z'});
+   if(u.endsWith('/sparta_team_record_invitation_delivery')||u.endsWith('/sparta_buyer_record_invitation_delivery'))return result(null,options.recordFailure?500:200);
    throw new Error('Unexpected endpoint '+u);
   }});vm.runInContext(source,context);
   const post=(overrides={},auth=true)=>context.handler(new Request("https://sparta-field-u2pe.vercel.app/api/send-invitation",{method:"POST",headers:{"Content-Type":"application/json",...(auth?{Authorization:"Bearer test-session"}:{})},body:JSON.stringify({...body,...overrides})}));
@@ -64,5 +65,10 @@ module.exports=async function(){
  h=harness({serviceKey:"sb_secret_test-only",inviteError:{code:"email_exists"}});response=await h.post();assert.equal(response.status,200);
  call=h.calls.find(c=>c.url.includes('/auth/v1/recover?'));assert(call.headers.get('apikey').startsWith('sb_publishable_'));assert.equal(call.headers.get('authorization'),null);passed++;
  h=harness({serviceKey:"sb_secret_test-only",userError:true});assert.equal((await h.post()).status,401);assert.equal(h.calls.length,1);assert.equal(h.calls[0].headers.get('authorization'),"Bearer test-session");passed++;
+ h=harness({serviceKey:"sb_secret_test-only",actorRole:"admin"});response=await h.post({kind:"buyer"});assert.equal(response.status,200);assert(h.calls.some(c=>c.url.endsWith('/sparta_buyer_prepare_invitation_email')));assert(!h.calls.some(c=>c.url.endsWith('/sparta_team_prepare_invitation_email')));call=h.calls.find(c=>c.url.includes('/auth/v1/invite'));assert.equal(call.body.data.buyer_account_id,'33333333-3333-4333-8333-333333333333');assert.equal(call.body.data.role,undefined);assert(h.calls.at(-1).url.endsWith('/sparta_buyer_record_invitation_delivery'));passed++;
+ h=harness({inviteError:{code:"email_exists"}});response=await h.post({kind:"buyer"});assert.equal(response.status,200);assert.equal((await response.json()).mode,'recovery');assert(h.calls.at(-1).url.endsWith('/sparta_buyer_record_invitation_delivery'));passed++;
+ h=harness({badBuyerId:true});assert.equal((await h.post({kind:"buyer"})).status,409);assert(!h.calls.some(c=>c.url.includes('/auth/v1/invite')));passed++;
+ h=harness();assert.equal((await h.post({kind:"arbitrary_rpc"})).status,400);assert.equal(h.calls.length,0);passed++;
+ h=harness({actorRole:"engineer"});assert.equal((await h.post({kind:"buyer"})).status,403);assert(!h.calls.some(c=>c.url.includes('/auth/v1/invite')));passed++;
  return{passed};
 };

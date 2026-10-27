@@ -12,6 +12,7 @@ async function runAuthSessionTests(sourceFile = path.join(__dirname, "..", "app.
     const scheduled = [];
     const removedTimers = [];
     const cleared = [];
+    const nodes = new Map();
     const gate = { textContent: "" };
     const state = { client: null, user: null, companyId: "company-a", memberRole: null, enabled: true, ready: false, sessionLoading: false, message: "Checking", members: [], invitations: [] };
     const context = vm.createContext({
@@ -26,7 +27,11 @@ async function runAuthSessionTests(sourceFile = path.join(__dirname, "..", "app.
         clearTimeout(value) { removedTimers.push(value); }, setTimeout(callback) { scheduled.push(callback); },
         SpartaCashBook: { refreshAccess() { cleared.push("cash"); }, async sync() {} }, SpartaWarehouseCloud: { reset() { cleared.push("warehouse"); } },
       },
-      document: { body: { classList: { toggle(name, value) { context.locked = value; } } }, querySelectorAll() { return [{ close() { cleared.push("dialog"); } }]; } },
+      document: {
+        body: { classList: { toggle(name, value) { if (name === "auth-locked") context.locked = value; }, remove() {} } },
+        getElementById(id) { if (!nodes.has(id)) nodes.set(id, { innerHTML: "", textContent: "" }); return nodes.get(id); },
+        querySelectorAll(selector) { return selector === "dialog[open]" ? [{ close() { cleared.push("dialog"); } }] : []; },
+      },
       supabaseConfig() { return { companyId: "company-a" }; }, clearCloudMediaUrls() {}, async verifyPublicSchema() {}, render() {}, renderProfileView() {}, renderCrmNotification() {},
       dbCrmTaskToApp(row) { return row; }, dbWarehouseItemToApp(row) { return row; },
       encodeURIComponent, console,

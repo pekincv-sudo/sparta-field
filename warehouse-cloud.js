@@ -23,6 +23,9 @@
     try { return context().key === ctx.key; } catch (_) { return false; }
   }
   function reset() { loaded = null; identity = ""; materialTokens = new Map(); materialBases = new Map(); editBases = new Map(); pending = null; }
+  // An unrelated sale changes availability. Keep any unresolved write request
+  // so its original idempotency key can still be settled after a network loss.
+  function invalidate() { loaded = null; }
   function snapshot() {
     try { if (context().key !== identity) return null; } catch (_) { return null; }
     return loaded ? clone(loaded) : null;
@@ -32,7 +35,7 @@
     if (!response || !Number.isSafeInteger(Number(response.revision)) || !response.state || !Array.isArray(response.state.items)) throw new Error(unavailable);
     const state = response.state;
     identity = ctx.key;
-    loaded = { items: clone(state.items), movements: clone(state.movements || []), documents: clone(state.documents || []), reservations: clone(state.reservations || []), revision: Number(response.revision) };
+    loaded = { items: clone(state.items), movements: clone(state.movements || []), documents: clone(state.documents || []), reservations: clone(state.reservations || []), orderReservations: clone(response.orderReservations || []), revision: Number(response.revision) };
     warehouseItems = loaded.items.map(normalizeWarehouseItem);
     warehouseMovements = clone(loaded.movements);
     const previousBases = materialBases;
@@ -165,5 +168,5 @@
     const link = document.createElement("a"); link.href = url; link.download = file.fileName || "document"; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
-  window.SpartaWarehouseCloud = Object.freeze({ load, transact, snapshot, reset, saveProjectMaterials, baseMaterials, uploadAttachment, openAttachment });
+  window.SpartaWarehouseCloud = Object.freeze({ load, transact, snapshot, reset, invalidate, saveProjectMaterials, baseMaterials, uploadAttachment, openAttachment });
 })();

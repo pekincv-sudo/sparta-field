@@ -20,6 +20,10 @@ export default async function handler(request) {
     body = JSON.parse(raw);
   } catch (_) { return json({ error: "Некоректний запит." }, 400); }
   if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "Некоректний запит." }, 400);
+  const kind = body.kind || "staff";
+  if (!["staff", "buyer"].includes(kind)) return json({ error: "Некоректний тип запрошення." }, 400);
+  const prepareRpc = kind === "buyer" ? "sparta_buyer_prepare_invitation_email" : "sparta_team_prepare_invitation_email";
+  const deliveryRpc = kind === "buyer" ? "sparta_buyer_record_invitation_delivery" : "sparta_team_record_invitation_delivery";
   const email = String(body.email || "").trim().toLowerCase();
   const companyId = String(body.companyId || "").trim().toLowerCase();
   const invitationId = String(body.invitationId || "").trim().toLowerCase();
@@ -55,16 +59,16 @@ export default async function handler(request) {
     actorRole = member.role;
     // Recheck rights and pending state under a row lock; enforce one cooldown
     // across all devices before any email is sent.
-    const prepared = await rpc("sparta_team_prepare_invitation_email", { p_invitation_id: invitationId, p_actor_id: user.id });
+    const prepared = await rpc(prepareRpc, { p_invitation_id: invitationId, p_actor_id: user.id });
     if (!prepared.ok) return prepareError(prepared);
     invitation = prepared.data;
     if (!invitation || invitation.id !== invitationId || invitation.company_id !== companyId ||
-        String(invitation.email || "").toLowerCase() !== email || !ROLES.includes(invitation.role) ||
+        String(invitation.email || "").toLowerCase() !== email || (kind === "staff" ? !ROLES.includes(invitation.role) : !UUID.test(String(invitation.buyer_id || ""))) ||
         invitation.accepted_at !== null || invitation.revoked_at !== null ||
         !Number.isFinite(Date.parse(invitation.expires_at)) || Date.parse(invitation.expires_at) <= Date.now()) {
       return json({ error: "Запрошення вже не чинне. Оновіть список запрошень." }, 409);
     }
-    if (actorRole === "admin" && ["owner", "admin"].includes(invitation.role)) return json({ error: "Лише власник може запрошувати адміністраторів або власників." }, 403);
+    if (kind === "staff" && actorRole === "admin" && ["owner", "admin"].includes(invitation.role)) return json({ error: "Лише власник може запрошувати адміністраторів або власників." }, 403);
   } catch (_) { return json({ error: "Не вдалося перевірити запрошення. Спробуйте пізніше." }, 503); }
   let mode = "invite";
   let sent = false;
@@ -75,6 +79,7 @@ export default async function handler(request) {
     const result = await fetchWithTimeout(inviteUrl, {
       method: "POST", headers: serviceHeaders(), body: JSON.stringify({ email, data: {
         full_name: String(invitation.full_name || "").slice(0, 300), company_id: companyId, invitation_id: invitationId,
+        ...(kind === "buyer" ? { buyer_account_id: invitation.buyer_id } : {}),
       } }),
     });
     sent = result.ok;
@@ -97,7 +102,7 @@ export default async function handler(request) {
   } catch (_) { sent = false; }
   let recorded = false;
   try {
-    recorded = (await rpc("sparta_team_record_invitation_delivery", {
+    recorded = (await rpc(deliveryRpc, {
       p_invitation_id: invitationId, p_actor_id: user.id, p_succeeded: sent, p_mode: mode,
     })).ok;
   } catch (_) { /* Email may already be sent; never claim that it was not. */ }
