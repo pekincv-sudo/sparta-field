@@ -124,7 +124,7 @@
 }
 
 /* Buyer authorization has a separate shell, never the staff preview. */
-#buyerPortalView{display:none}
+#buyerPortalView{display:none;min-height:100dvh;padding:24px max(16px,4vw)}
 body.buyer-audience .app-shell{display:none!important}
 body.buyer-audience:not(.auth-locked) #buyerPortalView{display:block}
 body.auth-locked #buyerPortalView{display:none!important}
