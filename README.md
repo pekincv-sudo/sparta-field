@@ -104,3 +104,7 @@ Required columns: `name;sku;unit;category;currency;purchasePrice;installerPrice;
 ## Product photographs — build 40
 
 Warehouse stock/catalog rows, item details and buyer catalog/cart show locally bundled, optimized product photographs. `product-photos-data.js` contains opaque reviewed name aliases and source credits only; it includes no source-spreadsheet prices. Matching is exact after whitespace/case normalization. New similar product names do not inherit another model's photograph. Item details distinguish a model photograph from a series or illustrative type photograph and link to the source and full image. Missing media has an explicit fallback. The photo layer is read-only and does not change quantities, documents, prices, reservations or permissions.
+
+## Solar Dash — build 41
+
+The existing sun-catching mini-game opens from «☀ Гра» in the staff toolbar and buyer header. SPARTA Power logos appear on its start/end overlay and in-game HUD. The game loads on demand inside an opaque-origin iframe (`sandbox="allow-scripts"`); it receives only a throwaway session ID and a numeric best score, never application credentials or company data. Closing or losing access removes the frame and stops its animation. Personal records are stored on the current device under an explicit user/company scope; they do not synchronize between devices. Storage failures keep play available with a memory-only record notice. No cash, stock, rewards or leaderboard writes are made.
