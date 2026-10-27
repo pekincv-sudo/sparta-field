@@ -50,7 +50,7 @@ returns jsonb language sql volatile security definer set search_path = '' as $$
     jsonb_build_object('id', w.client_item_id, 'name', w.name, 'category', w.category,
       'sku', coalesce(w.sku,''), 'unit', w.unit, 'qty', w.quantity,
       'purchasePrice', w.purchase_price, 'retailPrice', w.sale_price, 'salePrice', w.sale_price,
-      'installerPrice', w.sale_price, 'deliveryCost', 0, 'extraCost', 0,
+      'installerPrice', coalesce(w.app_data->'installerPrice','0'::jsonb), 'wholesalePrice', coalesce(w.app_data->'wholesalePrice','0'::jsonb), 'deliveryCost', 0, 'extraCost', 0,
       'minQty', w.min_quantity, 'location', coalesce(w.location,'')) || w.app_data
     order by w.created_at, w.id) filter (where w.id is not null), '[]'::jsonb),
     'movements', '[]'::jsonb, 'documents', '[]'::jsonb, 'reservations', '[]'::jsonb)
@@ -158,7 +158,7 @@ begin
       raise exception 'Inventory currency is fixed; create a separate product';
     end if;
     if coalesce(btrim(entry->>'name'),'')='' or coalesce(btrim(entry->>'unit'),'')='' then raise exception 'Missing product name/unit'; end if;
-    foreach field_name in array array['qty','minQty','purchasePrice','deliveryCost','extraCost','retailPrice','salePrice','installerPrice'] loop
+    foreach field_name in array array['qty','minQty','purchasePrice','deliveryCost','extraCost','retailPrice','salePrice','installerPrice','wholesalePrice'] loop
       number_value := public.sparta_warehouse_number(entry->field_name);
       if number_value < 0 then raise exception 'Negative stock/cost is not allowed'; end if;
       if field_name in ('qty','minQty') and number_value<>round(number_value,3) then raise exception 'Quantity supports three decimals'; end if;
