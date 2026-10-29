@@ -108,3 +108,14 @@ Warehouse stock/catalog rows, item details and buyer catalog/cart show locally b
 ## Solar Dash — build 41
 
 The existing sun-catching mini-game opens from «☀ Гра» in the staff toolbar and buyer header. SPARTA Power logos appear on its start/end overlay and in-game HUD. The game loads on demand inside an opaque-origin iframe (`sandbox="allow-scripts"`); it receives only a throwaway session ID and a numeric best score, never application credentials or company data. Closing or losing access removes the frame and stops its animation. Personal records are stored on the current device under an explicit user/company scope; they do not synchronize between devices. Storage failures keep play available with a memory-only record notice. No cash, stock, rewards or leaderboard writes are made.
+
+
+## Warehouse Excel round trip — build 42
+
+Warehouse offers «Експорт Excel» and «Завантажити Excel» in public and local workspaces. The .xlsx file contains all physical catalog rows (independent of screen filters), stable IDs, explicit currencies/units, final stock quantities, catalog details and three sales price tiers. It also includes editing instructions and a hidden baseline snapshot. SheetJS CE 0.20.3 is bundled from its official CDN and loads only on demand; no workbook is sent to a third-party service.
+
+Imports show old/new quantities and changed field values before confirmation. Final quantity is an absolute count, never an additive receipt. Existing currency/unit and acquisition costs remain fixed; blank numeric edits retain the old value, explicit zero is zero, and absent rows do not delete goods. New rows use blank IDs and explicit units/currencies; their acquisition cost is marked unknown. Formulas must be pasted as values.
+
+Only owner/admin/warehouse can import. The company/local scope is checked, edited rows must still match their export baseline, combined buyer/project reserves are protected, and serialized quantities require ordinary stock documents. All changes commit atomically through the existing warehouse transaction, with posted stocktake audit documents per currency. Content-based batch IDs prevent repeated application even after subsequent stock movements. Prices/snapshots in earlier orders or object issues, cash and historical documents remain unchanged. No SQL migration is required.
+
+Validation: 424 JavaScript checks including 48 Excel core/real-XLSX/UI checks. Browser QA used isolated localhost4180: export, new row, quantity12→15 and retail120→125, persistence after reload and repeated-file handling. Production QA exports and previews the unchanged live workbook without altering business data.
