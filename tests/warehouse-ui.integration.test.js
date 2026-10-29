@@ -37,7 +37,7 @@ async function runWarehouseIntegrationTests(projectDirectory = path.resolve(__di
     return match[0];
   };
   vm.runInContext(["normalizeProjectId", "normalizeLookupValue", "warehouseUnitCost", "isClosedProjectStatus", "normalizeWarehouseItem", "addWarehouseItemToProjectMaterials"].map(functionSource).join("\n"), context);
-  const exportNeedle = "Object.freeze({ render, bootstrap, capture, openForProject, reset })";
+  const exportNeedle = "Object.freeze({ render, bootstrap, capture, openForProject, reset, snapshot, transact })";
   assert.ok(uiSource.includes(exportNeedle), "Production warehouse UI export remains discoverable");
   vm.runInContext(uiSource.replace(exportNeedle, "Object.freeze({ render, bootstrap, capture, openForProject, reset, __test: { postMovement, baseDocument, snapshot, persist, transact, ui, recoverJournal, priceInput, renderItemDetail, renderDocumentDetail } })"), context);
   const ui = context.window.SpartaWarehouseUI;

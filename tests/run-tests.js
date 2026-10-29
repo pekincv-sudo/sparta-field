@@ -1,6 +1,10 @@
 "use strict";
 
 async function runTests() {
+  const excelCoreChecks = require("./warehouse-excel-core.test.js")();
+  const excelFileChecks = require("./warehouse-excel-file.test.js")();
+  const excelUiChecks = await require("./warehouse-excel-ui.test.js")();
+  const warehouseExcel = { passed: excelCoreChecks.length + excelFileChecks + excelUiChecks.passed, core: excelCoreChecks, file: excelFileChecks, ui: excelUiChecks };
   const solarDash = require("./solar-dash.test.js")();
   const sunGame = require("./sun-game.test.js")();
   const productPhotos = require("./product-photos.test.js")();
@@ -32,7 +36,7 @@ async function runTests() {
   const privateStorage = await require("./private-storage.test.js")();
   const publicBuild = await require("./public-build.test.js")();
   const field = await require("./field-project-sync.test.js")();
-  return { passed: solarDash.passed + sunGame.passed + productPhotos.passed + inventoryImport.passed + inventoryImportUI.passed + buyerAuth.passed + buyerCloud.passed + buyerUi.passed + buyerStock.passed + taskAccess.passed + authFlow.passed + invitationApi.passed + invitationDelivery.passed + team.passed + currency.passed + domain.passed + integration.passed + isolation.passed + workflow.passed + proposal.passed + stages.passed + warehouse.passed + warehouseIntegration.passed + cleanUi.passed + cleanReset.passed + auth.passed + renderSafety.passed + warehouseCloud.passed + privateStorage.passed + publicBuild.passed + field.passed, inventoryImport, inventoryImportUI, buyerAuth, buyerCloud, buyerUi, buyerStock, taskAccess, authFlow, invitationApi, invitationDelivery, team, currency, domain, integration, isolation, workflow, proposal, stages, warehouse, warehouseIntegration, cleanUi, cleanReset, auth, renderSafety, warehouseCloud, privateStorage, publicBuild, field, productPhotos, solarDash, sunGame };
+  return { passed: warehouseExcel.passed + solarDash.passed + sunGame.passed + productPhotos.passed + inventoryImport.passed + inventoryImportUI.passed + buyerAuth.passed + buyerCloud.passed + buyerUi.passed + buyerStock.passed + taskAccess.passed + authFlow.passed + invitationApi.passed + invitationDelivery.passed + team.passed + currency.passed + domain.passed + integration.passed + isolation.passed + workflow.passed + proposal.passed + stages.passed + warehouse.passed + warehouseIntegration.passed + cleanUi.passed + cleanReset.passed + auth.passed + renderSafety.passed + warehouseCloud.passed + privateStorage.passed + publicBuild.passed + field.passed, inventoryImport, inventoryImportUI, buyerAuth, buyerCloud, buyerUi, buyerStock, taskAccess, authFlow, invitationApi, invitationDelivery, team, currency, domain, integration, isolation, workflow, proposal, stages, warehouse, warehouseIntegration, cleanUi, cleanReset, auth, renderSafety, warehouseCloud, privateStorage, publicBuild, field, productPhotos, solarDash, sunGame, warehouseExcel };
 }
 
 if (require.main === module) {
