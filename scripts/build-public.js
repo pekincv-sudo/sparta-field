@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const output = path.join(root, "public-build");
 const files = [
   "auth-flow.js", "team-access.js", "team-access.css", "buyer-cloud.js", "buyer-ui.js", "buyer-ui.css",
+  "warehouse-excel-core.js", "warehouse-excel-file.js", "warehouse-excel-ui.js", "vendor/xlsx.full.min.js", "vendor/SheetJS-LICENSE.txt",
   "sun-game.js", "sun-game.css", "solar-dash.html",
   "index.html", "styles.css", "warehouse.css", "app.js", "sw.js",
   "local-workspace.js", "money.js", "cash-ledger.js", "cash-book.js",
