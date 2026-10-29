@@ -1,4 +1,4 @@
-const CACHE_NAME = "sparta-field-v41";
+const CACHE_NAME = "sparta-field-v42";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -12,6 +12,9 @@ const APP_SHELL = [
   "/buyer-cloud.js",
   "/buyer-ui.js",
   "/buyer-ui.css",
+  "/warehouse-excel-core.js",
+  "/warehouse-excel-file.js",
+  "/warehouse-excel-ui.js",
   "/sun-game.js",
   "/sun-game.css",
   "/cash-ledger.js",
@@ -166,7 +169,7 @@ const PRODUCT_PHOTO_PATHS = [
   "/assets/product-photos/mounting-mount-washer.webp",
   "/assets/product-photos/mounting-mount-wide-washer.webp"
 ];
-const SHELL_PATHS = new Set([...APP_SHELL, ...PRODUCT_PHOTO_PATHS, "/solar-dash.html"]);
+const SHELL_PATHS = new Set([...APP_SHELL, ...PRODUCT_PHOTO_PATHS, "/solar-dash.html", "/vendor/xlsx.full.min.js"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

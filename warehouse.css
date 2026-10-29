@@ -281,3 +281,5 @@
   .sp-product-photo-detail { align-items: flex-start; gap: 12px; padding: 11px; }
   .sp-product-photo-detail .sp-product-photo { width: 100px; height: 110px; }
 }
+
+.wh-excel-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.wh-excel-editor{display:flex;flex-direction:column;max-height:90dvh}.wh-editor-head,.wh-editor-footer{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:18px}.wh-editor-head h2{margin:0}.wh-editor-head .wh-close{font-size:24px;border:0;background:transparent;color:inherit;cursor:pointer}.wh-editor-body{overflow:auto;padding:0 18px 18px}.wh-editor-body p{line-height:1.5}.wh-editor-footer{border-top:1px solid #ffffff20}.wh-excel-file{display:grid;gap:10px;margin:16px 0}.wh-excel-editor .wh-table td{vertical-align:top}.wh-excel-editor .wh-table small{display:block}.wh-excel-change{display:block;white-space:normal;min-width:180px}
