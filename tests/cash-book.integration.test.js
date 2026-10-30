@@ -11,11 +11,11 @@ function harness(storage = new Map(), remote = null, options = {}) {
   const events = {};
   const cashView = { innerHTML: "" };
   const dialog = { close() {}, remove() {} };
-  const dialogs = [], customEvents = [];
+  const dialogs = [], customEvents = [], salesCalls = [];
   const nav = { classList: { toggle() {} } };
   const localMode = Boolean(options.localMode);
   const state = { client: null, user: { id: localMode ? "local-owner" : "owner-1" }, ready: !localMode,
-    memberRole: "owner", companyId: localMode ? "local-sparta" : "company-1" };
+    memberRole: "owner", companyId: localMode ? "local-sparta" : "company-1", sessionLoading: Boolean(options.sessionLoading) };
   const submit = { disabled: false };
   const error = { textContent: "" };
   const writes = [];
@@ -42,7 +42,7 @@ function harness(storage = new Map(), remote = null, options = {}) {
     window: { SPARTA_LOCAL_WORKSPACE: { enabled: localMode }, addEventListener() {},
       CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init.detail; } },
       dispatchEvent(event) { customEvents.push(event); },
-      SpartaBuyerCloud: options.salesOrders ? { async salesOrders() { return { orders: options.salesOrders }; }, async salesFinance() { return options.salesFinance || { orders: [], totals: [] }; } } : undefined,
+      SpartaBuyerCloud: options.salesOrders ? { async salesOrders() { salesCalls.push("orders"); return { orders: options.salesOrders }; }, async salesFinance() { salesCalls.push("finance"); return options.salesFinance || { orders: [], totals: [] }; } } : undefined,
     }, document: {
       querySelector(selector) {
         if (selector === "#cashView") return cashView;
@@ -80,7 +80,7 @@ function harness(storage = new Map(), remote = null, options = {}) {
   function clickSource(sourceType) {
     for (const listener of events.click) listener({ target: { closest(selector) { return selector === "[data-cash-source]" ? { dataset: { cashSource: sourceType } } : null; } } });
   }
-  return { book, post, state, storage, cashView, writes, fromCalls, context, clickSource, dialogs, customEvents };
+  return { book, post, state, storage, cashView, writes, fromCalls, context, clickSource, dialogs, customEvents, salesCalls };
 }
 
 async function runCashBookIntegrationTests() {
@@ -250,6 +250,17 @@ async function runCashBookIntegrationTests() {
 
   const saleOrder = { id: "order-47", number: "SP-47-1", buyerId: "buyer-47", buyerName: "Покупець", companyId: "company-1", status: "completed", currency: "USD", total: 2000 };
   const finance = { orders: [], totals: [{ currency: "USD", completedCount: 1, revenueMinor: 200000, costMinor: 120000, grossProfitMinor: 80000, unknownCostCount: 0, paidMinor: 0, outstandingMinor: 200000 }] };
+  const startup = harness(new Map(), [], { salesOrders: [saleOrder], salesFinance: finance, sessionLoading: true });
+  startup.book.renderView(); await startup.book.sync();
+  assert.equal(startup.cashView.innerHTML, "");
+  assert.deepEqual(startup.salesCalls, [], "Cash must not start sales/report RPCs while login is still being verified");
+  assert.equal(startup.fromCalls.length, 0);
+  startup.state.sessionLoading = false;
+  startup.book.renderView(); await startup.book.sync();
+  assert.match(startup.cashView.innerHTML, /Результат реалізації/);
+  assert.match(startup.cashView.innerHTML, /800,00 USD/);
+  assert.doesNotMatch(startup.cashView.innerHTML, /Не вдалося оновити продажі/);
+  assert(startup.salesCalls.includes("finance")); checks++;
   const salesRows = [];
   const sales = harness(new Map(), salesRows, { salesOrders: [saleOrder], salesFinance: finance });
   await sales.book.sync();
