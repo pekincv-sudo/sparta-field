@@ -1992,6 +1992,10 @@ th {
   gap: 12px;
 }
 
+.profile-workspace-links {
+  display: none;
+}
+
 .mppt-card,
 .summary-table,
 .checklist-group,
@@ -3035,8 +3039,22 @@ dialog::backdrop {
 
   .nav {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 2px;
+  }
+
+  .nav-item[data-section="cash"],
+  .nav-item[data-section="sales"],
+  .nav-item[data-section="team"] {
+    display: none;
+  }
+
+  .profile-workspace-links {
+    display: grid;
+  }
+
+  body.client-mode .nav {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .nav-item {
