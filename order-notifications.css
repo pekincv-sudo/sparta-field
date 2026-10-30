@@ -1,0 +1,22 @@
+.sp-order-notice-slot { display: contents; }
+.sp-order-notice { display: inline-flex; align-items: center; gap: 7px; min-height: 42px; padding: 8px 12px; border: 1px solid rgba(255, 211, 26, .55); border-radius: 12px; background: #211e0e; color: #ffda25; font: inherit; font-weight: 750; cursor: pointer; }
+.sp-order-notice:hover { background: #332b0c; }
+.sp-order-notice[data-status="stale"] { border-style: dashed; }
+.sp-order-notice:focus-visible, .sp-order-toast button:focus-visible { outline: 3px solid #ffe879; outline-offset: 3px; }
+.sp-order-notice-icon { font-size: 21px; line-height: 1; }
+.sp-order-notice-count, .sp-order-nav-badge { display: inline-grid; place-items: center; min-width: 21px; height: 21px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #ffd51b; color: #121508; font-size: 12px; font-weight: 850; }
+.nav-item .sp-order-nav-badge { margin-left: auto; width: auto; color: #121508; font-size: 11px; min-width: 18px; height: 18px; }
+.topbar-actions:has(.sp-order-notice:not([hidden])) { flex-wrap: wrap; }
+.sp-order-toast { position: fixed; top: max(14px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right)); z-index: 140; width: min(420px, calc(100vw - 28px)); box-sizing: border-box; padding: 15px; border: 1px solid rgba(255, 213, 27, .7); border-radius: 14px; background: #142027; color: #f8fbf8; box-shadow: 0 12px 45px #0008; }
+.sp-order-toast-text { display: block; line-height: 1.45; overflow-wrap: anywhere; }
+.sp-order-toast-actions { display: flex; gap: 8px; margin-top: 12px; }
+.sp-order-toast button { min-height: 38px; padding: 7px 12px; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 750; cursor: pointer; }
+.sp-order-toast-open { border: 1px solid #ffd51b; background: #ffd51b; color: #121508; }
+.sp-order-toast-close { border: 1px solid #ffffff35; background: transparent; color: #f8fbf8; }
+.sp-order-notice[hidden], .sp-order-toast[hidden], .sp-order-nav-badge[hidden] { display: none !important; }
+@media (max-width: 760px) {
+  .sp-order-notice { font-size: 12px; min-height: 38px; padding: 7px 9px; }
+  .sp-order-notice-label { display: none; }
+  .nav-item .sp-order-nav-badge { position: absolute; top: 2px; right: 8px; margin-left: 0; }
+  .nav-item:has(.sp-order-nav-badge:not([hidden])) { position: relative; }
+}

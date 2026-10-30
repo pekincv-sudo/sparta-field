@@ -792,6 +792,27 @@ body.client-mode #projects > .toolbar {
 }
 
 .cash-panel { display: grid; gap: 18px; }
+.cash-source-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 5px; scrollbar-width: thin; }
+.cash-source-tabs button { flex: 0 0 auto; min-height: 44px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); background: var(--panel); font-weight: 750; }
+.cash-source-tabs button.active { color: var(--yellow); background: rgba(255,210,26,.1); border-color: rgba(255,210,26,.45); }
+.cash-source-summaries { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.cash-source-summaries > article { display: grid; gap: 8px; min-width: 0; padding: 14px; text-align: left; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--muted); }
+.cash-source-summaries strong { color: var(--ink); font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cash-sale-report { padding: 18px; border: 1px solid rgba(255,210,26,.25); border-radius: 18px; background: var(--panel); }
+.cash-sale-report h3 { margin: 0 0 16px; }
+.cash-sale-report .calculation-note { margin-bottom: 0; font-size: 12px; line-height: 1.6; }
+.cash-sale-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.cash-sale-totals > span { min-width: 0; color: var(--muted); font-size: 12px; }
+.cash-sale-totals strong { display: block; margin-top: 8px; color: var(--ink); font-size: 20px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cash-order-field select { min-width: 0; max-width: 100%; }
+#cashEntryForm [hidden] { display: none !important; }
+@media (max-width: 760px) {
+  .cash-source-summaries, .cash-sale-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  .cash-sale-totals { grid-template-columns: minmax(0, 1fr); }
+  .cash-sale-report { padding: 14px; }
+}
 .local-workspace-banner { display: inline-block; margin: 0 0 16px; padding: 8px 13px; border: 1px solid rgba(255,210,26,.28); border-radius: 10px; color: var(--yellow); background: rgba(255,210,26,.07); font-size: 12px; }
 .cash-panel .section-title-row { margin-bottom: 0; }
 .cash-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -3632,3 +3653,6 @@ dialog::backdrop {
 .workspace-clean-dialog p { line-height: 1.6; }
 
 .auth-card [hidden] { display: none !important; }
+
+.cash-currency { min-width: 150px; margin-left: auto; }
+.cash-currency select { min-width: 0; width: 100%; }

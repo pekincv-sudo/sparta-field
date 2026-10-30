@@ -2,6 +2,8 @@
 
 This folder is the clean static web app for deployment.
 
+Build47 adds an explicit sales cash source alongside project and general cash, and an owner/admin sales gross-profit report based on immutable issue-document costs. Posting or issuing an order never fabricates a payment. Apply `database/sales-cash-build47.sql` after existing cash, team and buyer migrations before publishing this frontend. In-app order notices poll while the app is open and acknowledge only orders actually shown. See `docs/SALES-CASH-build47.md`.
+
 ## Local development
 
 The current work is a clean local data-entry workspace. Open `http://127.0.0.1:4174/?build=36`.
@@ -22,7 +24,7 @@ recovery information. The demo generator, sample files and demo UI are no longer
 part of this app.
 
 The cash journal is available in installer mode under **Каса**. Entries record
-UAH kopecks, payment date/time in Kyiv, counterparty, purpose, project, payment
+integer USD cents / UAH kopecks, payment date/time in Kyiv, counterparty, purpose, project, payment
 method and creation time. Corrections use linked reversals. CSV export respects
 the selected filters. New client payments minus refunds reduce the project's
 outstanding balance; prior `finance.advancePaid` remains a separate opening

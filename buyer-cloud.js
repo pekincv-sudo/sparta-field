@@ -95,6 +95,11 @@
     return rpc(ctx, name, { p_buyer_id: ctx.buyerId, ...extra });
   }
   function staffRequest(name, extra = {}) { const ctx = requestContext("staff"); return rpc(ctx, name, { p_company_id: ctx.companyId, ...extra }); }
+  function salesFinance() {
+    const ctx = requestContext("staff");
+    if (!["owner", "admin"].includes(cloud().memberRole)) throw fail("Фінанси продажів доступні власнику або адміністратору.", "42501");
+    return rpc(ctx, "sparta_sales_finance", { p_company_id: ctx.companyId });
+  }
   async function stockAction(params) {
     const ctx = requestContext("staff");
     const result = await rpc(ctx, "sparta_sales_order_action", { p_order_id: params.orderId, p_action: params.action, p_request_id: params.requestId });
@@ -127,7 +132,7 @@
     catalog: (id) => buyerRequest("sparta_buyer_catalog", id), orders: (id) => buyerRequest("sparta_buyer_orders", id),
     submitOrder: (input) => buyerRequest("sparta_buyer_submit_order", input.buyerId, { p_request_id: input.requestId, p_lines: input.lines, p_delivery: input.delivery, p_expected_total: input.expectedTotal }),
     cancelOrder: (input) => { const ctx = requestContext("buyer"); return rpc(ctx, "sparta_buyer_cancel_order", { p_order_id: input.orderId, p_request_id: input.requestId }); },
-    buyers: () => staffRequest("sparta_sales_buyers"), salesOrders: () => staffRequest("sparta_sales_orders"),
+    buyers: () => staffRequest("sparta_sales_buyers"), salesOrders: () => staffRequest("sparta_sales_orders"), salesFinance,
     unlinkedSales: () => staffRequest("sparta_sales_unlinked_sales"),
     linkPurchase: (input) => { const ctx = requestContext("staff"); return rpc(ctx, "sparta_sales_link_purchase", { p_buyer_id: input.buyerId, p_document_id: input.documentId, p_request_id: input.requestId }); },
     saveBuyer: (buyer) => staffRequest("sparta_sales_save_buyer", { p_buyer: buyer }), orderAction: stockAction,

@@ -182,3 +182,13 @@
 body.buyer-audience .app-shell{display:none!important}
 body.buyer-audience:not(.auth-locked) #buyerPortalView{display:block}
 body.auth-locked #buyerPortalView{display:none!important}
+
+.bp-order-finance { margin: 14px 0; padding: 14px; border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 12px; background: rgba(0,0,0,.16); }
+.bp-order-finance dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 0 0 12px; }
+.bp-order-finance dl > div { min-width: 0; }
+.bp-order-finance dt { color: var(--muted, #a0adb2); font-size: 12px; }
+.bp-order-finance dd { margin: 6px 0 0; font-size: 18px; font-weight: 750; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .bp-order-finance { padding: 12px; }
+  .bp-order-finance dl { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
