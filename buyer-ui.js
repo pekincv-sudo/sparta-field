@@ -13,7 +13,7 @@
   let state = fresh();
 
   function fresh() {
-    return { mode: "", key: "", context: null, buyerId: "", priceType: "installer", tab: "catalog", selectedProductId: "", productQty: "1", catalogScrollY: 0, items: [], orders: [], buyers: [], salesDocuments: [], linkEditor: null, cart: new Map(), delivery: { method: "pickup", address: "", phone: "", comment: "" }, query: "", category: "", availableOnly: false, orderFilter: "active", loaded: false, busy: false, refreshing: false, lastRefreshed: "", priceReview: false, error: "", notice: "", pendingSubmit: null, requests: new Map(), editor: null };
+    return { mode: "", key: "", context: null, buyerId: "", priceType: "installer", tab: "catalog", selectedProductId: "", productQty: "1", catalogScrollY: 0, items: [], orders: [], buyers: [], salesDocuments: [], finance: [], financeError: "", financeLoading: false, linkEditor: null, cart: new Map(), delivery: { method: "pickup", address: "", phone: "", comment: "" }, query: "", category: "", availableOnly: false, orderFilter: "active", loaded: false, busy: false, refreshing: false, lastRefreshed: "", priceReview: false, error: "", notice: "", pendingSubmit: null, requests: new Map(), editor: null };
   }
   function provider() {
     if (!window.SpartaBuyerCloud) throw new Error("Кабінет покупця не підключено. Оновіть сторінку.");
@@ -96,7 +96,7 @@
     if (key !== state.key) { clearPrivate("Обліковий запис або права змінилися. Оновіть кабінет."); return null; }
     return context;
   }
-  async function enter(mode, nextTarget) {
+  async function enter(mode, nextTarget, options = {}) {
     if (!nextTarget) return;
     if (target && target !== nextTarget) { unbind(target); target.innerHTML = ""; }
     target = nextTarget;
@@ -127,10 +127,16 @@
       } else {
         if (context.audience !== "staff" || !staffRoles.includes(context.role) || !context.companyId) throw new Error("Недостатньо прав для перегляду продажів.");
         state.tab = ["buyers", "orders"].includes(state.tab) ? state.tab : "orders";
+        if (["active", "submitted", "confirmed", "ready", "completed", "cancelled", "all"].includes(options.orderFilter)) {
+          state.orderFilter = options.orderFilter;
+          state.tab = "orders";
+        }
         const [buyers, orders] = await Promise.all([provider().buyers(), provider().salesOrders()]);
         if (!same(token)) return;
         state.buyers = (buyers?.buyers || []).filter((b) => String(b.companyId) === String(context.companyId)).map(cleanBuyer);
         state.orders = ownOrders(orders);
+        await loadSalesFinance(token);
+        if (!same(token)) return;
       }
       state.loaded = true;
       state.busy = false;
@@ -185,6 +191,9 @@
     const account = activeAccounts(state.context).find((entry) => String(entry.id) === state.buyerId);
     const tabs = buyer ? [["catalog", "Каталог"], ["cart", `Кошик${state.cart.size ? ` · ${state.cart.size}` : ""}`], ["orders", "Мої замовлення"], ["history", "Історія покупок"]] : [["orders", "Замовлення"], ["buyers", "Покупці"]];
     target.innerHTML = `<section class="bp-app${buyer ? " bp-app--buyer" : ""}" aria-busy="${state.busy}">${buyer ? stickyCart() : ""}<header class="bp-header"><div><p class="bp-eyebrow">${safe(buyer ? account?.companyName || state.context.companyName || "SPARTA power" : state.context.companyName || "SPARTA power")}</p><h2>${buyer ? "Кабінет покупця" : "Продажі"}</h2><p class="bp-muted">${buyer ? safe(account?.name || "Обладнання для ваших замовлень") : "Замовлення постійних покупців"}</p>${buyer && state.lastRefreshed ? `<p class="bp-muted bp-footnote">Наявність оновлено: ${safe(date(state.lastRefreshed))}</p>` : ""}</div><div class="bp-actions">${buyer ? '<button type="button" class="sparta-game-launch" data-open-sun-game><span aria-hidden="true">☀</span> Гра</button>' : ""}${button("Оновити", "reload", "", false, Boolean(state.pendingSubmit))}${buyer && provider().changePassword ? button("Змінити пароль", "password") : ""}${buyer && provider().signOut ? button("Вийти", "sign-out") : ""}</div></header>${buyer && activeAccounts(state.context).length > 1 ? `<label class="bp-account">Акаунт покупця<select data-bp-field="account" ${state.busy || state.pendingSubmit ? "disabled" : ""}>${activeAccounts(state.context).map((entry) => `<option value="${safe(entry.id)}" ${String(entry.id) === state.buyerId ? "selected" : ""}>${safe(entry.name)} · ${safe(entry.companyName || "")}</option>`).join("")}</select></label>` : ""}<nav class="bp-tabs" aria-label="${buyer ? "Кабінет покупця" : "Продажі"}">${tabs.map(([key, label]) => `<button type="button" data-bp-tab="${key}" aria-current="${state.tab === key || state.tab === "product" && key === "catalog" ? "page" : "false"}" class="${state.tab === key || state.tab === "product" && key === "catalog" ? "is-active" : ""}">${label}</button>`).join("")}</nav><div class="bp-view" data-bp-view tabindex="-1">${notice()}${buyer ? state.tab === "catalog" ? catalogView() : state.tab === "product" ? productView() : state.tab === "cart" ? cartView() : ordersView() : state.tab === "buyers" ? buyersView() : ordersView()}</div></section>`;
+    if (!buyer && state.tab === "orders" && ["active", "submitted", "all"].includes(state.orderFilter)) {
+      window.SpartaOrderNotifications?.acknowledge?.(state.orders.filter((order) => order.status === "submitted").map((order) => order.id));
+    }
   }
   function stickyCart() {
     const count = state.cart.size;
@@ -279,9 +288,35 @@
     if (action === "fulfil") return ["owner", "admin", "warehouse"].includes(role) && order.status === "ready";
     return action === "cancel" && ["submitted", "confirmed", "ready"].includes(order.status);
   }
+  function maySeeSalesFinance() { return state.mode === "sales" && ["owner", "admin"].includes(state.context?.role); }
+  async function loadSalesFinance(token) {
+    state.finance = [];
+    state.financeError = "";
+    if (!maySeeSalesFinance() || typeof provider().salesFinance !== "function") return;
+    try {
+      const result = await provider().salesFinance();
+      if (!same(token) || !maySeeSalesFinance()) return;
+      const ids = new Set(state.orders.map((order) => order.id));
+      state.finance = (result?.orders || []).filter((entry) => ids.has(String(entry.orderId)));
+    } catch (error) {
+      if (same(token)) state.financeError = `Фінанси продажів не завантажено. ${textError(error)}`;
+    }
+  }
+  function minorLabel(value, currency) {
+    if (value === null || value === undefined || !Number.isSafeInteger(Number(value))) return "Не визначено";
+    return window.SpartaCash ? window.SpartaCash.formatAmount(Number(value), currency) : money(Number(value) / 100, currency);
+  }
+  function orderFinance(order) {
+    if (!maySeeSalesFinance() || !["confirmed", "ready", "completed", "cancelled"].includes(order.status)) return "";
+    const finance = state.finance.find((entry) => String(entry.orderId) === order.id && entry.currency === order.currency);
+    const payment = (["confirmed", "ready", "completed"].includes(order.status) || order.status === "cancelled" && Number(finance?.refundDueMinor) > 0) && window.SpartaCashBook?.openForSale
+      ? button(order.status === "cancelled" ? "Повернення / каса" : "Внести оплату / каса", "sale-payment", `data-bp-id="${safe(order.id)}"`) : "";
+    if (!finance) return payment ? `<div class="bp-actions">${payment}</div>` : "";
+    return `<section class="bp-order-finance" aria-label="Фінанси замовлення"><dl><div><dt>Отримано оплат</dt><dd>${safe(minorLabel(finance.paidMinor, order.currency))}</dd></div><div><dt>Борг покупця</dt><dd>${safe(minorLabel(finance.outstandingMinor, order.currency))}</dd></div>${Number(finance.refundDueMinor) > 0 ? `<div><dt>До повернення покупцю</dt><dd>${safe(minorLabel(finance.refundDueMinor, order.currency))}</dd></div>` : ""}${Number(finance.creditMinor) > 0 ? `<div><dt>Переплата покупця</dt><dd>${safe(minorLabel(finance.creditMinor, order.currency))}</dd></div>` : ""}${order.status === "completed" ? `<div><dt>Собівартість виданого</dt><dd>${safe(minorLabel(finance.costMinor, order.currency))}</dd></div><div><dt>Валовий прибуток</dt><dd>${safe(minorLabel(finance.grossProfitMinor, order.currency))}</dd></div>` : ""}</dl>${order.status === "completed" && !finance.costKnown ? '<p class="bp-muted bp-footnote">Прибуток не визначено: у накладній немає повної собівартості в цій валюті. Поточні закупівельні ціни не змінюють минулі продажі.</p>' : ""}<p class="bp-muted bp-footnote">Оплати — фактичні записи каси. Валовий прибуток — сума реалізації мінус собівартість; він не є залишком грошей.</p>${payment ? `<div class="bp-actions">${payment}</div>` : ""}</section>`;
+  }
   function orderCard(order) {
     const buyer = state.mode === "buyer";
-    return `<article class="bp-card bp-order"><header class="bp-order-header"><div><h3>${safe(order.number || "Замовлення")}</h3><span class="bp-muted">${safe(date(order.createdAt))}${!buyer ? ` · ${safe(order.buyerName || "Покупець")}` : ""}</span></div><span class="bp-badge bp-status-${safe(Object.hasOwn(statusNames, order.status) ? order.status : "unknown")}">${safe(statusNames[order.status] || "Статус уточнюється")}</span></header><div class="bp-order-lines">${order.lines.map((line) => `<div><span><strong>${safe(line.name)}</strong><small class="bp-muted">${safe(line.sku || "")} · ${num(line.qty)} ${safe(line.unit)} × ${money(line.unitPrice, line.currency)}</small></span><strong>${money(line.lineTotal, line.currency)}</strong></div>`).join("")}</div><p class="bp-total">Разом <strong>${money(order.total, order.currency)}</strong></p><p class="bp-muted">${order.deliveryMethod === "delivery" ? `Доставка: ${safe(order.address || "")}` : "Самовивіз"}${order.phone ? ` · ${safe(order.phone)}` : ""}</p>${order.comment ? `<p class="bp-comment">${safe(order.comment)}</p>` : ""}<div class="bp-actions">${buyer ? `${button(state.cart.size ? "Замінити кошик і повторити" : "Повторити замовлення", "repeat", `data-bp-id="${safe(order.id)}"`, false, Boolean(state.pendingSubmit))}${order.status === "submitted" ? button("Скасувати замовлення", "buyer-cancel", `data-bp-id="${safe(order.id)}"`) : ""}` : [["confirm", "Підтвердити та зарезервувати"], ["ready", "Готове до видачі"], ["fulfil", "Видати зі складу"], ["cancel", "Скасувати"]].filter(([action]) => canAction(action, order)).map(([action, label]) => button(label, "order-action", `data-bp-id="${safe(order.id)}" data-bp-order-action="${action}"`, action === "confirm")).join("")}</div>${buyer ? '<p class="bp-muted bp-footnote">Ціни цього замовлення збережено на момент надсилання. Повторення використовує актуальний каталог.</p>' : ""}</article>`;
+    return `<article class="bp-card bp-order"><header class="bp-order-header"><div><h3>${safe(order.number || "Замовлення")}</h3><span class="bp-muted">${safe(date(order.createdAt))}${!buyer ? ` · ${safe(order.buyerName || "Покупець")}` : ""}</span></div><span class="bp-badge bp-status-${safe(Object.hasOwn(statusNames, order.status) ? order.status : "unknown")}">${safe(statusNames[order.status] || "Статус уточнюється")}</span></header><div class="bp-order-lines">${order.lines.map((line) => `<div><span><strong>${safe(line.name)}</strong><small class="bp-muted">${safe(line.sku || "")} · ${num(line.qty)} ${safe(line.unit)} × ${money(line.unitPrice, line.currency)}</small></span><strong>${money(line.lineTotal, line.currency)}</strong></div>`).join("")}</div><p class="bp-total">Разом <strong>${money(order.total, order.currency)}</strong></p><p class="bp-muted">${order.deliveryMethod === "delivery" ? `Доставка: ${safe(order.address || "")}` : "Самовивіз"}${order.phone ? ` · ${safe(order.phone)}` : ""}</p>${order.comment ? `<p class="bp-comment">${safe(order.comment)}</p>` : ""}${orderFinance(order)}<div class="bp-actions">${buyer ? `${button(state.cart.size ? "Замінити кошик і повторити" : "Повторити замовлення", "repeat", `data-bp-id="${safe(order.id)}"`, false, Boolean(state.pendingSubmit))}${order.status === "submitted" ? button("Скасувати замовлення", "buyer-cancel", `data-bp-id="${safe(order.id)}"`) : ""}` : [["confirm", "Підтвердити та зарезервувати"], ["ready", "Готове до видачі"], ["fulfil", "Видати зі складу"], ["cancel", "Скасувати"]].filter(([action]) => canAction(action, order)).map(([action, label]) => button(label, "order-action", `data-bp-id="${safe(order.id)}" data-bp-order-action="${action}"`, action === "confirm")).join("")}</div>${buyer ? '<p class="bp-muted bp-footnote">Ціни цього замовлення збережено на момент надсилання. Повторення використовує актуальний каталог.</p>' : ""}</article>`;
   }
   function ordersView() {
     const buyer = state.mode === "buyer";
@@ -289,7 +324,7 @@
     if (buyer) orders = orders.filter((order) => state.tab === "history" ? order.status === "completed" : order.status !== "completed");
     else if (state.orderFilter !== "all") orders = orders.filter((order) => state.orderFilter === "active" ? ["submitted", "confirmed", "ready"].includes(order.status) : order.status === state.orderFilter);
     orders = [...orders].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-    return `${!buyer ? '<p class="bp-notice bp-workflow-note">Підтвердити та зарезервувати → Готове до видачі → Видати зі складу. Списання та накладна створюються під час видачі; оплату вносять у касу окремо.</p>' : ""}${!buyer ? `<label class="bp-order-filter">Статус<select data-bp-field="orderFilter">${[["active", "Активні"], ["submitted", "Нові"], ["confirmed", "Підтверджені"], ["ready", "Готові до видачі"], ["completed", "Видані"], ["cancelled", "Скасовані"], ["all", "Усі замовлення"]].map(([key, label]) => `<option value="${key}" ${state.orderFilter === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>` : ""}<div class="bp-stack">${orders.map(orderCard).join("") || `<div class="bp-empty">${buyer && state.tab === "history" ? "Виданих замовлень ще немає." : "Замовлень поки немає."}</div>`}</div>`;
+    return `${!buyer && state.financeError ? `<p class="bp-notice bp-error" role="status">${safe(state.financeError)}</p>` : ""}${!buyer ? '<p class="bp-notice bp-workflow-note">Підтвердити та зарезервувати → Готове до видачі → Видати зі складу. Списання та накладна створюються під час видачі; оплату вносять у касу окремо.</p>' : ""}${!buyer ? `<label class="bp-order-filter">Статус<select data-bp-field="orderFilter">${[["active", "Активні"], ["submitted", "Нові"], ["confirmed", "Підтверджені"], ["ready", "Готові до видачі"], ["completed", "Видані"], ["cancelled", "Скасовані"], ["all", "Усі замовлення"]].map(([key, label]) => `<option value="${key}" ${state.orderFilter === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>` : ""}<div class="bp-stack">${orders.map(orderCard).join("") || `<div class="bp-empty">${buyer && state.tab === "history" ? "Виданих замовлень ще немає." : "Замовлень поки немає."}</div>`}</div>`;
   }
   function mayEditBuyers() { return state.mode === "sales" && ["owner", "admin"].includes(state.context?.role); }
   function mayLinkPurchases() { return state.mode === "sales" && ["owner", "admin", "warehouse"].includes(state.context?.role); }
@@ -423,6 +458,8 @@
     updateOrder(result);
     state.requests.delete(key);
     state.notice = `Статус замовлення оновлено.${result.warning ? " " + result.warning : ""}`;
+    if (!buyerCancel) await loadSalesFinance(token);
+    if (!buyerCancel) void window.SpartaOrderNotifications?.refresh();
   }
   async function saveBuyer(token) {
     if (!mayEditBuyers() || !state.editor) throw new Error("Редагувати покупців може власник або адміністратор.");
@@ -493,6 +530,11 @@
     if (action === "new-buyer" && mayEditBuyers()) { state.editor = { name: "", email: "", phone: "", priceType: "installer", isActive: true }; draw(); return; }
     if (action === "edit-buyer" && mayEditBuyers()) { const buyer = state.buyers.find((entry) => entry.id === id); if (buyer) state.editor = { ...buyer }; draw(); return; }
     if (action === "close-editor") { state.editor = null; draw(); return; }
+    if (action === "sale-payment" && maySeeSalesFinance() && window.SpartaCashBook?.openForSale) {
+      const order = state.orders.find((entry) => entry.id === id && ["confirmed", "ready", "completed", "cancelled"].includes(entry.status));
+      if (order) void run(async () => { await window.SpartaCashBook.openForSale(order); });
+      return;
+    }
     if (action === "link-purchase" && mayLinkPurchases() && !state.linkEditor?.pending) {
       if (!state.buyers.some((buyer) => buyer.id === id)) return;
       state.linkEditor = { buyerId: id, documentId: "", documentsLoaded: false, pending: null };
@@ -568,5 +610,14 @@
     if (form.dataset.bpForm === "link-purchase") void run(linkPurchase);
   }
 
-  window.SpartaBuyerUI = { renderBuyer: (element) => enter("buyer", element), renderSales: (element) => enter("sales", element), refreshBuyer, reset };
+  window.addEventListener?.("sparta:cash-changed", () => {
+    if (!maySeeSalesFinance() || !state.loaded || state.busy || state.financeLoading || typeof document === "undefined" || !document.querySelector("#sales")?.classList.contains("active")) return;
+    const token = generation;
+    state.financeLoading = true;
+    void (async () => {
+      try { if (await verifiedContext(token)) await loadSalesFinance(token); }
+      finally { if (same(token)) { state.financeLoading = false; draw(); } }
+    })().catch(() => {});
+  });
+  window.SpartaBuyerUI = { renderBuyer: (element) => enter("buyer", element), renderSales: (element, options) => enter("sales", element, options), refreshBuyer, reset };
 })();

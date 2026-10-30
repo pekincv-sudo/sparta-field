@@ -7,14 +7,15 @@
   "use strict";
 
   const categoryDirections = Object.freeze({
-    client_payment: "income", client_refund: "expense", labor: "expense", materials: "expense",
+    client_payment: "income", client_refund: "expense", sale_payment: "income", sale_refund: "expense", labor: "expense", materials: "expense",
     other_income: "income", other_expense: "expense", opening_balance: "income",
   });
   const categoryLabels = Object.freeze({
-    client_payment: "Оплата клієнта", client_refund: "Повернення клієнту", labor: "Оплата робіт",
+    client_payment: "Оплата клієнта", client_refund: "Повернення клієнту", sale_payment: "Оплата покупця", sale_refund: "Повернення покупцю", labor: "Оплата робіт",
     materials: "Купівля матеріалів", other_income: "Інше надходження", other_expense: "Інша витрата",
     opening_balance: "Початковий залишок",
   });
+  const sourceLabels = Object.freeze({ project: "Об’єкт", sale: "Продаж", general: "Інші операції" });
   const methods = Object.freeze(["cash", "bank", "card"]);
   const methodLabels = Object.freeze({ cash: "Готівка", bank: "Банківський рахунок", card: "Картка" });
   const kyivFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
@@ -119,7 +120,19 @@
     if (!methods.includes(method)) fail("Невідомий спосіб оплати.");
     if (!Number.isSafeInteger(entry.amountMinor) || entry.amountMinor <= 0) fail("Некоректна сума в мінімальних одиницях валюти.");
     const projectId = text(entry.projectId, "Об’єкт", false, 200) || null;
+    const saleOrderId = text(entry.saleOrderId, "Замовлення покупця", false, 200) || null;
+    const sourceType = text(entry.sourceType, "Напрям каси", false, 20) || (saleOrderId ? "sale" : projectId ? "project" : "general");
+    if (!Object.prototype.hasOwnProperty.call(sourceLabels, sourceType)) fail("Невідомий напрям каси.");
+    if ((sourceType === "project" && (!projectId || saleOrderId)) || (sourceType === "sale" && (!saleOrderId || projectId)) || (sourceType === "general" && (projectId || saleOrderId))) fail("Напрям каси не відповідає об’єкту або замовленню.");
+    if (!saleOrderId && [entry.saleOrderNumber, entry.buyerId, entry.buyerName].some(function (value) { return value != null && String(value).trim(); })) fail("Дані покупця мають бути прив’язані до замовлення продажу.");
+    if (["sale_payment", "sale_refund"].includes(category) && sourceType !== "sale") fail("Оплата покупця має бути прив’язана до замовлення продажу.");
+    if (sourceType === "sale" && !["sale_payment", "sale_refund", "other_expense", "other_income"].includes(category)) fail("Для продажу виберіть оплату, повернення або іншу операцію продажу.");
     const normalized = {
+      sourceType,
+      saleOrderId,
+      saleOrderNumber: text(entry.saleOrderNumber, "Номер замовлення", Boolean(saleOrderId), 200),
+      buyerId: text(entry.buyerId, "Покупець", Boolean(saleOrderId), 200) || null,
+      buyerName: text(entry.buyerName, "Ім’я покупця", Boolean(saleOrderId), 300),
       id: text(entry.id, "ID", true, 200),
       companyId: text(entry.companyId, "Компанія", true, 200),
       projectId: projectId,
@@ -165,6 +178,7 @@
       if (!original || original.reversesId) fail("Не знайдено початкову операцію для сторнування.");
       if (reversed.has(original.id)) fail("Операція вже сторнована.");
       if (entry.companyId !== original.companyId || entry.projectId !== original.projectId || entry.projectTitle !== original.projectTitle ||
+          entry.sourceType !== original.sourceType || entry.saleOrderId !== original.saleOrderId || entry.saleOrderNumber !== original.saleOrderNumber || entry.buyerId !== original.buyerId || entry.buyerName !== original.buyerName ||
           entry.category !== original.category || entry.amountMinor !== original.amountMinor || entry.currency !== original.currency ||
           entry.direction === original.direction || entry.method !== original.method) {
         fail("Сторнування не відповідає початковій операції.");
@@ -206,6 +220,29 @@
     });
     result.otherExpensesMinor = result.recordedExpensesMinor;
     return Object.freeze(result);
+  }
+
+  function sourceTotals(entries, currency) {
+    const result = { all: totals(entries, currency) };
+    Object.keys(sourceLabels).forEach(function (sourceType) {
+      result[sourceType] = totals(entries.map(validateEntry).filter(function (entry) { return entry.sourceType === sourceType; }), currency);
+    });
+    return Object.freeze(result);
+  }
+
+  function saleTotals(entries, orderId, currency) {
+    const selected = entries.map(validateEntry).filter(function (entry) { return entry.saleOrderId === String(orderId); });
+    const codes = new Set(selected.map(function (entry) { return entry.currency; }));
+    if (!currency && codes.size > 1) fail("Платежі замовлення мають різні валюти.");
+    const code = currencyCode(currency || [...codes][0], "USD");
+    let paidMinor = 0, expenseMinor = 0;
+    selected.forEach(function (entry) {
+      if (entry.currency !== code) fail("Валюта платежу не збігається з валютою замовлення.");
+      const signed = entry.direction === "income" ? entry.amountMinor : -entry.amountMinor;
+      if (["sale_payment", "sale_refund"].includes(entry.category)) paidMinor = safeAdd(paidMinor, signed);
+      else expenseMinor = safeAdd(expenseMinor, -signed);
+    });
+    return Object.freeze({ paidMinor, expenseMinor });
   }
 
   function reversal(entries, originalOrId, options) {
@@ -255,11 +292,13 @@
     return entries.map(validateEntry).filter(function (entry) {
       const occurredAt = new Date(entry.occurredAt).getTime();
       if (options.projectId === "__none" ? Boolean(entry.projectId) : options.projectId && entry.projectId !== String(options.projectId)) return false;
+      if (options.sourceType && options.sourceType !== "all" && entry.sourceType !== options.sourceType) return false;
+      if (options.saleOrderId && entry.saleOrderId !== String(options.saleOrderId)) return false;
       if (options.direction && options.direction !== "all" && entry.direction !== options.direction) return false;
       if (options.currency && entry.currency !== currencyCode(options.currency)) return false;
       if (options.method && options.method !== "all" && entry.method !== options.method) return false;
       if (from != null && occurredAt < from || to != null && occurredAt > to) return false;
-      return !query || [entry.counterparty, entry.purpose, entry.projectTitle, entry.id].join(" ").toLocaleLowerCase("uk-UA").includes(query);
+      return !query || [entry.counterparty, entry.purpose, entry.projectTitle, entry.saleOrderNumber, entry.buyerName, entry.id].join(" ").toLocaleLowerCase("uk-UA").includes(query);
     }).sort(function (a, b) {
       return b.occurredAt.localeCompare(a.occurredAt) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id);
     });
@@ -273,16 +312,16 @@
   }
   function decimalAmount(minor) { return Math.floor(minor / 100) + "," + String(minor % 100).padStart(2, "0"); }
   function exportCsv(entries) {
-    const rows = [["ID", "Дата оплати (UTC)", "Тип", "Категорія", "Сума", "Валюта", "Спосіб оплати", "Від кого / кому", "Призначення", "ID об’єкта", "Об’єкт", "Дата запису (UTC)", "Автор", "Сторнує ID"]];
+    const rows = [["ID", "Дата оплати (UTC)", "Тип", "Категорія", "Сума", "Валюта", "Спосіб оплати", "Від кого / кому", "Призначення", "ID об’єкта", "Об’єкт", "Дата запису (UTC)", "Автор", "Сторнує ID", "Напрям", "ID замовлення", "Номер замовлення", "Покупець"]];
     entries.forEach(function (raw) {
       const entry = validateEntry(raw);
-      rows.push([entry.id, entry.occurredAt, entry.direction === "income" ? "Надходження" : "Витрата", categoryLabels[entry.category], decimalAmount(entry.amountMinor), entry.currency, methodLabels[entry.method], entry.counterparty, entry.purpose, entry.projectId || "", entry.projectTitle, entry.createdAt, entry.createdBy, entry.reversesId || ""]);
+      rows.push([entry.id, entry.occurredAt, entry.direction === "income" ? "Надходження" : "Витрата", categoryLabels[entry.category], decimalAmount(entry.amountMinor), entry.currency, methodLabels[entry.method], entry.counterparty, entry.purpose, entry.projectId || "", entry.projectTitle, entry.createdAt, entry.createdBy, entry.reversesId || "", sourceLabels[entry.sourceType], entry.saleOrderId || "", entry.saleOrderNumber, entry.buyerName]);
     });
     return "\ufeff" + rows.map(function (row) { return row.map(csvCell).join(";"); }).join("\r\n") + "\r\n";
   }
 
   return Object.freeze({ parseAmount: parseAmount, formatAmount: formatAmount, parseKyivDateTime: parseKyivDateTime, validateEntry: validateEntry,
-    createEntry: createEntry, validateLedger: validateLedger, totals: totals, projectTotals: projectTotals,
+    createEntry: createEntry, validateLedger: validateLedger, totals: totals, projectTotals: projectTotals, sourceTotals: sourceTotals, saleTotals: saleTotals,
     reversal: reversal, filterEntries: filterEntries, exportCsv: exportCsv,
-    categoryDirections: categoryDirections, categoryLabels: categoryLabels, methods: methods, methodLabels: methodLabels });
+    sourceLabels: sourceLabels, categoryDirections: categoryDirections, categoryLabels: categoryLabels, methods: methods, methodLabels: methodLabels });
 });

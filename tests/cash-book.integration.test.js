@@ -10,7 +10,8 @@ let harnessUuid = 0;
 function harness(storage = new Map(), remote = null, options = {}) {
   const events = {};
   const cashView = { innerHTML: "" };
-  const dialog = { close() {} };
+  const dialog = { close() {}, remove() {} };
+  const dialogs = [], customEvents = [];
   const nav = { classList: { toggle() {} } };
   const localMode = Boolean(options.localMode);
   const state = { client: null, user: { id: localMode ? "local-owner" : "owner-1" }, ready: !localMode,
@@ -38,13 +39,19 @@ function harness(storage = new Map(), remote = null, options = {}) {
   };
   state.client = client;
   const context = vm.createContext({
-    window: { SPARTA_LOCAL_WORKSPACE: { enabled: localMode }, addEventListener() {} }, document: {
+    window: { SPARTA_LOCAL_WORKSPACE: { enabled: localMode }, addEventListener() {},
+      CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init.detail; } },
+      dispatchEvent(event) { customEvents.push(event); },
+      SpartaBuyerCloud: options.salesOrders ? { async salesOrders() { return { orders: options.salesOrders }; }, async salesFinance() { return options.salesFinance || { orders: [], totals: [] }; } } : undefined,
+    }, document: {
       querySelector(selector) {
         if (selector === "#cashView") return cashView;
         if (selector === "#cashEntryDialog") return dialog;
         if (selector === '[data-section="cash"]') return nav;
         return null;
       },
+      body: { append(element) { dialogs.push(element); } },
+      createElement() { return { innerHTML: "", querySelector() { return { elements: { sourceType: { value: "sale" }, direction: { value: "income" }, category: { innerHTML: "" } } }; }, showModal() { this.open = true; } }; },
       addEventListener(name, callback) { (events[name] ||= []).push(callback); },
     },
     cloudState: state, portalMode: "installer", projects: [{ id: "taras", currency: "USD", title: "Тарас Сусід", clientName: "Тарас", finance: { advancePaid: 500 } }],
@@ -70,7 +77,10 @@ function harness(storage = new Map(), remote = null, options = {}) {
     await Promise.resolve();
     return error.textContent;
   }
-  return { book, post, state, storage, cashView, writes, fromCalls, context };
+  function clickSource(sourceType) {
+    for (const listener of events.click) listener({ target: { closest(selector) { return selector === "[data-cash-source]" ? { dataset: { cashSource: sourceType } } : null; } } });
+  }
+  return { book, post, state, storage, cashView, writes, fromCalls, context, clickSource, dialogs, customEvents };
 }
 
 async function runCashBookIntegrationTests() {
@@ -238,6 +248,102 @@ async function runCashBookIntegrationTests() {
   assert.equal(local.fromCalls.length, 0);
   checks++;
 
-  return { passed: checks, scenarios: "isolated local mode with zero cloud calls, local reload and Kyiv time, two-tab append retention, offline persistence, refund, reversal, cloud replay, retry deduplication, concurrent reversal reconciliation, role isolation, legacy advance and profitability" };
+  const saleOrder = { id: "order-47", number: "SP-47-1", buyerId: "buyer-47", buyerName: "Покупець", companyId: "company-1", status: "completed", currency: "USD", total: 2000 };
+  const finance = { orders: [], totals: [{ currency: "USD", completedCount: 1, revenueMinor: 200000, costMinor: 120000, grossProfitMinor: 80000, unknownCostCount: 0, paidMinor: 0, outstandingMinor: 200000 }] };
+  const salesRows = [];
+  const sales = harness(new Map(), salesRows, { salesOrders: [saleOrder], salesFinance: finance });
+  await sales.book.sync();
+  assert.equal(typeof sales.book.openForSale, "function");
+  assert.equal(await sales.book.openForSale(saleOrder.id), true);
+  assert.equal(sales.dialogs.length, 1);
+  assert.equal(sales.dialogs[0].open, true);
+  assert.match(sales.dialogs[0].innerHTML, /name="sourceType"/);
+  assert.match(sales.dialogs[0].innerHTML, /value="sale" selected/);
+  assert.match(sales.dialogs[0].innerHTML, /value="order-47" selected/);
+  assert.match(sales.dialogs[0].innerHTML, /value="Покупець"/);
+  assert.match(sales.dialogs[0].innerHTML, /value="2000.00"/);
+  assert.equal(salesRows.length, 0, "opening the payment dialog never creates money");
+  checks++;
+
+  const saleInput = { sourceType: "sale", saleOrderId: saleOrder.id, projectId: "", category: "sale_payment", amount: "500.25", counterparty: "Покупець", purpose: "Часткова оплата замовлення" };
+  assert.equal(await sales.post(saleInput), "");
+  const savedSale = salesRows.find((entry) => entry.category === "sale_payment");
+  assert.equal(savedSale.source_type, "sale");
+  assert.equal(savedSale.project_client_id, null);
+  assert.equal(savedSale.sale_order_id, "order-47");
+  assert.equal(savedSale.sale_order_number, "SP-47-1");
+  assert.equal(savedSale.buyer_id, "buyer-47");
+  assert.equal(savedSale.buyer_name, "Покупець");
+  assert.equal(savedSale.amount_minor, 50025);
+  assert.equal(sales.book.projectTotals("taras").clientPaidMinor, 0);
+  assert.match(sales.cashView.innerHTML, /Валовий прибуток/);
+  assert.match(sales.cashView.innerHTML, /800,00 USD/);
+  assert.match(sales.cashView.innerHTML, /Це не залишок грошей у касі/);
+  assert.match(sales.cashView.innerHTML, /SP-47-1 · Покупець/);
+  assert(sales.customEvents.some((event) => event.type === "sparta:cash-changed" && event.detail.companyId === "company-1"));
+  checks++;
+
+  assert.match(await sales.post({ ...saleInput, currency: "UAH" }), /Валюта платежу/);
+  assert.match(await sales.post({ ...saleInput, saleOrderId: "another-company-order" }), /своєї компанії/);
+  assert.match(await sales.post({ ...saleInput, direction: "expense", category: "sale_refund", amount: "501" }), /перевищує/);
+  assert.equal(salesRows.length, 1);
+  assert.equal(await sales.post({ ...saleInput, direction: "expense", category: "sale_refund", amount: "25.25", purpose: "Повернення покупцю" }), "");
+  assert.equal(salesRows.length, 2);
+  assert.equal(await sales.post({ reversesId: savedSale.id, reason: "Помилкове внесення" }), "");
+  const reversedSale = salesRows.find((entry) => entry.reverses_id === savedSale.id);
+  assert.equal(reversedSale.sale_order_id, savedSale.sale_order_id);
+  assert.equal(reversedSale.buyer_id, savedSale.buyer_id);
+  assert.equal(reversedSale.currency, savedSale.currency);
+  checks++;
+
+  assert.equal(await sales.post({ purpose: "Оплата об’єкта окремо" }), "");
+  sales.clickSource("sale");
+  assert.match(sales.cashView.innerHTML, /data-cash-source="sale" aria-pressed="true"/);
+  assert.match(sales.cashView.innerHTML, /Часткова оплата замовлення/);
+  assert.doesNotMatch(sales.cashView.innerHTML, /Оплата об’єкта окремо/);
+  sales.clickSource("project");
+  assert.match(sales.cashView.innerHTML, /Оплата об’єкта окремо/);
+  assert.doesNotMatch(sales.cashView.innerHTML, /Часткова оплата замовлення/);
+  sales.clickSource("all");
+  assert.match(sales.cashView.innerHTML, /Оплата об’єкта окремо/);
+  assert.match(sales.cashView.innerHTML, /Часткова оплата замовлення/);
+  checks++;
+
+  const unknown = harness(new Map(), [], { salesOrders: [saleOrder], salesFinance: { orders: [], totals: [{ currency: "USD", revenueMinor: 200000, costMinor: null, grossProfitMinor: null, unknownCostCount: 1, outstandingMinor: 200000 }] } });
+  await unknown.book.sync();
+  assert.match(unknown.cashView.innerHTML, /Не повністю відомий/);
+  assert.match(unknown.cashView.innerHTML, /повний прибуток не розраховується/);
+  assert.doesNotMatch(unknown.cashView.innerHTML, /Валовий прибуток<strong>0,00/);
+  unknown.state.memberRole = "engineer";
+  unknown.book.renderView();
+  assert.equal(unknown.cashView.innerHTML, "");
+  assert.equal(await unknown.book.openForSale(saleOrder.id), false);
+  checks++;
+
+  const emptySales = harness(new Map(), [], { salesOrders: [], salesFinance: { orders: [], totals: [] } });
+  await emptySales.book.sync();
+  assert.match(emptySales.cashView.innerHTML, /Виданих продажів у цій валюті ще немає/);
+  emptySales.clickSource("project");
+  await emptySales.book.openEntry();
+  assert.match(emptySales.dialogs.at(-1).innerHTML, /value="project" selected/);
+  assert.match(emptySales.dialogs.at(-1).innerHTML, /name="projectId" required/);
+  assert.equal(emptySales.writes.length, 0);
+  await assert.rejects(() => emptySales.book.openForSale("unavailable-order"), /недоступне/);
+  checks++;
+
+  const cancelled = { ...saleOrder, id: "cancelled-47", number: "SP-47-C", status: "cancelled" };
+  const cancelledRows = [{ ...savedSale, id: "cancelled-payment", sale_order_id: cancelled.id, sale_order_number: cancelled.number, amount_minor: 50000 }];
+  const cancelledBook = harness(new Map(), cancelledRows, { salesOrders: [cancelled], salesFinance: { orders: [], totals: [] } });
+  await cancelledBook.book.sync();
+  assert.equal(await cancelledBook.book.openForSale(cancelled.id), true);
+  assert.match(cancelledBook.dialogs.at(-1).innerHTML, /value="500.00"/);
+  assert.match(cancelledBook.dialogs.at(-1).innerHTML, /value="expense" selected/);
+  assert.match(cancelledBook.dialogs.at(-1).innerHTML, /Повернення за замовленням SP-47-C/);
+  assert.match(await cancelledBook.post({ ...saleInput, saleOrderId: cancelled.id }), /після підтвердження/);
+  assert.equal(await cancelledBook.post({ ...saleInput, saleOrderId: cancelled.id, direction: "expense", category: "sale_refund", amount: "500", purpose: "Повернення за скасованим замовленням" }), "");
+  assert.equal(cancelledRows.length, 2);
+  checks++;
+
+  return { passed: checks, scenarios: "isolated local mode with zero cloud calls, local reload and Kyiv time, two-tab append retention, offline persistence, refund, reversal, cloud replay, retry deduplication, concurrent reversal reconciliation, role isolation, legacy advance and profitability, explicit sale payment dialog and linkage, refunds/reversals, source totals, currency/order validation, unknown sales cost and finance role isolation" };
 }
 module.exports = runCashBookIntegrationTests;

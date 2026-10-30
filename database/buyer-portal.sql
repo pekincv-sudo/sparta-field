@@ -453,7 +453,13 @@ begin
       select jsonb_agg(case when i.value->>'id'=line.item_id then jsonb_set(i.value,'{qty}',to_jsonb(public.sparta_warehouse_number(i.value->'qty')-line.qty)) else i.value end order by i.ordinality)
         into new_items from jsonb_array_elements(state->'items') with ordinality i(value,ordinality);
       state:=jsonb_set(state,'{items}',new_items);
-      snapshot:=jsonb_build_object('currency',line.currency,'itemId',line.item_id,'itemName',line.name,'sku',line.sku,'qty',line.qty,'unit',line.unit,'unitCost',unit_cost,'salePrice',line.unit_price);
+      -- Preserve whether acquisition cost was actually known at issue time.
+      -- Imported unknown prices are stored as zero and must never become a
+      -- fictitious 100% margin. This private flag is not part of buyer JSON.
+      snapshot:=jsonb_build_object('currency',line.currency,'itemId',line.item_id,'itemName',line.name,'sku',line.sku,'qty',line.qty,'unit',line.unit,'unitCost',unit_cost,
+        'unitCostKnown',case when item ? 'purchasePriceKnown' then item->'purchasePriceKnown'='true'::jsonb
+          else jsonb_typeof(item->'purchasePrice')='number' and public.sparta_warehouse_number(item->'purchasePrice')>0 end,
+        'salePrice',line.unit_price);
       doc_lines:=doc_lines||jsonb_build_array(snapshot);
       movements:=movements||jsonb_build_array(snapshot||jsonb_build_object('id','buyer-move-'||target.id::text||'-'||line.position,
         'type','sale','projectId','','customer',target.buyer_name,'buyerOrderId',target.id,'documentId',doc_id,'documentNumber',target.number,

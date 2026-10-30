@@ -156,6 +156,40 @@ module.exports = async function runBuyerCloudTests(directory = path.resolve(__di
     assert(!h.calls.some(call => call.name === "fetch" || call.name === "warehouseLoad" || call.name === "sparta_sales_order_action" || /cash/.test(call.name)));
     assert(!h.resets.includes("warehouse")); passed++;
   }
+  {
+    for (const role of ["engineer", "warehouse", "viewer"]) {
+      const h = harness({ role });
+      await rejectsCode(() => h.api.salesFinance(), "42501");
+      assert.equal(h.calls.length, 0, "Non-financial staff cannot request purchase costs or sales margin");
+    }
+    const buyer = harness(); await buyer.activate(); const before = buyer.calls.length;
+    await rejectsCode(() => buyer.api.salesFinance(), "42501");
+    assert.equal(buyer.calls.length, before);
+    passed++;
+  }
+  {
+    for (const role of ["owner", "admin"]) {
+      const h = harness({ role });
+      h.handlers.sparta_sales_finance = async () => ({ data: { orders: [], totals: [] }, error: null });
+      await h.api.salesFinance();
+      assert.deepEqual(JSON.parse(JSON.stringify(h.calls[0])), { name: "sparta_sales_finance", payload: { p_company_id: "company-a" } });
+      assert(!h.calls.some(call => call.name === "fetch" || call.name === "sparta_sales_order_action"));
+    }
+    passed++;
+  }
+  {
+    const h = harness(); const gate = deferred(); h.handlers.sparta_sales_finance = () => gate.promise;
+    const pending = h.api.salesFinance(); h.state.companyId = "company-b";
+    gate.resolve({ data: { orders: [{ grossProfitMinor: 123456 }], totals: [] }, error: null });
+    await rejectsCode(() => pending, "CONTEXT_CHANGED"); passed++;
+  }
+  {
+    const h = harness(); h.state.sessionLoading = true;
+    assert.equal(h.api.getContext().ready, false);
+    await rejectsCode(() => h.api.salesOrders(), "AUTH_REQUIRED");
+    await rejectsCode(() => h.api.salesFinance(), "AUTH_REQUIRED");
+    assert.equal(h.calls.length, 0, "In-app polling must wait until the current login is verified"); passed++;
+  }
   return { passed };
 };
 

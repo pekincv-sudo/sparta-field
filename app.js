@@ -263,6 +263,7 @@ if (window.spartaStorageWarning) {
 
 function clearCompanyContext() {
   window.SpartaSunGame?.reset();
+  window.SpartaOrderNotifications?.stop();
   cloudContextRevision += 1;
   clearCloudMediaUrls();
   cloudStorageScope = "";
@@ -532,6 +533,7 @@ function updateAccessMode() {
   if (locked) { window.SpartaSunGame?.reset(); window.SpartaWarehouseExcelUI?.reset(); }
   document.body.classList.toggle("buyer-audience", Boolean(window.SpartaBuyerCloud?.isBuyerReady()));
   if (locked && gateAuthMessage) gateAuthMessage.textContent = cloudState.message;
+  window.SpartaOrderNotifications?.refreshAccess();
 }
 
 function supabaseConfig() {
@@ -2203,6 +2205,7 @@ function refreshTeamNavigation() {
   document.querySelector('[data-section="sales"]')?.classList.toggle("is-hidden", !salesAllowed);
   const card = document.querySelector(".user-card");
   if (card) { card.querySelector("strong").textContent = renderRoleLabel(cloudState.memberRole); card.querySelector("small").textContent = cloudState.user?.email || "Потрібен вхід"; }
+  window.SpartaOrderNotifications?.refreshAccess();
 }
 
 function revealActiveNavigation() {
@@ -2216,11 +2219,15 @@ function revealActiveNavigation() {
   if (delta) nav.scrollBy({ left: delta, behavior: "auto" });
 }
 
-function showSection(sectionId) {
+function showSection(sectionId, options = {}) {
   if (window.SpartaBuyerCloud?.isBuyerReady()) { window.SpartaBuyerUI?.renderBuyer(document.querySelector("#buyerPortalView")); return; }
   if (sectionId === "sales") {
     if (!cloudState.ready || !["owner", "admin", "engineer", "warehouse"].includes(cloudState.memberRole) || window.SPARTA_LOCAL_WORKSPACE?.enabled) sectionId = "home";
-    else window.SpartaBuyerUI?.renderSales(document.querySelector("#salesView"));
+    else {
+      const noticeState = window.SpartaOrderNotifications?.getState?.();
+      const salesOptions = noticeState && (!noticeState.initialized || noticeState.count > 0) ? { ...options, orderFilter: "submitted" } : options;
+      window.SpartaBuyerUI?.renderSales(document.querySelector("#salesView"), salesOptions);
+    }
   }
   if (sectionId === "team" && !window.SpartaTeamAccess?.canManage()) sectionId = "profile";
   if (sectionId === "team") window.SpartaTeamAccess?.render(document.querySelector("#teamView"));
@@ -5403,6 +5410,7 @@ function renderStats() {
 }
 
 function render() {
+  window.SpartaOrderNotifications?.refreshAccess();
   if (window.SpartaBuyerCloud?.isBuyerReady()) {
     document.body.classList.add("buyer-audience");
     window.SpartaBuyerUI?.renderBuyer(document.querySelector("#buyerPortalView"));
