@@ -132,6 +132,6 @@
     linkPurchase: (input) => { const ctx = requestContext("staff"); return rpc(ctx, "sparta_sales_link_purchase", { p_buyer_id: input.buyerId, p_document_id: input.documentId, p_request_id: input.requestId }); },
     saveBuyer: (buyer) => staffRequest("sparta_sales_save_buyer", { p_buyer: buyer }), orderAction: stockAction,
     signOut: () => logoutCloudUser(),
-    changePassword: () => { document.querySelector("#passwordForm").reset(); document.querySelector("#passwordMessage").textContent = "Задайте власний пароль."; document.querySelector("#passwordDialog").showModal(); },
+    changePassword: () => { document.querySelector("#passwordForm").reset(); document.querySelector("#passwordMessage").textContent = "Новий пароль має містити щонайменше 8 символів і відрізнятися від чинного."; document.querySelector("#passwordDialog").showModal(); },
   });
 })();

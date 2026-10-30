@@ -53,6 +53,7 @@
 
   function authError(error) {
     const code = String(error?.code || "");
+    if (code === "same_password" || /new password should be different from the old password/i.test(String(error?.message || ""))) return "Цей пароль уже встановлено для вашого акаунта. Придумайте інший новий пароль і введіть його в обох полях.";
     if (/invalid_credentials/.test(code)) return "Неправильний email або пароль. Перевірте дані або відновіть пароль.";
     if (/email_not_confirmed/.test(code)) return "Підтвердьте email у листі. За потреби надішліть підтвердження повторно.";
     if (/over_.*rate_limit|rate_limit/.test(code)) return "Забагато спроб. Зачекайте перед повторним запитом.";
@@ -69,7 +70,7 @@
     const dialog = document.querySelector("#passwordDialog");
     if (!dialog || dialog.open) return;
     document.querySelector("#passwordForm").reset();
-    document.querySelector("#passwordMessage").textContent = "Задайте власний пароль: щонайменше 8 символів. Повторіть його для підтвердження.";
+    document.querySelector("#passwordMessage").textContent = "Задайте власний пароль: щонайменше 8 символів. Якщо акаунт уже мав пароль, новий має відрізнятися від попереднього. Повторіть його для підтвердження.";
     dialog.showModal();
   }
   function passwordCompleted() {
