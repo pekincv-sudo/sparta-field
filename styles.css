@@ -3015,7 +3015,7 @@ dialog::backdrop {
 @media (max-width: 980px) {
   .app-shell {
     display: block;
-    padding-bottom: 92px;
+    padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
   }
 
   .sidebar {
@@ -3025,8 +3025,8 @@ dialog::backdrop {
     bottom: 0;
     top: auto;
     z-index: 20;
-    height: 82px;
-    padding: 7px 8px 10px;
+    height: calc(90px + env(safe-area-inset-bottom, 0px));
+    padding: 7px 8px calc(10px + env(safe-area-inset-bottom, 0px));
     border-right: 0;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(7, 10, 12, 0.98);
@@ -3038,27 +3038,35 @@ dialog::backdrop {
   }
 
   .nav {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
+    min-width: 0;
+    width: 100%;
     gap: 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--yellow) transparent;
+    -webkit-overflow-scrolling: touch;
   }
 
-  .nav-item[data-section="cash"],
-  .nav-item[data-section="sales"],
-  .nav-item[data-section="team"] {
-    display: none;
+  .nav::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .nav::-webkit-scrollbar-thumb {
+    border-radius: 6px;
+    background: var(--yellow);
   }
 
   .profile-workspace-links {
     display: grid;
   }
 
-  body.client-mode .nav {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
   .nav-item {
-    min-width: 0;
+    flex: 1 0 70px;
+    min-width: 70px;
     padding: 7px 1px;
     min-height: 62px;
     justify-content: center;

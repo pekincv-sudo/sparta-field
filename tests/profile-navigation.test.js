@@ -169,6 +169,54 @@ function runProfileNavigationTests(projectDirectory = path.resolve(__dirname, ".
     assert.deepEqual(destinations, ["profile"], "Existing primary navigation still dispatches");
   });
 
+  function revealHarness({ noNav = false, overflow = true, hidden = false, itemLeft = 330, itemRight = 400 } = {}) {
+    const calls = [];
+    const rejectPageScroll = () => { throw new Error("Revealing navigation must not scroll the page vertically"); };
+    const activeClasses = new Set(["nav-item", "active", ...(hidden ? ["is-hidden"] : [])]);
+    const active = { getBoundingClientRect: () => ({ left: itemLeft, right: itemRight }), scrollIntoView: rejectPageScroll };
+    const nav = {
+      scrollWidth: overflow ? 574 : 300,
+      clientWidth: 300,
+      getBoundingClientRect: () => ({ left: 10, right: 310 }),
+      scrollBy(options) { calls.push({ ...options }); },
+      querySelector(selector) {
+        const excluded = [...selector.matchAll(/:not\(\.([\w-]+)\)/g)].map((match) => match[1]);
+        const required = [...selector.replace(/:not\([^)]*\)/g, "").matchAll(/\.([\w-]+)/g)].map((match) => match[1]);
+        return required.every((name) => activeClasses.has(name)) && !excluded.some((name) => activeClasses.has(name)) ? active : null;
+      },
+    };
+    const context = vm.createContext({
+      document: { querySelector: () => noNav ? null : nav, scrollBy: rejectPageScroll, scrollTo: rejectPageScroll },
+      window: { scrollBy: rejectPageScroll, scrollTo: rejectPageScroll },
+    });
+    assert.ok(productionFunctions.has("revealActiveNavigation"), "Production navigation reveal helper exists");
+    vm.runInContext(productionFunctions.get("revealActiveNavigation"), context);
+    context.revealActiveNavigation();
+    return calls;
+  }
+  check("Active tabs outside either rail edge scroll by only the required horizontal distance", () => {
+    for (const [options, delta] of [[{ itemLeft: 330, itemRight: 400 }, 90], [{ itemLeft: -50, itemRight: 20 }, -60]]) {
+      const calls = revealHarness(options);
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].left, delta);
+      assert.equal(Object.hasOwn(calls[0], "top"), false, "Horizontal reveal preserves the vertical scroll position");
+    }
+  });
+  check("Already visible active tabs do not move the navigation rail", () => {
+    for (const [itemLeft, itemRight] of [[10, 80], [100, 170], [240, 310]]) {
+      assert.deepEqual(revealHarness({ itemLeft, itemRight }), []);
+    }
+  });
+  check("A navigation rail without overflow does not scroll", () => {
+    assert.deepEqual(revealHarness({ overflow: false }), []);
+  });
+  check("A hidden active tab does not move the navigation rail", () => {
+    assert.deepEqual(revealHarness({ hidden: true }), []);
+  });
+  check("Missing navigation is safe when revealing the active tab", () => {
+    assert.deepEqual(revealHarness({ noNav: true }), []);
+  });
+
   return { passed: checks.length, checks };
 }
 
