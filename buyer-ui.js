@@ -13,7 +13,7 @@
   let state = fresh();
 
   function fresh() {
-    return { mode: "", key: "", context: null, buyerId: "", priceType: "installer", tab: "catalog", items: [], orders: [], buyers: [], salesDocuments: [], linkEditor: null, cart: new Map(), delivery: { method: "pickup", address: "", phone: "", comment: "" }, query: "", category: "", availableOnly: false, orderFilter: "active", loaded: false, busy: false, refreshing: false, lastRefreshed: "", priceReview: false, error: "", notice: "", pendingSubmit: null, requests: new Map(), editor: null };
+    return { mode: "", key: "", context: null, buyerId: "", priceType: "installer", tab: "catalog", selectedProductId: "", productQty: "1", catalogScrollY: 0, items: [], orders: [], buyers: [], salesDocuments: [], linkEditor: null, cart: new Map(), delivery: { method: "pickup", address: "", phone: "", comment: "" }, query: "", category: "", availableOnly: false, orderFilter: "active", loaded: false, busy: false, refreshing: false, lastRefreshed: "", priceReview: false, error: "", notice: "", pendingSubmit: null, requests: new Map(), editor: null };
   }
   function provider() {
     if (!window.SpartaBuyerCloud) throw new Error("Кабінет покупця не підключено. Оновіть сторінку.");
@@ -44,7 +44,12 @@
     return "";
   }
   function cleanItem(item) {
-    return { id: String(item.id), name: item.name, sku: item.sku, category: item.category, brand: item.brand, model: item.model, unit: item.unit, currency: item.currency, price: item.price, availableQty: item.availableQty };
+    const cleaned = { id: String(item.id), name: item.name, sku: item.sku, category: item.category, brand: item.brand, model: item.model, unit: item.unit, currency: item.currency, price: item.price, availableQty: item.availableQty, characteristics: typeof item.characteristics === "string" ? item.characteristics : "" };
+    for (const field of ["powerW", "powerKw", "capacityKwh", "voltageV", "phases", "crossSectionMm2"]) {
+      const value = item[field];
+      cleaned[field] = value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+    }
+    return cleaned;
   }
   function cleanOrder(order) {
     return { id: String(order.id), number: order.number, buyerId: String(order.buyerId), buyerName: order.buyerName, companyId: String(order.companyId), status: order.status, currency: order.currency, priceType: order.priceType, warehouseDocumentNumber: order.warehouseDocumentNumber, total: order.total, createdAt: order.createdAt, updatedAt: order.updatedAt, deliveryMethod: order.deliveryMethod, address: order.address, phone: order.phone, comment: order.comment, lines: (order.lines || []).map((line) => ({ itemId: String(line.itemId), sku: line.sku, name: line.name, unit: line.unit, qty: line.qty, unitPrice: line.unitPrice, currency: line.currency, lineTotal: line.lineTotal })) };
@@ -179,13 +184,67 @@
     const buyer = state.mode === "buyer";
     const account = activeAccounts(state.context).find((entry) => String(entry.id) === state.buyerId);
     const tabs = buyer ? [["catalog", "Каталог"], ["cart", `Кошик${state.cart.size ? ` · ${state.cart.size}` : ""}`], ["orders", "Мої замовлення"], ["history", "Історія покупок"]] : [["orders", "Замовлення"], ["buyers", "Покупці"]];
-    target.innerHTML = `<section class="bp-app" aria-busy="${state.busy}"><header class="bp-header"><div><p class="bp-eyebrow">${safe(buyer ? account?.companyName || state.context.companyName || "SPARTA power" : state.context.companyName || "SPARTA power")}</p><h2>${buyer ? "Кабінет покупця" : "Продажі"}</h2><p class="bp-muted">${buyer ? safe(account?.name || "Обладнання для ваших замовлень") : "Замовлення постійних покупців"}</p>${buyer && state.lastRefreshed ? `<p class="bp-muted bp-footnote">Наявність оновлено: ${safe(date(state.lastRefreshed))}</p>` : ""}</div><div class="bp-actions">${buyer ? '<button type="button" class="sparta-game-launch" data-open-sun-game><span aria-hidden="true">☀</span> Гра</button>' : ""}${button("Оновити", "reload", "", false, Boolean(state.pendingSubmit))}${buyer && provider().changePassword ? button("Змінити пароль", "password") : ""}${buyer && provider().signOut ? button("Вийти", "sign-out") : ""}</div></header>${buyer && activeAccounts(state.context).length > 1 ? `<label class="bp-account">Акаунт покупця<select data-bp-field="account" ${state.busy || state.pendingSubmit ? "disabled" : ""}>${activeAccounts(state.context).map((entry) => `<option value="${safe(entry.id)}" ${String(entry.id) === state.buyerId ? "selected" : ""}>${safe(entry.name)} · ${safe(entry.companyName || "")}</option>`).join("")}</select></label>` : ""}<nav class="bp-tabs" aria-label="${buyer ? "Кабінет покупця" : "Продажі"}">${tabs.map(([key, label]) => `<button type="button" data-bp-tab="${key}" aria-current="${state.tab === key ? "page" : "false"}" class="${state.tab === key ? "is-active" : ""}">${label}</button>`).join("")}</nav>${notice()}${buyer ? state.tab === "catalog" ? catalogView() : state.tab === "cart" ? cartView() : ordersView() : state.tab === "buyers" ? buyersView() : ordersView()}</section>`;
+    target.innerHTML = `<section class="bp-app${buyer ? " bp-app--buyer" : ""}" aria-busy="${state.busy}">${buyer ? stickyCart() : ""}<header class="bp-header"><div><p class="bp-eyebrow">${safe(buyer ? account?.companyName || state.context.companyName || "SPARTA power" : state.context.companyName || "SPARTA power")}</p><h2>${buyer ? "Кабінет покупця" : "Продажі"}</h2><p class="bp-muted">${buyer ? safe(account?.name || "Обладнання для ваших замовлень") : "Замовлення постійних покупців"}</p>${buyer && state.lastRefreshed ? `<p class="bp-muted bp-footnote">Наявність оновлено: ${safe(date(state.lastRefreshed))}</p>` : ""}</div><div class="bp-actions">${buyer ? '<button type="button" class="sparta-game-launch" data-open-sun-game><span aria-hidden="true">☀</span> Гра</button>' : ""}${button("Оновити", "reload", "", false, Boolean(state.pendingSubmit))}${buyer && provider().changePassword ? button("Змінити пароль", "password") : ""}${buyer && provider().signOut ? button("Вийти", "sign-out") : ""}</div></header>${buyer && activeAccounts(state.context).length > 1 ? `<label class="bp-account">Акаунт покупця<select data-bp-field="account" ${state.busy || state.pendingSubmit ? "disabled" : ""}>${activeAccounts(state.context).map((entry) => `<option value="${safe(entry.id)}" ${String(entry.id) === state.buyerId ? "selected" : ""}>${safe(entry.name)} · ${safe(entry.companyName || "")}</option>`).join("")}</select></label>` : ""}<nav class="bp-tabs" aria-label="${buyer ? "Кабінет покупця" : "Продажі"}">${tabs.map(([key, label]) => `<button type="button" data-bp-tab="${key}" aria-current="${state.tab === key || state.tab === "product" && key === "catalog" ? "page" : "false"}" class="${state.tab === key || state.tab === "product" && key === "catalog" ? "is-active" : ""}">${label}</button>`).join("")}</nav><div class="bp-view" data-bp-view tabindex="-1">${notice()}${buyer ? state.tab === "catalog" ? catalogView() : state.tab === "product" ? productView() : state.tab === "cart" ? cartView() : ordersView() : state.tab === "buyers" ? buyersView() : ordersView()}</div></section>`;
+  }
+  function stickyCart() {
+    const count = state.cart.size;
+    const summary = count && !cartProblem() ? money(total(), cartLines()[0]?.item?.currency) : count ? `${count} позицій` : "Порожній";
+    return `<div class="bp-sticky-cart"><strong>SPARTA <span>power</span></strong><button type="button" class="bp-cart-access" data-bp-tab="cart" aria-label="Кошик: ${count} позицій. ${safe(summary)}" ${state.busy ? "disabled" : ""}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 3h2l2.3 11.4a2 2 0 0 0 2 1.6h8.5a2 2 0 0 0 2-1.6L21 7H6" /><circle cx="10" cy="20" r="1" /><circle cx="18" cy="20" r="1" /></svg><span class="bp-cart-access-copy"><span>Кошик <span class="bp-cart-count" data-bp-cart-count>${count}</span></span><small>${safe(summary)}</small></span></button></div>`;
+  }
+  function scrollBuyerView() {
+    const view = target?.querySelector?.("[data-bp-view]");
+    view?.focus?.({ preventScroll: true });
+    view?.scrollIntoView?.({ block: "start", behavior: "auto" });
+  }
+  function defaultQuantity(item) { return whole(item) || available(item) >= 1 ? 1 : 0.001; }
+  function additionProblem(item, value) {
+    if (!item || !exactPrice(item) || !validCurrency(item)) return "Для товару не встановлено ціну. Зверніться до менеджера.";
+    const problem = quantityError(item, value);
+    if (problem) return problem;
+    const currencyMismatch = cartLines().some((line) => line.item && line.item.currency !== item.currency);
+    if (currencyMismatch) return "В одному замовленні може бути лише одна валюта. Надішліть поточний кошик окремо.";
+    const combined = Math.round((Number(state.cart.get(item.id) || 0) + Number(value)) * 1000) / 1000;
+    return quantityError(item, combined);
+  }
+  function addQuantity(id, value) {
+    if (state.mode !== "buyer" || state.pendingSubmit || state.busy) return;
+    const item = state.items.find((entry) => entry.id === id);
+    const issue = additionProblem(item, value);
+    state.error = issue;
+    state.notice = "";
+    if (!issue) {
+      state.cart.set(id, Math.round((Number(state.cart.get(id) || 0) + Number(value)) * 1000) / 1000);
+      state.notice = "Товар додано до кошика.";
+    }
+    draw();
+  }
+  function productView() {
+    const item = state.items.find((entry) => entry.id === state.selectedProductId);
+    if (!item) return `<div class="bp-empty"><h3>Товар більше недоступний</h3><p>Оновіть каталог або оберіть інше обладнання.</p>${button("До каталогу", "product-back")}</div>`;
+    const locked = Boolean(state.pendingSubmit) || state.busy;
+    const inCart = Number(state.cart.get(item.id) || 0);
+    const remaining = Math.max(0, available(item) - (Number.isFinite(inCart) ? inCart : 0));
+    const specifications = [["Потужність панелі", item.powerW, "Вт"], ["Потужність", item.powerKw, "кВт"], ["Ємність", item.capacityKwh, "кВт·год"], ["Напруга", item.voltageV, "В"], ["Кількість фаз", item.phases, ""], ["Переріз кабелю", item.crossSectionMm2, "мм²"]].filter(([, value]) => value !== null && Number(value) > 0);
+    const info = [["Артикул", item.sku], ["Категорія", item.category], ["Виробник", item.brand], ["Модель", item.model], ["Одиниця продажу", item.unit]].filter(([, value]) => value !== null && value !== undefined && String(value).trim());
+    const issue = additionProblem(item, state.productQty);
+    return `<div class="bp-product-detail">${button("‹ До каталогу", "product-back")}<div class="bp-detail-grid"><div class="bp-card bp-detail-media">${window.SpartaProductPhotos?.detailsHtml(item) || '<div class="bp-detail-fallback">Фото для цього товару ще не додано.</div>'}</div><section class="bp-card bp-detail-summary"><p class="bp-muted">${safe(item.category || "Обладнання")}</p><h3 class="bp-detail-title">${safe(item.name)}</h3><p class="bp-detail-price">${exactPrice(item) && validCurrency(item) ? money(item.price, item.currency) : "Ціну уточнюйте"}<small>за ${safe(item.unit)}</small></p><p class="bp-detail-stock">Доступно на складі: <strong>${num(available(item))} ${safe(item.unit)}</strong></p><form data-bp-form="product-add" class="bp-detail-purchase"><label>Кількість для додавання<input data-bp-product-qty="${safe(item.id)}" aria-label="Кількість для додавання: ${safe(item.name)}" type="number" inputmode="${whole(item) ? "numeric" : "decimal"}" min="${whole(item) ? 1 : 0.001}" max="${remaining}" step="${whole(item) ? 1 : 0.001}" value="${safe(state.productQty)}" ${locked ? "disabled" : ""} /></label>${inCart > 0 ? `<p class="bp-muted">У кошику вже: ${num(inCart)} ${safe(item.unit)}. Можна додати ще: ${num(remaining)} ${safe(item.unit)}.</p>` : ""}<p class="bp-invalid" data-bp-product-error ${issue ? "" : "hidden"}>${safe(issue)}</p><p class="bp-total">За обрану кількість <strong data-bp-product-total>${!quantityError(item, state.productQty) && exactPrice(item) && validCurrency(item) ? money(lineCents(state.productQty, item.price) / 100, item.currency) : "—"}</strong></p><button type="submit" class="bp-button bp-primary" ${locked || !exactPrice(item) || !validCurrency(item) || remaining < (whole(item) ? 1 : 0.001) ? "disabled" : ""}>Додати до кошика</button></form>${state.pendingSubmit ? '<p class="bp-notice">Замовлення вже надсилається. Поверніться до кошика, щоб перевірити результат.</p>' : '<p class="bp-muted bp-footnote">Товар резервується після підтвердження менеджером. Остаточну ціну буде збережено під час надсилання замовлення.</p>'}</section></div><section class="bp-card bp-detail-specifications"><h3>Характеристики</h3><dl>${info.map(([label, value]) => `<div><dt>${safe(label)}</dt><dd>${safe(value)}</dd></div>`).join("")}${specifications.map(([label, value, unit]) => `<div><dt>${label}</dt><dd>${num(value)}${unit ? ` ${unit}` : ""}</dd></div>`).join("")}</dl>${item.characteristics.trim() ? `<p class="bp-characteristics">${safe(item.characteristics)}</p>` : ""}${!specifications.length && !item.characteristics.trim() ? '<p class="bp-muted">Детальні технічні характеристики ще не заповнено. Уточніть їх у менеджера.</p>' : ""}</section></div>`;
+  }
+  function updateProductQuantity(value) {
+    if (state.mode !== "buyer" || state.tab !== "product" || state.pendingSubmit || state.busy) return;
+    state.productQty = value;
+    const item = state.items.find((entry) => entry.id === state.selectedProductId);
+    if (!item) return;
+    const issue = additionProblem(item, value);
+    const note = target?.querySelector?.("[data-bp-product-error]");
+    if (note) { note.textContent = issue; note.hidden = !issue; }
+    const price = target?.querySelector?.("[data-bp-product-total]");
+    if (price) price.textContent = !quantityError(item, value) && exactPrice(item) && validCurrency(item) ? money(lineCents(value, item.price) / 100, item.currency) : "—";
   }
   function catalogView() {
     const categories = [...new Set(state.items.map((item) => item.category).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), "uk"));
     const query = state.query.trim().toLocaleLowerCase("uk-UA");
     const items = state.items.filter((item) => (!state.category || item.category === state.category) && (!state.availableOnly || available(item) > 0) && (!query || [item.name, item.sku, item.brand, item.model].join(" ").toLocaleLowerCase("uk-UA").includes(query)));
-    return `<div class="bp-toolbar"><label class="bp-search">Пошук обладнання<input type="search" data-bp-field="query" value="${safe(state.query)}" placeholder="Назва, артикул, бренд" /></label><label>Категорія<select data-bp-field="category"><option value="">Усі категорії</option>${categories.map((category) => `<option value="${safe(category)}" ${state.category === category ? "selected" : ""}>${safe(category)}</option>`).join("")}</select></label><label class="bp-check"><input type="checkbox" data-bp-field="availableOnly" ${state.availableOnly ? "checked" : ""} /> Тільки в наявності</label></div><p class="bp-muted">${items.length} позицій · ваш тип ціни: ${safe(priceLabel(state.priceType))}. Залишок резервується після підтвердження менеджером.</p><div class="bp-products">${items.map((item) => `<article class="bp-card bp-product"><div>${window.SpartaProductPhotos?.thumbnailHtml(item, { large: true }) || ""}<p class="bp-muted">${safe(item.category || "Обладнання")}</p><h3>${safe(item.name)}</h3><p class="bp-muted">${safe([item.sku, item.brand, item.model].filter(Boolean).join(" · "))}</p></div><div class="bp-product-bottom"><div><strong>${exactPrice(item) && validCurrency(item) ? money(item.price, item.currency) : "Ціну уточнюйте"}</strong><span class="bp-muted">за ${safe(item.unit)} · доступно ${num(available(item))} ${safe(item.unit)}</span></div>${button(state.cart.has(item.id) ? "Додати ще" : "У кошик", "add", `data-bp-id="${safe(item.id)}"`, false, Boolean(state.pendingSubmit) || !exactPrice(item) || !validCurrency(item) || available(item) < (whole(item) ? 1 : 0.001))}</div></article>`).join("") || '<div class="bp-empty">Обладнання не знайдено. Змініть пошук або фільтри.</div>'}</div>`;
+    return `<div class="bp-toolbar"><label class="bp-search">Пошук обладнання<input type="search" data-bp-field="query" value="${safe(state.query)}" placeholder="Назва, артикул, бренд" /></label><label>Категорія<select data-bp-field="category"><option value="">Усі категорії</option>${categories.map((category) => `<option value="${safe(category)}" ${state.category === category ? "selected" : ""}>${safe(category)}</option>`).join("")}</select></label><label class="bp-check"><input type="checkbox" data-bp-field="availableOnly" ${state.availableOnly ? "checked" : ""} /> Тільки в наявності</label></div><p class="bp-muted">${items.length} позицій · ваш тип ціни: ${safe(priceLabel(state.priceType))}. Залишок резервується після підтвердження менеджером.</p><div class="bp-products">${items.map((item) => `<article class="bp-card bp-product"><div><button type="button" class="bp-product-image" data-bp-action="product" data-bp-id="${safe(item.id)}" aria-label="Відкрити товар: ${safe(item.name)}">${window.SpartaProductPhotos?.thumbnailHtml(item, { large: true }) || '<span class="bp-detail-fallback">Фото ще немає</span>'}</button><p class="bp-muted">${safe(item.category || "Обладнання")}</p><h3><button type="button" class="bp-product-name" data-bp-action="product" data-bp-id="${safe(item.id)}">${safe(item.name)} <span aria-hidden="true">›</span></button></h3><p class="bp-muted">${safe([item.sku, item.brand, item.model].filter(Boolean).join(" · "))}</p></div><div class="bp-product-bottom"><div><strong>${exactPrice(item) && validCurrency(item) ? money(item.price, item.currency) : "Ціну уточнюйте"}</strong><span class="bp-muted">за ${safe(item.unit)} · доступно ${num(available(item))} ${safe(item.unit)}</span></div>${button(state.cart.has(item.id) ? "Додати ще" : "У кошик", "add", `data-bp-id="${safe(item.id)}"`, false, Boolean(state.pendingSubmit) || !exactPrice(item) || !validCurrency(item) || available(item) < (whole(item) ? 1 : 0.001))}</div></article>`).join("") || '<div class="bp-empty">Обладнання не знайдено. Змініть пошук або фільтри.</div>'}</div>`;
   }
   function cartLines() {
     return [...state.cart].map(([id, qty]) => ({ item: state.items.find((item) => item.id === id), id, qty }));
@@ -230,7 +289,7 @@
     if (buyer) orders = orders.filter((order) => state.tab === "history" ? order.status === "completed" : order.status !== "completed");
     else if (state.orderFilter !== "all") orders = orders.filter((order) => state.orderFilter === "active" ? ["submitted", "confirmed", "ready"].includes(order.status) : order.status === state.orderFilter);
     orders = [...orders].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-    return `${!buyer ? `<label class="bp-order-filter">Статус<select data-bp-field="orderFilter">${[["active", "Активні"], ["submitted", "Нові"], ["confirmed", "Підтверджені"], ["ready", "Готові до видачі"], ["completed", "Видані"], ["cancelled", "Скасовані"], ["all", "Усі замовлення"]].map(([key, label]) => `<option value="${key}" ${state.orderFilter === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>` : ""}<div class="bp-stack">${orders.map(orderCard).join("") || `<div class="bp-empty">${buyer && state.tab === "history" ? "Виданих замовлень ще немає." : "Замовлень поки немає."}</div>`}</div>`;
+    return `${!buyer ? '<p class="bp-notice bp-workflow-note">Підтвердити та зарезервувати → Готове до видачі → Видати зі складу. Списання та накладна створюються під час видачі; оплату вносять у касу окремо.</p>' : ""}${!buyer ? `<label class="bp-order-filter">Статус<select data-bp-field="orderFilter">${[["active", "Активні"], ["submitted", "Нові"], ["confirmed", "Підтверджені"], ["ready", "Готові до видачі"], ["completed", "Видані"], ["cancelled", "Скасовані"], ["all", "Усі замовлення"]].map(([key, label]) => `<option value="${key}" ${state.orderFilter === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>` : ""}<div class="bp-stack">${orders.map(orderCard).join("") || `<div class="bp-empty">${buyer && state.tab === "history" ? "Виданих замовлень ще немає." : "Замовлень поки немає."}</div>`}</div>`;
   }
   function mayEditBuyers() { return state.mode === "sales" && ["owner", "admin"].includes(state.context?.role); }
   function mayLinkPurchases() { return state.mode === "sales" && ["owner", "admin", "warehouse"].includes(state.context?.role); }
@@ -401,7 +460,7 @@
     const tab = event.target.closest?.("[data-bp-tab]");
     if (tab && !state.busy) {
       const allowed = state.mode === "buyer" ? ["catalog", "cart", "orders", "history"] : ["buyers", "orders"];
-      if (allowed.includes(tab.dataset.bpTab)) { state.tab = tab.dataset.bpTab; draw(); }
+      if (allowed.includes(tab.dataset.bpTab)) { state.tab = tab.dataset.bpTab; draw(); if (state.mode === "buyer") scrollBuyerView(); }
       return;
     }
     const element = event.target.closest?.("[data-bp-action]");
@@ -412,7 +471,25 @@
     if (!state.loaded) return;
     if (action === "sign-out" && state.mode === "buyer") { void run(async () => { await provider().signOut(); reset(); }); return; }
     if (action === "password" && state.mode === "buyer") { void run(async () => { await provider().changePassword(); }); return; }
-    if (action === "catalog") { state.tab = "catalog"; draw(); return; }
+    if (action === "catalog") { state.tab = "catalog"; draw(); if (state.mode === "buyer") scrollBuyerView(); return; }
+    if (action === "product" && state.mode === "buyer") {
+      const item = state.items.find((entry) => entry.id === id);
+      if (!item) return;
+      if (state.tab === "catalog") state.catalogScrollY = typeof window.scrollY === "number" ? window.scrollY : 0;
+      state.selectedProductId = id;
+      state.productQty = String(defaultQuantity(item));
+      state.tab = "product";
+      state.error = "";
+      state.notice = "";
+      draw(); scrollBuyerView();
+      return;
+    }
+    if (action === "product-back" && state.mode === "buyer") {
+      state.tab = "catalog"; state.error = ""; state.notice = ""; draw();
+      if (typeof window.scrollTo === "function") window.scrollTo({ top: state.catalogScrollY, behavior: "auto" });
+      target?.querySelector?.(`[data-bp-action="product"][data-bp-id="${typeof CSS !== "undefined" && CSS.escape ? CSS.escape(state.selectedProductId) : ""}"]`)?.focus?.({ preventScroll: true });
+      return;
+    }
     if (action === "new-buyer" && mayEditBuyers()) { state.editor = { name: "", email: "", phone: "", priceType: "installer", isActive: true }; draw(); return; }
     if (action === "edit-buyer" && mayEditBuyers()) { const buyer = state.buyers.find((entry) => entry.id === id); if (buyer) state.editor = { ...buyer }; draw(); return; }
     if (action === "close-editor") { state.editor = null; draw(); return; }
@@ -432,15 +509,8 @@
       if (action === "remove") state.cart.delete(id);
       if (action === "add") {
         const item = state.items.find((entry) => entry.id === id);
-        const first = cartLines()[0]?.item;
-        if (!item || !exactPrice(item) || !validCurrency(item)) state.error = "Для товару не встановлено ціну. Зверніться до менеджера.";
-        else if (first && first.currency !== item.currency) state.error = "В одному замовленні може бути лише одна валюта. Надішліть поточний кошик окремо.";
-        else {
-          const qty = Math.round((Number(state.cart.get(id) || 0) + (whole(item) || available(item) >= 1 ? 1 : 0.001)) * 1000) / 1000;
-          const issue = quantityError(item, qty);
-          if (issue) state.error = issue;
-          else { state.cart.set(id, qty); state.notice = "Товар додано до кошика."; }
-        }
+        addQuantity(id, defaultQuantity(item));
+        return;
       }
       draw();
       return;
@@ -468,6 +538,7 @@
     }
     if (element.dataset.bpField && ["category", "availableOnly", "orderFilter"].includes(element.dataset.bpField)) { state[element.dataset.bpField] = element.type === "checkbox" ? element.checked : element.value; draw(); }
     if (element.dataset.bpQty && !state.pendingSubmit && state.cart.has(element.dataset.bpQty)) { state.cart.set(element.dataset.bpQty, element.value); state.error = ""; draw(); }
+    if (element.dataset.bpProductQty === state.selectedProductId) updateProductQuantity(element.value);
     if (element.dataset.bpDelivery && !state.pendingSubmit) { state.delivery[element.dataset.bpDelivery] = element.value; if (element.dataset.bpDelivery === "method") draw(); }
     if (element.dataset.bpEditor && state.editor && mayEditBuyers()) state.editor[element.dataset.bpEditor] = element.type === "checkbox" ? element.checked : element.value;
     if (element.dataset.bpLink && ["buyerId", "documentId"].includes(element.dataset.bpLink) && mayLinkPurchases() && state.linkEditor && !state.linkEditor.pending) { state.linkEditor[element.dataset.bpLink] = String(element.value); draw(); }
@@ -484,12 +555,14 @@
     }
     if (element.dataset.bpDelivery && !state.pendingSubmit) state.delivery[element.dataset.bpDelivery] = element.value;
     if (element.dataset.bpQty && !state.pendingSubmit && state.cart.has(element.dataset.bpQty)) state.cart.set(element.dataset.bpQty, element.value);
+    if (element.dataset.bpProductQty === state.selectedProductId) updateProductQuantity(element.value);
     if (element.dataset.bpEditor && state.editor && mayEditBuyers()) state.editor[element.dataset.bpEditor] = element.type === "checkbox" ? element.checked : element.value;
   }
   function onSubmit(event) {
     const form = event.target.closest?.("[data-bp-form]");
     if (!form) return;
     event.preventDefault();
+    if (form.dataset.bpForm === "product-add") { addQuantity(state.selectedProductId, state.productQty); return; }
     if (form.dataset.bpForm === "checkout") void run(submit);
     if (form.dataset.bpForm === "buyer") void run(saveBuyer);
     if (form.dataset.bpForm === "link-purchase") void run(linkPurchase);

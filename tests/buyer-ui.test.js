@@ -158,8 +158,10 @@ async function runBuyerUITests(projectDirectory = path.resolve(__dirname, ".."))
     assert.match(f.surface.innerHTML, /data-bp-qty="panel"[^>]*value="1"/);
     assert.match(f.surface.innerHTML, /обмежено залишком/);
     await tab(f, "history");
-    assert.match(f.surface.innerHTML, /8,00 USD/);
-    assert.doesNotMatch(f.surface.innerHTML, /20,00 USD/);
+    const historicalCard = f.surface.innerHTML.match(/<article class="bp-card bp-order">[^]*?<\/article>/)?.[0];
+    assert.ok(historicalCard);
+    assert.match(historicalCard, /8,00 USD/);
+    assert.doesNotMatch(historicalCard, /20,00 USD/);
   });
 
   await check("Crossbuyer and crosscompany results are excluded and failed identity changes remove old private content and cart", async () => {
@@ -461,6 +463,134 @@ async function runBuyerUITests(projectDirectory = path.resolve(__dirname, ".."))
     await tab(f,"buyers"); await click(f,"new-buyer");
     input(f,{bpEditor:"name"},"Buyer"); input(f,{bpEditor:"email"},"buyer@example.invalid"); input(f,{bpEditor:"priceType"},"cost");
     await submit(f,"buyer"); assert.equal(f.calls.save.length,0); assert.match(f.surface.innerHTML,/Оберіть відомий тип ціни/);
+  });
+
+
+  await check("Product details expose only escaped public characteristics and keep missing specifications honest", async () => {
+    const f = setup({ data: { items: [item("panel", { characteristics: 'N-type <img src=x onerror=alert(7)>', powerW: 615, voltageV: 51.2, purchasePrice: 93201, supplier: "PRIVATE-SUPPLIER", unitCost: 88771, description: "PRIVATE-DESCRIPTION", warranty: "PRIVATE-WARRANTY" }), item("plain", { name: "Без характеристик" })] } });
+    await f.ui.renderBuyer(f.surface);
+    assert.ok(actionButton(f.surface.innerHTML, "product", "panel"), "Catalog exposes a product detail action");
+    await click(f, "product", "panel");
+    assert.ok(actionButton(f.surface.innerHTML, "product-back"));
+    assert.match(f.surface.innerHTML, /data-bp-form="product-add"/);
+    assert.match(f.surface.innerHTML, /data-bp-product-qty="panel"/);
+    assert.match(f.surface.innerHTML, /N-type &lt;img src=x onerror=alert\(7\)&gt;/);
+    assert.match(f.surface.innerHTML, /615/);
+    assert.match(f.surface.innerHTML, /51,2/);
+    assert.match(f.surface.innerHTML, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+    assert.doesNotMatch(f.surface.innerHTML, /<script>|<img src=x|PRIVATE-|93201|88771|purchasePrice|unitCost|supplier/);
+    assert.equal(f.calls.submit.length, 0);
+    assert.match(f.surface.innerHTML, /class="[^"]*bp-sticky-cart/);
+    await click(f, "product", "plain");
+    assert.doesNotMatch(f.surface.innerHTML, /N-type|615|51,2/);
+    assert.match(f.surface.innerHTML, /Характеристики/);
+    const nested = setup({ data: { items: [item("nested", { characteristics: { hidden: "PRIVATE-NESTED" }, powerW: -615, voltageV: "not-a-number" })] } });
+    await nested.ui.renderBuyer(nested.surface); await click(nested, "product", "nested");
+    assert.doesNotMatch(nested.surface.innerHTML, /PRIVATE-NESTED|\[object Object\]|-615|not-a-number/);
+  });
+
+  await check("Product quantity adds the selected increment once, merges a cart line and protects total available stock", async () => {
+    const f = setup();
+    await f.ui.renderBuyer(f.surface); await click(f, "product", "panel");
+    input(f, { bpProductQty: "panel" }, "2"); await submit(f, "product-add");
+    assert.equal(f.calls.submit.length, 0, "Adding locally never submits an order");
+    await tab(f, "cart");
+    assert.match(f.surface.innerHTML, /data-bp-qty="panel"[^>]*value="2"/);
+    assert.match(f.surface.innerHTML, /25,00 USD/);
+    assert.match(f.surface.innerHTML, /data-bp-cart-count[^>]*>1</);
+    await click(f, "product", "panel"); input(f, { bpProductQty: "panel" }, "2"); await submit(f, "product-add");
+    await tab(f, "cart");
+    assert.match(f.surface.innerHTML, /data-bp-qty="panel"[^>]*value="4"/);
+    assert.match(f.surface.innerHTML, /50,00 USD/);
+    assert.match(f.surface.innerHTML, /data-bp-cart-count[^>]*>1</);
+    await click(f, "product", "panel"); input(f, { bpProductQty: "panel" }, "2"); await submit(f, "product-add");
+    assert.match(f.surface.innerHTML, /перевищує доступний залишок/);
+    await tab(f, "cart"); assert.match(f.surface.innerHTML, /data-bp-qty="panel"[^>]*value="4"/);
+    assert.equal(f.calls.submit.length, 0);
+  });
+
+  await check("Product quantity validates integer units and fractional precision before changing the cart", async () => {
+    const f = setup({ data: { items: [item(), item("cable", { name: "Кабель", unit: "м", price: 4, availableQty: 10 })] } });
+    await f.ui.renderBuyer(f.surface);
+    for (const bad of ["", "0", "-1", "1.2", "6", "NaN"]) {
+      await click(f, "product", "panel"); input(f, { bpProductQty: "panel" }, bad); await submit(f, "product-add");
+      await tab(f, "cart"); assert.match(f.surface.innerHTML, /Кошик порожній/);
+    }
+    await click(f, "product", "cable"); input(f, { bpProductQty: "cable" }, "1.0001"); await submit(f, "product-add");
+    assert.match(f.surface.innerHTML, /трьох знаків/);
+    await tab(f, "cart"); assert.match(f.surface.innerHTML, /Кошик порожній/);
+    await click(f, "product", "cable"); input(f, { bpProductQty: "cable" }, "1.125"); await submit(f, "product-add");
+    await tab(f, "cart"); assert.match(f.surface.innerHTML, /data-bp-qty="cable"[^>]*value="1.125"/);
+    await submit(f); assert.deepEqual(f.calls.submit[0].lines, [{ itemId: "cable", qty: 1.125 }]);
+    assert.equal(f.calls.submit[0].expectedTotal, 4.5);
+  });
+
+  await check("Product detail cannot bypass price, currency or mixed-currency cart validation", async () => {
+    const f = setup({ data: { items: [item(), item("uah", { name: "Інша валюта", currency: "UAH" }), item("unpriced", { name: "Без ціни", price: null }), item("invalid", { currency: "EUR" })] } });
+    await f.ui.renderBuyer(f.surface); await click(f, "product", "panel"); input(f, { bpProductQty: "panel" }, "2"); await submit(f, "product-add");
+    await click(f, "product", "uah"); input(f, { bpProductQty: "uah" }, "1"); await submit(f, "product-add");
+    assert.match(f.surface.innerHTML, /лише одна валюта/);
+    for (const id of ["unpriced", "invalid"]) { await click(f, "product", id); await submit(f, "product-add"); }
+    await tab(f, "cart");
+    assert.match(f.surface.innerHTML, /data-bp-qty="panel"[^>]*value="2"/);
+    assert.doesNotMatch(f.surface.innerHTML, /data-bp-qty="(?:uah|unpriced|invalid)"/);
+    assert.equal(f.calls.submit.length, 0);
+  });
+
+  await check("Ambiguous order submission locks detail quantity and adding while allowing the frozen cart to be reached", async () => {
+    const f = setup(); let lost = true;
+    f.hooks.submit = (payload) => { if (lost) { lost = false; throw new Error("Відповідь втрачено"); } return { order: order({ total: payload.expectedTotal }) }; };
+    await f.ui.renderBuyer(f.surface); await click(f, "product", "panel"); input(f, { bpProductQty: "panel" }, "2"); await submit(f, "product-add");
+    await tab(f, "cart"); await submit(f);
+    const original = clone(f.calls.submit[0]);
+    await click(f, "product", "panel");
+    assert.match(f.surface.innerHTML, /data-bp-product-qty="panel"[^>]*disabled/);
+    input(f, { bpProductQty: "panel" }, "3"); await submit(f, "product-add");
+    await tab(f, "cart"); assert.match(f.surface.innerHTML, /data-bp-qty="panel"[^>]*value="2"[^>]*disabled/);
+    await submit(f); assert.equal(f.calls.submit.length, 2); assert.deepEqual(f.calls.submit[1], original);
+  });
+
+  await check("Product back navigation preserves catalog filters and buyer cart access stays available across sections", async () => {
+    const f = setup(); await f.ui.renderBuyer(f.surface);
+    input(f, { bpField: "query" }, "Brand");
+    f.surface.dispatch("change", { bpField: "category" }, { value: "Фотомодулі" });
+    f.surface.dispatch("change", { bpField: "availableOnly" }, { type: "checkbox", checked: true });
+    await click(f, "product", "panel"); await click(f, "product-back");
+    assert.match(f.surface.innerHTML, /data-bp-field="query"[^>]*value="Brand"/);
+    assert.match(f.surface.innerHTML, /value="Фотомодулі" selected/);
+    assert.match(f.surface.innerHTML, /data-bp-field="availableOnly"[^>]*checked/);
+    for (const next of ["catalog", "cart", "orders", "history"]) {
+      await tab(f, next);
+      assert.match(f.surface.innerHTML, /class="[^"]*bp-sticky-cart/);
+      assert.match(f.surface.innerHTML, /<button[^>]*class="[^"]*bp-cart-access[^>]*data-bp-tab="cart"|<button[^>]*data-bp-tab="cart"[^>]*class="[^"]*bp-cart-access/);
+      assert.match(f.surface.innerHTML, /data-bp-cart-count/);
+    }
+    await tab(f, "cart"); assert.match(f.surface.innerHTML, /Кошик порожній/);
+    const staff = setup({ context: { audience: "staff", role: "owner", buyerId: "", accounts: [] } });
+    await staff.ui.renderSales(staff.surface); await click(staff, "product", "panel");
+    assert.doesNotMatch(staff.surface.innerHTML, /bp-sticky-cart|data-bp-product-qty|data-bp-form="product-add"/);
+  });
+
+  await check("Open product details revalidate refreshed stock and discard removed products without stale specifications", async () => {
+    const f = setup({ data: { items: [item("panel", { characteristics: "CURRENT-SPEC" })] } });
+    await f.ui.renderBuyer(f.surface); await click(f, "product", "panel"); input(f, { bpProductQty: "panel" }, "3");
+    f.data.items[0].availableQty = 1;
+    assert.equal(await f.ui.refreshBuyer(), true);
+    await submit(f, "product-add"); assert.match(f.surface.innerHTML, /перевищує доступний залишок/);
+    await tab(f, "cart"); assert.match(f.surface.innerHTML, /Кошик порожній/);
+    await click(f, "product", "panel"); f.data.items = []; assert.equal(await f.ui.refreshBuyer(), true);
+    assert.doesNotMatch(f.surface.innerHTML, /CURRENT-SPEC/);
+    await submit(f, "product-add"); assert.equal(f.calls.submit.length, 0);
+  });
+
+  await check("Product details and selection never survive a change of buyer identity", async () => {
+    const f = setup({ data: { items: [item("panel", { characteristics: "SECRET-OLD-SPEC" })] } });
+    await f.ui.renderBuyer(f.surface); await click(f, "product", "panel"); assert.match(f.surface.innerHTML, /SECRET-OLD-SPEC/);
+    f.context.userId = "user-b"; f.context.buyerId = "buyer-b"; f.context.accounts = [account("buyer-b")];
+    f.data.items = [item("new", { name: "Новий каталог", characteristics: "NEW-SPEC" })];
+    await f.ui.renderBuyer(f.surface);
+    assert.doesNotMatch(f.surface.innerHTML, /SECRET-OLD-SPEC|data-bp-product-qty|data-bp-form="product-add"/);
+    await tab(f, "cart"); assert.match(f.surface.innerHTML, /Кошик порожній/);
   });
 
   return { passed: checks.length, checks };

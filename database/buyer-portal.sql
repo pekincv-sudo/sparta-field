@@ -313,6 +313,9 @@ begin
   return jsonb_build_object('buyer',public.sparta_buyer_account_json(p_buyer_id),'items',coalesce((select jsonb_agg(
     jsonb_build_object('id',i->>'id','name',i->>'name','sku',coalesce(i->>'sku',''),'category',coalesce(i->>'category','Інше'),
       'brand',coalesce(i->>'brand',''),'model',coalesce(i->>'model',''),'unit',i->>'unit','currency',coalesce(i->>'currency','UAH'),
+      'characteristics',coalesce(i->>'characteristics',''),
+      'powerW',i->'powerW','powerKw',i->'powerKw','capacityKwh',i->'capacityKwh',
+      'voltageV',i->'voltageV','phases',i->'phases','crossSectionMm2',i->'crossSectionMm2',
       'price',public.sparta_buyer_price(i,account.price_type),
       'availableQty',public.sparta_buyer_available(account.company_id,state,i->>'id')) order by i->>'category',i->>'name',i->>'id')
     from jsonb_array_elements(state->'items') i where public.sparta_buyer_stock_item(i)),'[]'::jsonb));

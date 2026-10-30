@@ -19,7 +19,8 @@ async function run(PGlite, root = path.resolve(__dirname, ".."), base = process.
   const uuid = () => crypto.randomUUID();
   const clone = value => JSON.parse(JSON.stringify(value));
   const checked = name => checks.push(name);
-  const migration = path.resolve(__dirname, "../database/buyer-portal.sql");
+  const migration = path.join(root, "database/buyer-portal.sql");
+  const detailsUpgrade = path.join(root, "database/buyer-catalog-details-build46.sql");
   const rpc = async (name, args = []) => (await db.query(`select public.${name}(${args.map((_, index) => "$" + (index + 1)).join(",")}) as data`, args)).rows[0]?.data;
   const login = async (name, databaseRole = "authenticated") => {
     await db.exec("reset role");
@@ -64,8 +65,21 @@ async function run(PGlite, root = path.resolve(__dirname, ".."), base = process.
     checked("Migration compiles and reapplies after the complete existing production migration chain");
 
     phase = "seed isolated inventory";
+    const publicSpecs = {
+      characteristics: "Public product characteristics sentinel",
+      powerW: 450, powerKw: 12.5, capacityKwh: 10.24,
+      voltageV: 51.2, phases: 3, crossSectionMm2: 6,
+    };
     const items = [
-      { id: "panel", name: "Panel 450W", unit: "шт", qty: 6, cost: 80, retail: 999, meta: { currency: "USD", installerPrice: 150.25, brand: "Brand", model: "P450", supplier: "PRIVATE-SUPPLIER", extraCost: 0, deliveryCost: 0 } },
+      { id: "panel", name: "Panel 450W", unit: "шт", qty: 6, cost: 80, retail: 999, meta: {
+        currency: "USD", installerPrice: 150.25, wholesalePrice: 120,
+        brand: "Brand", model: "P450", ...publicSpecs,
+        supplier: "PRIVATE-SUPPLIER", location: "PRIVATE-LOCATION",
+        serialNumber: "PRIVATE-SERIAL", serialNumbers: ["PRIVATE-SERIAL-2"],
+        barcode: "PRIVATE-BARCODE", internalNotes: "PRIVATE-NOTES",
+        technical: { internal: "PRIVATE-NESTED-TECHNICAL" },
+        extraCost: 0, deliveryCost: 0,
+      } },
       { id: "retail-only", name: "No installer price", unit: "шт", qty: 5, cost: 60, retail: 899, meta: { currency: "USD", supplier: "PRIVATE-SUPPLIER" } },
       { id: "zero-price", name: "Zero installer price", unit: "шт", qty: 5, cost: 60, retail: 899, meta: { currency: "USD", installerPrice: 0 } },
       { id: "cable", name: "Cable", unit: "м", qty: 12.5, cost: 1, retail: 20, meta: { currency: "USD", installerPrice: 2.35 } },
@@ -136,6 +150,44 @@ async function run(PGlite, root = path.resolve(__dirname, ".."), base = process.
     assert.equal(catalog.items.find(item => item.id === "zero-price").price, null);
     assert(!catalog.items.some(item => ["service", "foreign-product"].includes(item.id)));
     assert(!/PRIVATE-|purchasePrice|purchase_price|unitCost|supplier|retailPrice|salePrice/.test(JSON.stringify(catalog)));
+    const assertCatalogDetails = (result) => {
+      const product = result.items.find(item => item.id === "panel");
+      const allowedFields = ["id", "name", "sku", "category", "brand", "model", "unit", "currency", "price", "availableQty", ...Object.keys(publicSpecs)];
+      assert.deepEqual(Object.keys(product).sort(), allowedFields.sort(), "Product detail uses an explicit public field whitelist");
+      assert.deepEqual(Object.fromEntries(Object.keys(publicSpecs).map(field => [field, product[field]])), publicSpecs);
+      for (const field of Object.keys(publicSpecs).filter(field => field !== "characteristics")) {
+        assert.equal(typeof product[field], "number", `${field} retains its saved numeric value`);
+      }
+      const unfilled = result.items.find(item => item.id === "retail-only");
+      assert.equal(unfilled.characteristics, "");
+      for (const field of Object.keys(publicSpecs).filter(field => field !== "characteristics")) {
+        assert.equal(unfilled[field], null, `Missing ${field} is not invented or changed to zero`);
+      }
+      assert.doesNotMatch(JSON.stringify(result), /PRIVATE-|"(?:purchasePrice|purchase_price|unitCost|supplier|location|serialNumber|serialNumbers|barcode|internalNotes|technical|retailPrice|salePrice|installerPrice|wholesalePrice|deliveryCost|extraCost)"\s*:/);
+      assert.equal(product.price, 150.25, "The buyer still receives only the assigned tier price");
+    };
+    assertCatalogDetails(catalog);
+    await assert.rejects(rpc("sparta_buyer_catalog", [buyerB.id]), /buyer access/);
+    await assert.rejects(rpc("sparta_buyer_catalog", [buyerOther.id]), /buyer access/);
+    checked("Baseline catalog exposes the seven saved product specifications and numeric nulls through a private-data whitelist with own-buyer access");
+
+    phase = "product-detail upgrade reapplication and unchanged access boundaries";
+    for (let application = 0; application < 2; application += 1) {
+      await internal();
+      await db.exec(fs.readFileSync(detailsUpgrade, "utf8"));
+      await login("buyerA");
+      const upgradedCatalog = await rpc("sparta_buyer_catalog", [buyerA.id]);
+      assertCatalogDetails(upgradedCatalog);
+      assert.deepEqual(upgradedCatalog, catalog, "The standalone upgrade preserves the baseline RPC's data and assigned price");
+      await assert.rejects(rpc("sparta_buyer_catalog", [buyerB.id]), /buyer access/);
+      await assert.rejects(rpc("sparta_buyer_catalog", [buyerOther.id]), /buyer access/);
+      await login(null, "anon");
+      await assert.rejects(rpc("sparta_buyer_catalog", [buyerA.id]), /permission denied/);
+    }
+    await login("buyerA");
+    checked("Standalone product-detail upgrade applies twice and preserves real specifications, private-field exclusion and buyer/anonymous authorization");
+
+    phase = "safe legacy catalog and installer-only prices";
     await assert.rejects(submit(buyerA.id, [{ itemId: "retail-only", qty: 1 }], 899), /tier price/);
     await assert.rejects(submit(buyerA.id, [{ itemId: "zero-price", qty: 1 }], 0), /tier price/);
     await login("owner");
@@ -143,7 +195,9 @@ async function run(PGlite, root = path.resolve(__dirname, ".."), base = process.
     assert.equal(seededByStaff.state.items.find(item => item.id === "retail-only").installerPrice, 0);
     await staffWrite(seededByStaff.state, seededByStaff.revision);
     await login("buyerA");
-    assert.equal((await rpc("sparta_buyer_catalog", [buyerA.id])).items.find(item => item.id === "retail-only").price, null);
+    catalog = await rpc("sparta_buyer_catalog", [buyerA.id]);
+    assert.equal(catalog.items.find(item => item.id === "retail-only").price, null);
+    assertCatalogDetails(catalog);
     checked("Buyer catalog uses explicit installer prices without retail fallback, filters services and projects no costs/suppliers/foreign stock");
 
     phase = "raw RLS privacy and RPC boundaries";
