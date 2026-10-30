@@ -123,3 +123,7 @@ Validation: 424 JavaScript checks including 48 Excel core/real-XLSX/UI checks. B
 ## Mobile profile navigation — build 43
 
 The mobile bottom bar keeps five destinations (Головна, Об’єкти, Склад, CRM, Профіль) on one row, including narrow 320px screens. Authorized users reach Каса, Продажі and Команда і події through Профіль on mobile; desktop navigation stays in the sidebar. Додати користувача remains in the public owner/admin profile. Local workspaces do not invite online users.
+
+## Scrollable mobile navigation — build 44
+
+All role-permitted destinations remain in the mobile bottom bar. The single row scrolls horizontally on narrow screens and includes a scrollbar; buttons do not shrink below70px. Opening a section brings its active button into view without scrolling the page vertically. The bar accommodates the scrollbar and phone safe-area inset. Desktop navigation and access rules are unchanged.

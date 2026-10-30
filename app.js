@@ -2204,6 +2204,17 @@ function refreshTeamNavigation() {
   if (card) { card.querySelector("strong").textContent = renderRoleLabel(cloudState.memberRole); card.querySelector("small").textContent = cloudState.user?.email || "Потрібен вхід"; }
 }
 
+function revealActiveNavigation() {
+  const nav = document.querySelector(".nav");
+  if (!nav || !(nav.scrollWidth > nav.clientWidth)) return;
+  const active = nav.querySelector(".nav-item.active:not(.is-hidden)");
+  if (!active) return;
+  const rail = nav.getBoundingClientRect();
+  const item = active.getBoundingClientRect();
+  const delta = item.left < rail.left ? item.left - rail.left : item.right > rail.right ? item.right - rail.right : 0;
+  if (delta) nav.scrollBy({ left: delta, behavior: "auto" });
+}
+
 function showSection(sectionId) {
   if (window.SpartaBuyerCloud?.isBuyerReady()) { window.SpartaBuyerUI?.renderBuyer(document.querySelector("#buyerPortalView")); return; }
   if (sectionId === "sales") {
@@ -2221,6 +2232,7 @@ function showSection(sectionId) {
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.dataset.section === sectionId || (sectionId === "objectDetail" && item.dataset.section === "projects"));
   });
+  revealActiveNavigation();
   applyProjectRoleControls();
 }
 

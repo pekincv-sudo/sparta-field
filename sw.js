@@ -1,4 +1,4 @@
-const CACHE_NAME = "sparta-field-v43";
+const CACHE_NAME = "sparta-field-v44";
 const APP_SHELL = [
   "/",
   "/index.html",
