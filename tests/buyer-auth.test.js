@@ -97,7 +97,7 @@ module.exports = async function runBuyerAuthTests(directory = path.resolve(__dir
       renderRoleLabel: role => role || "", FormData: class {}, authenticateUser() {}, updateAccessMode() {}, render() {},
     });
     for (const name of ["renderHome", "renderProjectList", "renderDetail", "renderPassport", "renderCrmView", "renderWarehouseView", "renderMapView", "renderServiceView", "renderMonitoringView", "renderProfileView", "renderCrmNotification", "renderStats"]) context[name] = () => calls.push({ name });
-    const selected = new Set(["clearCompanyContext", "updateAccessMode", "handleCloudAuthChange", "applyCloudSession", "loadCompanyContext", "acceptPendingInvitation", "logoutCloudUser", "render", "showSection", "applyPortalMode", "refreshTeamNavigation"]);
+    const selected = new Set(["clearCompanyContext", "updateAccessMode", "handleCloudAuthChange", "applyCloudSession", "loadCompanyContext", "acceptPendingInvitation", "logoutCloudUser", "render", "showSection", "revealActiveNavigation", "applyPortalMode", "refreshTeamNavigation"]);
     for (const name of functions.keys()) if (/buyer|audience|staff.*dom|clear.*view/i.test(name)) selected.add(name);
     for (const name of selected) if (functions.has(name)) vm.runInContext(functions.get(name), context);
     vm.runInContext(buyer, context); vm.runInContext(auth, context);
