@@ -135,6 +135,55 @@ function runCashLedgerTests() {
     const second = payment({ id: "second", amountMinor: 1 });
     assert.throws(function () { Cash.totals([first, second]); });
   });
+  function sale(overrides = {}) {
+    return payment({ id: "sale-payment", projectId: null, projectTitle: "", sourceType: "sale", saleOrderId: "sale-1", saleOrderNumber: "SP-47-1", buyerId: "buyer-1", buyerName: "Покупець", category: "sale_payment", ...overrides });
+  }
+  check("legacy source inference and sale linkage never mix projects or unlinked sale payments", function () {
+    assert.equal(payment().sourceType, "project");
+    assert.equal(payment({ projectId: null, projectTitle: "", category: "other_income" }).sourceType, "general");
+    assert.equal(sale().sourceType, "sale");
+    assert.throws(() => sale({ projectId: "taras" }), /Напрям/);
+    assert.throws(() => sale({ saleOrderId: "" }), /Напрям/);
+    assert.throws(() => sale({ saleOrderNumber: "" }), /Номер замовлення/);
+    assert.throws(() => sale({ buyerName: "" }), /Ім’я покупця/);
+    assert.throws(() => payment({ category: "sale_payment" }), /прив’язана/);
+    assert.throws(() => payment({ buyerName: "Не прив’язаний покупець" }), /прив’язані/);
+  });
+  check("cash sources sum separately without mixing USD and UAH", function () {
+    const rows = [payment({ amount: "10" }), sale({ amount: "20" }), payment({ id: "general", projectId: null, projectTitle: "", category: "opening_balance", amount: "30" }), sale({ id: "usd-sale", currency: "USD", amount: "99" })];
+    const result = Cash.sourceTotals(rows, "UAH");
+    assert.equal(result.all.balanceMinor, 6000);
+    assert.equal(result.project.balanceMinor, 1000);
+    assert.equal(result.sale.balanceMinor, 2000);
+    assert.equal(result.general.balanceMinor, 3000);
+    assert.equal(Cash.sourceTotals(rows, "USD").sale.balanceMinor, 9900);
+    assert.throws(() => Cash.sourceTotals(rows), /окремо/);
+    assert.equal(Cash.projectTotals(rows, "taras", "UAH").clientPaidMinor, 1000);
+  });
+  check("sale refunds and reversals affect paid amounts while incidental costs stay distinct", function () {
+    const original = sale({ amount: "100" });
+    const refund = sale({ id: "refund-sale", amount: "25", direction: "expense", category: "sale_refund" });
+    const fee = sale({ id: "fee-sale", amount: "10", direction: "expense", category: "other_expense" });
+    const reverse = Cash.reversal([original, refund, fee], refund.id, { id: "reverse-sale", now, createdBy: "owner", purpose: "Повернення помилкове" });
+    assert.deepEqual(Cash.saleTotals([original, refund, fee], "sale-1", "UAH"), { paidMinor: 7500, expenseMinor: 1000 });
+    assert.deepEqual(Cash.saleTotals([original, refund, fee, reverse], "sale-1", "UAH"), { paidMinor: 10000, expenseMinor: 1000 });
+    assert.equal(reverse.saleOrderId, original.saleOrderId);
+    assert.equal(reverse.buyerName, original.buyerName);
+    assert.throws(() => Cash.validateLedger([refund, { ...reverse, saleOrderId: "different" }]), /Сторнування/);
+    assert.throws(() => Cash.validateLedger([refund, { ...reverse, buyerName: "Інший" }]), /Сторнування/);
+  });
+  check("sales are searchable and filterable by order and buyer; CSV carries the immutable linkage", function () {
+    const order = sale({ buyerName: "=Покупець" });
+    const rows = [payment(), order];
+    assert.deepEqual(Cash.filterEntries(rows, { sourceType: "sale", query: "SP-47-1" }).map((x) => x.id), [order.id]);
+    assert.deepEqual(Cash.filterEntries(rows, { saleOrderId: "sale-1", query: "ПОКУПЕЦЬ" }).map((x) => x.id), [order.id]);
+    assert.equal(Cash.filterEntries(rows, { sourceType: "general" }).length, 0);
+    const csv = Cash.exportCsv(rows);
+    assert(csv.includes('"Номер замовлення"'));
+    assert(csv.includes('"sale-1"'));
+    assert(csv.includes('"SP-47-1"'));
+    assert(csv.includes('"\'=Покупець"'));
+  });
   return { passed: checks };
 }
 

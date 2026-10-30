@@ -26,7 +26,7 @@ module.exports = function () {
   assert.equal(reversal.currency,"UAH");
   assert.equal(Cash.totals([old,reversal],"UAH").balanceMinor,0);
   assert.throws(() => Cash.validateLedger([old,{...reversal,currency:"USD"}]),/Сторнування/); passed++;
-  assert.throws(() => Cash.projectTotals([{...old,projectId:"p",projectTitle:"Station"}],"p","USD"),/Валюта/);
+  assert.throws(() => Cash.projectTotals([{...old,sourceType:"project",projectId:"p",projectTitle:"Station"}],"p","USD"),/Валюта/);
   assert.match(Cash.exportCsv([usd,old]),/"Валюта"/);
   assert.match(Cash.exportCsv([usd,old]),/"USD"/);
   assert.match(Cash.exportCsv([usd,old]),/"UAH"/); passed++;

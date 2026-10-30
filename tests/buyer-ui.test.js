@@ -31,7 +31,7 @@ async function runBuyerUITests(projectDirectory = path.resolve(__dirname, ".."))
   }
   async function settle() { for (let index = 0; index < 10; index += 1) await new Promise((resolve) => setImmediate(resolve)); }
   function setup(options = {}) {
-    const calls = { catalog: [], orders: [], submit: [], cancel: [], action: [], save: [], send: [], unlinked: 0, link: [], buyers: 0, salesOrders: 0, signOut: 0, password: 0, select: [] };
+    const calls = { catalog: [], orders: [], submit: [], cancel: [], action: [], save: [], send: [], unlinked: 0, link: [], buyers: 0, salesOrders: 0, salesFinance: 0, salePayment: [], acknowledged: [], signOut: 0, password: 0, select: [] };
     const context = { audience: "buyer", role: "", companyId: "company-a", buyerId: "buyer-a", accounts: [account()], userId: "user-a", companyName: "SPARTA", ...options.context };
     const data = { items: [item()], orders: [], buyers: [account()], documents: [], ...options.data };
     const hooks = {};
@@ -42,7 +42,7 @@ async function runBuyerUITests(projectDirectory = path.resolve(__dirname, ".."))
       async submitOrder(input) { calls.submit.push(clone(input)); if (hooks.submit) return hooks.submit(input); return { order: order({ total: input.expectedTotal, lines: [{ ...order().lines[0], qty: input.lines[0].qty, unitPrice: 12.5, lineTotal: input.expectedTotal }] }) }; },
       async cancelOrder(input) { calls.cancel.push(clone(input)); if (hooks.cancel) return hooks.cancel(input); return { order: order({ status: "cancelled" }) }; },
       async buyers() { calls.buyers += 1; if (hooks.buyers) return hooks.buyers(); return clone({ buyers: data.buyers }); },
-      async salesOrders() { calls.salesOrders += 1; return clone({ orders: data.orders }); },
+      async salesOrders() { calls.salesOrders += 1; if (hooks.salesOrders) return hooks.salesOrders(); return clone({ orders: data.orders }); },
       async saveBuyer(input) { calls.save.push(clone(input)); if (hooks.save) return hooks.save(input); return { buyer: account(input.id || "buyer-new"), invitation: { id: "invite-new", status: "pending" } }; },
       async orderAction(input) { calls.action.push(clone(input)); if (hooks.action) return hooks.action(input); return { order: order({ id: input.orderId, status: { confirm: "confirmed", ready: "ready", fulfil: "completed", cancel: "cancelled" }[input.action] }) }; },
       async sendAccess(invitation, email) { calls.send.push({ invitation: clone(invitation), email }); if (hooks.send) return hooks.send(); return { success: true }; },
@@ -52,7 +52,14 @@ async function runBuyerUITests(projectDirectory = path.resolve(__dirname, ".."))
       async signOut() { calls.signOut += 1; },
       changePassword() { calls.password += 1; },
     };
+    if (options.finance) cloud.salesFinance = async () => {
+      calls.salesFinance += 1;
+      if (hooks.finance) return hooks.finance();
+      return clone(data.finance || { orders: [], totals: [] });
+    };
     const scope = { window: { SpartaBuyerCloud: cloud, crypto }, Intl, Date, console };
+    if (options.cash) scope.window.SpartaCashBook = { async openForSale(order) { calls.salePayment.push(clone(order)); } };
+    if (options.notifications) scope.window.SpartaOrderNotifications = { acknowledge(ids) { calls.acknowledged.push(clone(ids)); } };
     vm.createContext(scope);
     vm.runInContext(source, scope, { filename: "buyer-ui.js" });
     const surface = new Surface();
@@ -593,6 +600,64 @@ async function runBuyerUITests(projectDirectory = path.resolve(__dirname, ".."))
     await tab(f, "cart"); assert.match(f.surface.innerHTML, /Кошик порожній/);
   });
 
+  await check("Sales finance is owner/admin-only and issue success does not create a payment", async () => {
+    for (const role of ["owner", "admin", "engineer", "warehouse"]) {
+      const f = setup({ finance: true, cash: true, context: { audience: "staff", role }, data: { orders: [order({ status: "ready" })], finance: { orders: [{ orderId: "order-a", currency: "USD", paidMinor: 500, outstandingMinor: 1100, costMinor: 1000, grossProfitMinor: 600, costKnown: true }] } } });
+      await f.ui.renderSales(f.surface);
+      assert.equal(f.calls.salesFinance, ["owner", "admin"].includes(role) ? 1 : 0);
+      assert.equal(Boolean(actionButton(f.surface.innerHTML, "sale-payment")), ["owner", "admin"].includes(role));
+      if (["owner", "admin", "warehouse"].includes(role)) {
+        await click(f, "order-action", "order-a", { bpOrderAction: "fulfil" });
+        assert.equal(f.calls.action.length, 1);
+        assert.equal(f.calls.salePayment.length, 0, "Physical issue never posts payment implicitly");
+      }
+    }
+  });
+  await check("Completed sale shows actual payments, debt and frozen gross profit, and payment button only opens the cash form", async () => {
+    const f = setup({ finance: true, cash: true, context: { audience: "staff", role: "owner" }, data: { orders: [order({ status: "completed" })], finance: { orders: [{ orderId: "order-a", currency: "USD", paidMinor: 500, outstandingMinor: 1100, costMinor: 1000, grossProfitMinor: 600, costKnown: true }] } } });
+    await f.ui.renderSales(f.surface); f.surface.dispatch("change", { bpField: "orderFilter" }, { value: "all" }); await settle();
+    assert.match(f.surface.innerHTML, /Отримано оплат[\s\S]*5,00 USD/);
+    assert.match(f.surface.innerHTML, /Борг покупця[\s\S]*11,00 USD/);
+    assert.match(f.surface.innerHTML, /Собівартість виданого[\s\S]*10,00 USD/);
+    assert.match(f.surface.innerHTML, /Валовий прибуток[\s\S]*6,00 USD/);
+    await click(f, "sale-payment", "order-a");
+    assert.equal(f.calls.salePayment.length, 1); assert.equal(f.calls.salePayment[0].id, "order-a");
+    assert.equal(f.calls.action.length, 0);
+  });
+  await check("Unknown historical cost never appears as zero cost or an invented margin", async () => {
+    const f = setup({ finance: true, context: { audience: "staff", role: "owner" }, data: { orders: [order({ status: "completed" })], finance: { orders: [{ orderId: "order-a", currency: "USD", paidMinor: 0, outstandingMinor: 1600, costMinor: null, grossProfitMinor: null, costKnown: false }] } } });
+    await f.ui.renderSales(f.surface); f.surface.dispatch("change", { bpField: "orderFilter" }, { value: "all" }); await settle();
+    assert.match(f.surface.innerHTML, /Прибуток не визначено/); assert.match(f.surface.innerHTML, /Не визначено/);
+    assert.doesNotMatch(f.surface.innerHTML, /Валовий прибуток<\/dt><dd>16,00/);
+  });
+  await check("Buyer catalog never requests or renders staff sales costs, even if provider supports finance", async () => {
+    const f = setup({ finance: true, cash: true, data: { orders: [order({ status: "completed" })], finance: { orders: [{ orderId: "order-a", currency: "USD", costMinor: 9320100, grossProfitMinor: 1234567, costKnown: true }] } } });
+    await f.ui.renderBuyer(f.surface); await tab(f, "history");
+    assert.equal(f.calls.salesFinance, 0); assert.doesNotMatch(f.surface.innerHTML, /Валовий прибуток|Собівартість|data-bp-action="sale-payment"|93.201/);
+  });
+  await check("Failed finance read leaves orders usable and shows failure without zeroing historical costs", async () => {
+    const f = setup({ finance: true, context: { audience: "staff", role: "owner" }, data: { orders: [order()] } });
+    f.hooks.finance = async () => { throw new Error("З’єднання недоступне"); };
+    await f.ui.renderSales(f.surface);
+    assert.match(f.surface.innerHTML, /Фінанси продажів не завантажено/);
+    assert(actionButton(f.surface.innerHTML, "order-action", "order-a")); assert.equal(f.calls.action.length, 0);
+  });
+  await check("Notification route opens pending orders and acknowledges only submitted orders actually rendered", async () => {
+    const f = setup({ notifications: true, context: { audience: "staff", role: "owner" }, data: { orders: [order(), order({ id: "issued", status: "completed" })] } });
+    await f.ui.renderSales(f.surface, { orderFilter: "completed" });
+    assert.equal(f.calls.acknowledged.length, 0, "Hidden pending orders are not marked read by a completed-only list");
+    await tab(f, "buyers");
+    await f.ui.renderSales(f.surface, { orderFilter: "submitted" });
+    assert.deepEqual(f.calls.acknowledged.at(-1), ["order-a"]);
+    assert.match(f.surface.innerHTML, /value="submitted" selected/);
+    assert.doesNotMatch(f.surface.innerHTML, /bp-status-completed/);
+  });
+  await check("A failed Sales load never acknowledges orders which the user did not see", async () => {
+    const f = setup({ notifications: true, context: { audience: "staff", role: "owner" } });
+    f.hooks.salesOrders = async () => { throw new Error("Недоступно"); };
+    await f.ui.renderSales(f.surface, { orderFilter: "submitted" });
+    assert.equal(f.calls.acknowledged.length, 0); assert.match(f.surface.innerHTML, /Недоступно/);
+  });
   return { passed: checks.length, checks };
 }
 
