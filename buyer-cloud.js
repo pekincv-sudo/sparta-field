@@ -13,11 +13,12 @@
   function getContext() {
     const state = cloud(), buyer = accounts.find((a) => a.id === buyerId);
     return { audience: isBuyerReady() ? "buyer" : "staff", role: state.memberRole || "", companyId: isBuyerReady() ? buyer.companyId : state.companyId,
-      buyerId: isBuyerReady() ? buyerId : "", accounts: copy(isBuyerReady() ? accounts : []), userId: state.user?.id || "", companyName: isBuyerReady() ? buyer.companyName : "SPARTA Power", ready: isBuyerReady() || Boolean(state.ready), local: local() };
+      buyerId: isBuyerReady() ? buyerId : "", accounts: copy(isBuyerReady() ? accounts : []), userId: state.user?.id || "", companyName: isBuyerReady() ? buyer.companyName : "SPARTA Power", ready: !state.sessionLoading && (isBuyerReady() || Boolean(state.ready)), local: local() };
   }
   function requestContext(kind = "either") {
     const state = cloud(), context = getContext();
     if (local()) throw fail("Кабінет покупця працює з публічною базою. Відкрийте публічну версію застосунку.", "LOCAL_ONLY");
+    if (state.sessionLoading) throw fail("Триває перевірка входу. Дочекайтеся завершення завантаження.", "AUTH_REQUIRED");
     if (!state.client || !state.user?.id) throw fail("Увійдіть у власний акаунт.", "AUTH_REQUIRED");
     if (kind === "staff" && (!state.ready || !staffRoles.includes(state.memberRole))) throw fail("Розділ продажів доступний працівникам компанії.", "42501");
     if (kind === "buyer" && !isBuyerReady()) throw fail("Доступ покупця не підтверджено.", "42501");
