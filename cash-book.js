@@ -26,7 +26,7 @@
   const amount = (minor, currency = "USD") => core.formatAmount(minor, currency);
   const currencyOf = (item) => item?.currency || "UAH";
   const currencyOptions = (selected = "USD") => ["USD", "UAH"].map((code) => `<option value="${code}" ${code === selected ? "selected" : ""}>${code === "USD" ? "USD — Долар США" : "UAH — Гривня"}</option>`).join("");
-  const allowed = () => Boolean((window.SPARTA_LOCAL_WORKSPACE?.enabled || cloudState.ready) && ["owner", "admin"].includes(cloudState.memberRole));
+  const allowed = () => Boolean((window.SPARTA_LOCAL_WORKSPACE?.enabled || cloudState.ready && !cloudState.sessionLoading) && ["owner", "admin"].includes(cloudState.memberRole));
   const visible = () => allowed() && portalMode !== "client";
   const storageKey = (id) => `solarObjectManager.cash.v1.${id}`;
   const dateLabel = (value) => new Date(value).toLocaleString("uk-UA", { timeZone: "Europe/Kyiv", dateStyle: "short", timeStyle: "short" });
