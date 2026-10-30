@@ -342,6 +342,7 @@ const inviteForm = document.querySelector("#inviteForm");
 const inviteMessage = document.querySelector("#inviteMessage");
 const invitationEmailTasks = new Map();
 let invitationFormBusy = false;
+let passwordFormBusy = false;
 const passwordDialog = document.querySelector("#passwordDialog");
 const passwordForm = document.querySelector("#passwordForm");
 const passwordMessage = document.querySelector("#passwordMessage");
@@ -5503,7 +5504,7 @@ document.addEventListener("click", (event) => {
       return;
     }
     passwordForm.reset();
-    passwordMessage.textContent = "Пароль має містити щонайменше 8 символів.";
+    passwordMessage.textContent = "Новий пароль має містити щонайменше 8 символів і відрізнятися від чинного.";
     passwordDialog.showModal();
   }
 
@@ -6968,7 +6969,7 @@ async function changeCurrentUserPassword(password, passwordConfirm) {
   passwordMessage.textContent = "Оновлюю пароль...";
   const { error } = await cloudState.client.auth.updateUser({ password: nextPassword });
   if (error) {
-    passwordMessage.textContent = `Помилка зміни пароля: ${error.message}`;
+    passwordMessage.textContent = window.SpartaAuthFlow?.authError(error) || "Не вдалося змінити пароль. Спробуйте ще раз.";
     return false;
   }
 
@@ -7034,14 +7035,25 @@ async function submitInvitationForm(event) {
 }
 inviteForm.addEventListener("submit", submitInvitationForm);
 
-passwordForm.addEventListener("submit", async (event) => {
+async function submitPasswordForm(event) {
   event.preventDefault();
+  if (passwordFormBusy || !passwordForm.reportValidity()) return;
   const data = new FormData(passwordForm);
-  const success = await changeCurrentUserPassword(data.get("password"), data.get("passwordConfirm"));
-  if (success) {
-    passwordDialog.close();
+  const submit = passwordForm.querySelector("button[type='submit']");
+  const label = submit?.textContent;
+  passwordFormBusy = true;
+  if (submit) { submit.disabled = true; submit.textContent = "Зберігаю…"; }
+  try {
+    const success = await changeCurrentUserPassword(data.get("password"), data.get("passwordConfirm"));
+    if (success) { passwordForm.reset(); passwordDialog.close(); }
+  } catch (error) {
+    passwordMessage.textContent = window.SpartaAuthFlow?.authError(error) || "Не вдалося зберегти пароль. Перевірте з’єднання та повторіть спробу.";
+  } finally {
+    passwordFormBusy = false;
+    if (submit) { submit.disabled = false; submit.textContent = label; }
   }
-});
+}
+passwordForm.addEventListener("submit", submitPasswordForm);
 
 crmTaskForm.addEventListener("submit", (event) => {
   event.preventDefault();

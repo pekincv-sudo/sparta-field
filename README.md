@@ -127,3 +127,7 @@ The mobile bottom bar keeps five destinations (Головна, Об’єкти, 
 ## Scrollable mobile navigation — build 44
 
 All role-permitted destinations remain in the mobile bottom bar. The single row scrolls horizontally on narrow screens and includes a scrollbar; buttons do not shrink below70px. Opening a section brings its active button into view without scrolling the page vertically. The bar accommodates the scrollbar and phone safe-area inset. Desktop navigation and access rules are unchanged.
+
+## Password update guidance — build 45
+
+Password setup/recovery explains that an existing account must choose a different new password. Supabase same_password errors are shown in Ukrainian and remain failures; recovery completion and dialog closure require a successful password update. Password submissions allow only one in-flight request, disable the submit button while saving and restore it after errors. A successful form clears password fields. No user credentials, authentication policy or access roles are changed by this release.
