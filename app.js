@@ -5194,6 +5194,19 @@ function renderMonitoringView() {
   `;
 }
 
+function profileWorkspaceLinks() {
+  if (portalMode === "client") return "";
+  const local = Boolean(window.SPARTA_LOCAL_WORKSPACE?.enabled);
+  const role = cloudState.memberRole;
+  const managesCompany = ["owner", "admin"].includes(role);
+  const links = [];
+  if ((local || cloudState.ready) && managesCompany) links.push(["cash", "Каса"]);
+  if (!local && cloudState.ready && ["owner", "admin", "engineer", "warehouse"].includes(role)) links.push(["sales", "Продажі"]);
+  if (!local && cloudState.ready && managesCompany) links.push(["team", "Команда і події"]);
+  if (!links.length) return "";
+  return `<div class="profile-menu profile-workspace-links" aria-label="Розділи компанії">${links.map(([section, label]) => `<button type="button" data-section="${section}">${label} <span>›</span></button>`).join("")}</div>`;
+}
+
 function renderProfileView() {
   if (!profileView) return;
   if (portalMode === "client") {
@@ -5201,7 +5214,7 @@ function renderProfileView() {
     return;
   }
   if (window.SPARTA_LOCAL_WORKSPACE?.enabled) {
-    profileView.innerHTML = `<section class="profile-panel"><div class="profile-card"><img class="profile-avatar" src="./assets/sparta-logo.jpeg" alt="SPARTA power" /><div><h2>SPARTA power</h2><span>Локальна версія</span><small>Власник · цей комп’ютер</small></div></div><article class="client-info-card"><h3>Локальна база</h3><p>${escapeAttribute(cloudState.message)}</p><p class="calculation-note">Об’єкти, склад, каса та вкладення зберігаються в цьому браузері. Можна вносити власних клієнтів, товари, початкові залишки й операції. Спільна онлайн-база налаштовується окремо.</p></article>${window.SpartaWorkspaceMaintenance?.panelMarkup() || ""}</section>`;
+    profileView.innerHTML = `<section class="profile-panel"><div class="profile-card"><img class="profile-avatar" src="./assets/sparta-logo.jpeg" alt="SPARTA power" /><div><h2>SPARTA power</h2><span>Локальна версія</span><small>Власник · цей комп’ютер</small></div></div><article class="client-info-card"><h3>Локальна база</h3><p>${escapeAttribute(cloudState.message)}</p><p class="calculation-note">Об’єкти, склад, каса та вкладення зберігаються в цьому браузері. Можна вносити власних клієнтів, товари, початкові залишки й операції. Спільна онлайн-база налаштовується окремо.</p></article>${profileWorkspaceLinks()}${window.SpartaWorkspaceMaintenance?.panelMarkup() || ""}</section>`;
     return;
   }
   const email = cloudState.user?.email || "Користувач не увійшов";
@@ -5230,6 +5243,7 @@ function renderProfileView() {
         ${canManageUsers ? `<button id="inviteUserButton">Додати користувача <span>›</span></button>` : ""}
         ${cloudState.user ? `<button id="logoutButton">Вийти з акаунта <span>›</span></button>` : ""}
       </div>
+      ${profileWorkspaceLinks()}
       ${window.SpartaTeamAccess?.profileMarkup() || renderCompanyUsers()}
     </section>
   `;
@@ -5426,7 +5440,7 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  const navItem = event.target.closest(".nav-item");
+  const navItem = event.target.closest(".nav-item, .profile-workspace-links [data-section]");
   if (navItem) {
     showSection(navItem.dataset.section);
   }

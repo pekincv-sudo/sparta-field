@@ -119,3 +119,7 @@ Imports show old/new quantities and changed field values before confirmation. Fi
 Only owner/admin/warehouse can import. The company/local scope is checked, edited rows must still match their export baseline, combined buyer/project reserves are protected, and serialized quantities require ordinary stock documents. All changes commit atomically through the existing warehouse transaction, with posted stocktake audit documents per currency. Content-based batch IDs prevent repeated application even after subsequent stock movements. Prices/snapshots in earlier orders or object issues, cash and historical documents remain unchanged. No SQL migration is required.
 
 Validation: 424 JavaScript checks including 48 Excel core/real-XLSX/UI checks. Browser QA used isolated localhost4180: export, new row, quantity12→15 and retail120→125, persistence after reload and repeated-file handling. Production QA exports and previews the unchanged live workbook without altering business data.
+
+## Mobile profile navigation — build 43
+
+The mobile bottom bar keeps five destinations (Головна, Об’єкти, Склад, CRM, Профіль) on one row, including narrow 320px screens. Authorized users reach Каса, Продажі and Команда і події through Профіль on mobile; desktop navigation stays in the sidebar. Додати користувача remains in the public owner/admin profile. Local workspaces do not invite online users.
