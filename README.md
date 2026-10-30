@@ -131,3 +131,7 @@ All role-permitted destinations remain in the mobile bottom bar. The single row 
 ## Password update guidance — build 45
 
 Password setup/recovery explains that an existing account must choose a different new password. Supabase same_password errors are shown in Ukrainian and remain failures; recovery completion and dialog closure require a successful password update. Password submissions allow only one in-flight request, disable the submit button while saving and restore it after errors. A successful form clears password fields. No user credentials, authentication policy or access roles are changed by this release.
+
+## Buyer product details and sticky cart — build 46
+
+Buyers open product photos or names to read saved public specifications, choose a quantity and add it to their cart. The compact cart stays at the top while scrolling and shows positions/total. Apply `database/buyer-catalog-details-build46.sql` before the frontend. This repeatable read-only RPC upgrade allowlists characteristics and six numeric technical fields; costs, suppliers, serial numbers and other price tiers remain private. Missing specifications are clearly unfilled. Existing order reservation/issue/payment rules remain unchanged; see [buyer catalog and stock issue](docs/BUYER-CATALOG-build46.md).
