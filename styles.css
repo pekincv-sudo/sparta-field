@@ -1765,6 +1765,24 @@ button.metric-card:hover,
   padding: 14px;
   margin-bottom: 16px;
   background: var(--panel-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Native selects must not size a form by their longest product name. */
+.inline-form > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.inline-form :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.inline-form select {
+  text-overflow: ellipsis;
 }
 
 .photo-form {
@@ -1790,6 +1808,30 @@ button.metric-card:hover,
 .commercial-offer-form,
 .commercial-offer-totals-form {
   margin-bottom: 14px;
+}
+
+.commercial-offer-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.commercial-offer-form > label:first-child,
+.commercial-offer-form > .wide-field {
+  grid-column: 1 / -1;
+}
+
+.commercial-offer-selected-name {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.commercial-offer-table td:first-child {
+  max-width: 360px;
+  overflow-wrap: anywhere;
 }
 
 .commercial-offer-table td span {
@@ -1892,6 +1934,7 @@ button.metric-card:hover,
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .table-wrap {
@@ -3127,6 +3170,32 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
 
+  .inline-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inline-form .wide-field {
+    grid-column: 1 / -1;
+  }
+
+  .inline-form :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+    font-size: 16px;
+  }
+
+  .inline-form button,
+  #projectDetail .section-actions button,
+  #projectDetail .proposal-actions button {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .inline-form > button,
+  .inline-form .form-submit-cell button {
+    width: 100%;
+  }
+
   .inverter-node::after,
   .pv-node::after {
     display: none;
@@ -3633,6 +3702,17 @@ dialog::backdrop {
 .workflow-details > summary, .cash-client-history > summary { cursor: pointer; font-weight: 650; line-height: 1.45; padding: 4px 0; }
 .workflow-details[open] > summary { margin-bottom: 16px; }
 .workflow-details .inline-form { margin-bottom: 0; }
+#projectDetail :is(.project-section-body, .stage-panel-section, .workflow-details, .table-wrap) { min-width: 0; max-width: 100%; }
+#projectDetail .object-line > div { min-width: 0; }
+#projectDetail :is(.equipment-card h3, .detail-head h2, .workflow-details > summary) { overflow-wrap: anywhere; }
+@media (min-width: 981px) and (max-width: 1279px) {
+  #projectDetail .inline-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  #projectDetail .project-section-body,
+  #projectDetail .workflow-details,
+  #projectDetail .inline-form { padding: 12px; }
+}
 .workflow-checklist { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; align-items: start; }
 .workflow-checklist .workflow-details { margin: 0; }
 .workflow-check-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; line-height: 1.4; }

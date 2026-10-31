@@ -2775,11 +2775,12 @@ function renderCommercialOfferStage(project) {
     <details class="workflow-details"><summary>Додати одну позицію зі своїми цінами</summary>
     <form class="inline-form commercial-offer-form" id="commercialOfferLineForm">
       <label>Позиція зі складу
-        <select name="warehouseItemId" id="commercialOfferItemSelect">
+        <select name="warehouseItemId" id="commercialOfferItemSelect" aria-describedby="commercialOfferSelectedName">
           ${offerItems.length
             ? offerItems.map((item) => `<option value="${escapeAttribute(item.id)}">${escapeAttribute(item.name)} / ${escapeAttribute(item.category)} / ${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)}</option>`).join("")
             : `<option value="">Немає обладнання у валюті об’єкта</option>`}
         </select>
+        <span class="commercial-offer-selected-name" id="commercialOfferSelectedName">${escapeAttribute(firstWarehouseItem.name || "")}</span>
       </label>
       <label>Кількість<input name="qty" type="number" min="0.01" step="0.01" value="1" required /></label>
       <label>Ціна закупки, ${project.currency || "UAH"}<input name="purchasePrice" type="number" min="0" step="0.01" value="${escapeAttribute(warehouseUnitCost(firstWarehouseItem))}" /></label>
@@ -6388,6 +6389,8 @@ function fillCommercialOfferPrices(formElement) {
   if (!formElement) return;
   const item = warehouseItemById(formElement.elements.warehouseItemId?.value);
   if (!item) return;
+  const selectedName = formElement.querySelector("#commercialOfferSelectedName");
+  if (selectedName) selectedName.textContent = item.name || "";
   formElement.elements.purchasePrice.value = Number(warehouseUnitCost(item) || 0);
   formElement.elements.salePrice.value = Number(item.retailPrice || item.installerPrice || item.salePrice || 0);
 }
