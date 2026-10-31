@@ -52,6 +52,19 @@ async function runWarehouseIntegrationTests(projectDirectory = path.resolve(__di
   };
 
   ui.bootstrap();
+  check("Issuing identically named products preserves their warehouse IDs and actual usage", () => {
+    const inputState = { ...hooks.snapshot(), projects: [{ id: "a", currency: "UAH", status: "in_progress", materials: [
+      { warehouseItemId: "another-product", currency: "UAH", name: item.name, sku: item.sku, plannedQty: 5, issuedQty: 5, actualQty: 4, purchasePriceSnapshot: 20, salePriceSnapshot: 30 },
+      { warehouseItemId: "panel", currency: "UAH", name: item.name, sku: item.sku, plannedQty: 2, issuedQty: 2, actualQty: 1, purchasePriceSnapshot: 100, salePriceSnapshot: 150 },
+    ] }] };
+    const untouched = JSON.stringify(inputState.projects[0].materials[0]);
+    const result = hooks.postMovement(inputState, editor("project", 1));
+    assert.equal(JSON.stringify(result.projects[0].materials[0]), untouched);
+    assert.equal(result.projects[0].materials[1].warehouseItemId, "panel");
+    assert.equal(result.projects[0].materials[1].issuedQty, 3);
+    assert.equal(result.projects[0].materials[1].actualQty, 1);
+    assert.equal(context.warehouseItems[0].qty, 10);
+  });
   check("Receipt form defaults round weighted prices without revaluing inventory", () => {
     const weighted = 1600 / 13;
     assert.equal(hooks.priceInput(weighted), 123.08);
