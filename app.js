@@ -262,6 +262,8 @@ if (window.spartaStorageWarning) {
 }
 
 function clearCompanyContext() {
+  window.SpartaProjectStockPicker?.reset();
+  window.SpartaProjectStockActions?.reset();
   window.SpartaSunGame?.reset();
   window.SpartaOrderNotifications?.stop();
   cloudContextRevision += 1;
@@ -1509,8 +1511,8 @@ function requireProjectRole(kind = "data") {
   return false;
 }
 
-const officeProjectControls = "#newProjectButton,#newProjectQuickButton,#editProjectInfoButton,#editTechnicalButton,#editStringsButton,#saveStringsEditButton,#editMaterialsButton,#saveMaterialsEditButton,#deleteProjectButton,#copyOfferToMaterialsButton,#projectStatusSelect,#projectForm,#projectInfoForm,#technicalForm,#materialForm,#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,#commercialOfferTotalsForm,.equipment-form,[data-delete-string-index],[data-delete-material-index],[data-delete-equipment-type],[data-delete-offer-line],[data-delete-expense-index]";
-const financeProjectControls = "#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,#commercialOfferTotalsForm,#copyOfferToMaterialsButton,[data-delete-offer-line],[data-delete-expense-index]";
+const officeProjectControls = "#newProjectButton,#newProjectQuickButton,#editProjectInfoButton,#editTechnicalButton,#editStringsButton,#saveStringsEditButton,#editMaterialsButton,#saveMaterialsEditButton,#deleteProjectButton,#copyOfferToMaterialsButton,#projectStatusSelect,#projectForm,#projectInfoForm,#technicalForm,#materialForm,#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,#commercialOfferTotalsForm,.equipment-form,[data-delete-string-index],[data-delete-material-index],[data-delete-equipment-type],[data-delete-offer-line],[data-delete-expense-index],[data-project-stock-picker]";
+const financeProjectControls = "#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,#commercialOfferTotalsForm,#copyOfferToMaterialsButton,[data-delete-offer-line],[data-delete-expense-index],[data-project-stock-picker='offer']";
 const fieldProjectControls = "[data-work-checklist-item],[data-checklist-action],#photoForm,#projectFileForm,[data-equipment-photo-id],[data-crm-task-photo],[data-delete-photo-index],[data-delete-file-index]";
 
 function applyProjectRoleControls() {
@@ -2143,10 +2145,11 @@ function addWarehouseItemToProjectMaterials(project, item, qty) {
   ensureProjectCollections(project);
   const itemSku = normalizeLookupValue(item.sku);
   const itemName = normalizeLookupValue(item.name);
-  const existingMaterial = project.materials.find((material) => {
+  const existingMaterial = project.materials.find((material) => String(material.warehouseItemId || "") === String(item.id)) || project.materials.find((material) => {
+    if (material.warehouseItemId) return false;
     const materialSku = normalizeLookupValue(material.sku);
     const materialName = normalizeLookupValue(material.name);
-    return String(material.warehouseItemId || "") === String(item.id) || (itemSku && materialSku === itemSku) || (itemName && materialName === itemName);
+    return (itemSku && materialSku === itemSku) || (itemName && materialName === itemName);
   });
 
   if (existingMaterial) {
@@ -2764,7 +2767,12 @@ function renderCommercialOfferStage(project) {
       <div class="metric-card"><span>Разом КП</span><strong>${money(totals.totalSale, project.currency || "UAH")}</strong></div>
     </div>
 
-    <details class="workflow-details"><summary>Додати обладнання до КП</summary>
+    <div class="project-stock-entry">
+      <div><h3>Обладнання для пропозиції</h3><p>Пошук за назвою, моделлю й артикулом, вільні залишки та кількість біля кожного товару.</p></div>
+      <button class="primary-button" type="button" data-project-stock-picker="offer" data-project-stock-id="${escapeAttribute(project.id)}">Обрати зі складу</button>
+    </div>
+    <p class="calculation-note">Додавання до КП формує пропозицію. Резерв і видача оформлюються окремо в матеріалах цього об’єкта.</p>
+    <details class="workflow-details"><summary>Додати одну позицію зі своїми цінами</summary>
     <form class="inline-form commercial-offer-form" id="commercialOfferLineForm">
       <label>Позиція зі складу
         <select name="warehouseItemId" id="commercialOfferItemSelect">
@@ -2945,8 +2953,8 @@ function copyCommercialOfferToMaterials() {
     plannedByItem.set(key, planned);
   });
   plannedByItem.forEach((item) => {
-    const existing = project.materials.find((material) =>
-      (item.warehouseItemId && String(material.warehouseItemId) === String(item.warehouseItemId)) || normalizeLookupValue(material.name) === normalizeLookupValue(item.name));
+    const existing = (item.warehouseItemId && project.materials.find((material) => String(material.warehouseItemId || "") === String(item.warehouseItemId))) || project.materials.find((material) =>
+      !material.warehouseItemId && normalizeLookupValue(material.name) === normalizeLookupValue(item.name));
     if (existing) {
       existing.plannedQty = Math.max(item.qty, Number(existing.issuedQty || 0));
       existing.warehouseItemId ||= item.warehouseItemId || "";
@@ -3117,10 +3125,10 @@ function renderTab(project, isValid, stringsTotal, expected, options = {}) {
 
   if (selectedTab === "materials") {
     return `
-      ${!window.SPARTA_LOCAL_WORKSPACE?.enabled ? `<p class="calculation-note">Тут редагується план. Видачу, повернення й використання обладнання проводьте документами у складі.</p>` : ""}
+      <p class="calculation-note">Обирайте обладнання, формуйте план, резервуйте й видавайте його зі складу прямо в об’єкті. Резерв і видача підтверджуються окремим складським документом.</p>
       <div class="section-actions">
+        <button class="primary-button" type="button" data-project-stock-picker="materials" data-project-stock-id="${escapeAttribute(project.id)}">Обрати обладнання зі складу</button>
         <button class="secondary-button" type="button" id="copyOfferToMaterialsButton">Взяти план із КП</button>
-        <button class="secondary-button quick-action" type="button" data-section="warehouse">Відкрити склад</button>
         ${
           materialsEditing
             ? `
@@ -5410,6 +5418,7 @@ function renderStats() {
 }
 
 function render() {
+  window.SpartaProjectStockPicker?.refreshAccess?.();
   window.SpartaOrderNotifications?.refreshAccess();
   if (window.SpartaBuyerCloud?.isBuyerReady()) {
     document.body.classList.add("buyer-audience");
@@ -5448,6 +5457,11 @@ document.addEventListener("toggle", (event) => {
 }, true);
 
 document.addEventListener("click", (event) => {
+  const stockPickerButton = event.target.closest("[data-project-stock-picker]");
+  if (stockPickerButton) {
+    window.SpartaProjectStockPicker?.open({ projectId: stockPickerButton.dataset.projectStockId, target: stockPickerButton.dataset.projectStockPicker });
+    return;
+  }
   if (event.target.closest("#solarUseLocationButton")) {
     useDeviceSolarLocation();
     return;

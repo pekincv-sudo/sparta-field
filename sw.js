@@ -1,4 +1,4 @@
-const CACHE_NAME = "sparta-field-v47a";
+const CACHE_NAME = "sparta-field-v48";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -29,6 +29,9 @@ const APP_SHELL = [
   "/inventory-import.js",
   "/inventory-import-ui.js",
   "/warehouse-ui.js",
+  "/project-stock-actions.js",
+  "/project-stock-picker.js",
+  "/project-stock-picker.css",
   "/warehouse-cloud.js",
   "/warehouse.css",
   "/supabase-config.js",

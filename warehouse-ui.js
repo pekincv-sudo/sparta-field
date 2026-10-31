@@ -192,10 +192,21 @@
     requireManage();
     if (!types[type]) throw new Error("Невідома складська операція.");
     if (!window.SPARTA_LOCAL_WORKSPACE?.enabled && !window.SpartaWarehouseCloud?.snapshot()) throw new Error("Спочатку завантажте хмарний склад.");
+    const project = options.projectId ? projects.find((entry) => String(entry.id) === String(options.projectId)) : null;
+    const item = options.itemId ? itemById(options.itemId) : null;
+    if (options.projectId && !project) throw new Error("Об’єкт не знайдено. Відкрийте його ще раз.");
+    if (options.itemId && !item) throw new Error("Товар більше не доступний. Оновіть залишки.");
+    if (project && item && currencyOf(project) !== currencyOf(item)) throw new Error("Валюта обладнання має збігатися з валютою об’єкта.");
+    if (project && ["project", "reserve"].includes(type) && isClosedProjectStatus(project.status)) throw new Error("Резерв і видача доступні лише для активних об’єктів.");
+    const qty = options.qty == null ? "" : core.quantity(options.qty, item?.unit || "шт", { allowZero: false });
     openOperation(type, options.itemId || "");
     ui.editor.projectId = options.projectId || "";
-    if (ui.editor.projectId) ui.editor.currency = currencyOf(projects.find((p) => String(p.id) === String(ui.editor.projectId)));
+    if (project) ui.editor.currency = currencyOf(project);
+    ui.editor.lines[0].qty = qty;
     renderEditor();
+  }
+  function movementAvailability(item, editor, state = snapshot()) {
+    return core.availableQty(item, state.reservations, editor.mode === "project" ? editor.projectId : undefined, state.orderReservations);
   }
   function field(label, name, value = "", type = "text", extra = "") {
     return `<label>${safe(label)}<input name="${safe(name)}" type="${type}" value="${safe(value)}" ${extra} /></label>`;
@@ -215,7 +226,7 @@
     const values = stockItems().filter((item) => currencyOf(item) === editor.currency);
     return `<div class="wh-line-table">${editor.lines.map((line, index) => {
       const item = itemById(line.itemId);
-      return `<div class="wh-line-row"><label class="wh-line-picker">Обладнання ${index + 1}<select name="item-${index}" data-wh-line="${index}" data-wh-line-field="itemId" required><option value="">Оберіть товар</option>${values.map((entry) => `<option value="${safe(entry.id)}" ${String(line.itemId) === String(entry.id) ? "selected" : ""}>${safe(productText(entry))}</option>`).join("")}</select><small class="wh-muted">${item ? `На складі: ${number(item.qty)} ${safe(item.unit)} · доступно: ${number(core.availableQty(item, snapshot().reservations, undefined, snapshot().orderReservations))}` : "Оберіть зі списку або знайдіть товар вище"}</small></label>${stocktake ? `<label>Фактично, ${safe(item?.unit || "од.")}<input data-wh-line="${index}" data-wh-line-field="countedQty" type="number" min="0" step="${["шт", "компл"].includes(item?.unit) ? "1" : "0.001"}" value="${safe(line.countedQty)}" required /><small class="wh-muted">Різниця: ${line.countedQty === "" ? "—" : number(Number(line.countedQty) - Number(item?.qty || 0))}</small></label>` : `<label>Кількість, ${safe(item?.unit || "од.")}<input data-wh-line="${index}" data-wh-line-field="qty" type="number" min="${["шт", "компл"].includes(item?.unit) ? "1" : "0.001"}" step="${["шт", "компл"].includes(item?.unit) ? "1" : "0.001"}" value="${safe(line.qty)}" required /></label>`}${receipt ? `<label>Закупівля / од., ${editor.currency}<input data-wh-line="${index}" data-wh-line-field="purchasePrice" type="number" min="0" step="0.01" value="${safe(line.purchasePrice)}" required /></label>` : editor.mode === "sale" ? `<label>Продаж / од., ${editor.currency}<input data-wh-line="${index}" data-wh-line-field="salePrice" type="number" min="0" step="0.01" value="${safe(line.salePrice || 0)}" /></label>` : ""}${editor.lines.length > 1 ? `<button type="button" class="wh-row-action" data-wh-remove-line="${index}" aria-label="Видалити рядок ${index + 1}">×</button>` : ""}${receipt ? `<details class="wh-line-extra"><summary>Доставка та серійні номери</summary><div class="wh-form-grid"><label>Доставка / од., ${editor.currency}<input data-wh-line="${index}" data-wh-line-field="deliveryCost" type="number" min="0" step="0.01" value="${safe(line.deliveryCost || "")}" /></label><label>Інші витрати / од., ${editor.currency}<input data-wh-line="${index}" data-wh-line-field="extraCost" type="number" min="0" step="0.01" value="${safe(line.extraCost || "")}" /></label><label class="full">Серійні номери — по одному в рядку<textarea data-wh-line="${index}" data-wh-line-field="serialNumbers" rows="2">${safe(Array.isArray(line.serialNumbers) ? line.serialNumbers.join("\n") : line.serialNumbers || "")}</textarea></label></div></details>` : ""}</div>`;
+      return `<div class="wh-line-row"><label class="wh-line-picker">Обладнання ${index + 1}<select name="item-${index}" data-wh-line="${index}" data-wh-line-field="itemId" required><option value="">Оберіть товар</option>${values.map((entry) => `<option value="${safe(entry.id)}" ${String(line.itemId) === String(entry.id) ? "selected" : ""}>${safe(productText(entry))}</option>`).join("")}</select><small class="wh-muted">${item ? `На складі: ${number(item.qty)} ${safe(item.unit)} · ${editor.mode === "project" ? "доступно об’єкту" : "вільно"}: ${number(movementAvailability(item, editor))}` : "Оберіть зі списку або знайдіть товар вище"}</small></label>${stocktake ? `<label>Фактично, ${safe(item?.unit || "од.")}<input data-wh-line="${index}" data-wh-line-field="countedQty" type="number" min="0" step="${["шт", "компл"].includes(item?.unit) ? "1" : "0.001"}" value="${safe(line.countedQty)}" required /><small class="wh-muted">Різниця: ${line.countedQty === "" ? "—" : number(Number(line.countedQty) - Number(item?.qty || 0))}</small></label>` : `<label>Кількість, ${safe(item?.unit || "од.")}<input data-wh-line="${index}" data-wh-line-field="qty" type="number" min="${["шт", "компл"].includes(item?.unit) ? "1" : "0.001"}" step="${["шт", "компл"].includes(item?.unit) ? "1" : "0.001"}" value="${safe(line.qty)}" required /></label>`}${receipt ? `<label>Закупівля / од., ${editor.currency}<input data-wh-line="${index}" data-wh-line-field="purchasePrice" type="number" min="0" step="0.01" value="${safe(line.purchasePrice)}" required /></label>` : editor.mode === "sale" ? `<label>Продаж / од., ${editor.currency}<input data-wh-line="${index}" data-wh-line-field="salePrice" type="number" min="0" step="0.01" value="${safe(line.salePrice || 0)}" /></label>` : ""}${editor.lines.length > 1 ? `<button type="button" class="wh-row-action" data-wh-remove-line="${index}" aria-label="Видалити рядок ${index + 1}">×</button>` : ""}${receipt ? `<details class="wh-line-extra"><summary>Доставка та серійні номери</summary><div class="wh-form-grid"><label>Доставка / од., ${editor.currency}<input data-wh-line="${index}" data-wh-line-field="deliveryCost" type="number" min="0" step="0.01" value="${safe(line.deliveryCost || "")}" /></label><label>Інші витрати / од., ${editor.currency}<input data-wh-line="${index}" data-wh-line-field="extraCost" type="number" min="0" step="0.01" value="${safe(line.extraCost || "")}" /></label><label class="full">Серійні номери — по одному в рядку<textarea data-wh-line="${index}" data-wh-line-field="serialNumbers" rows="2">${safe(Array.isArray(line.serialNumbers) ? line.serialNumbers.join("\n") : line.serialNumbers || "")}</textarea></label></div></details>` : ""}</div>`;
     }).join("")}</div>`;
   }
   function renderOperationEditor() {
@@ -304,7 +315,7 @@
       if (qty > available) throw new Error(`Доступно ${number(available)} ${item.unit}. Інше обладнання зарезервоване або відсутнє.`);
       item.qty = Math.round((Number(item.qty) - qty) * 1000) / 1000;
       if (project && type === "project") {
-        const existing = (project.materials || []).find((entry) => String(entry.warehouseItemId) === String(item.id) || (item.sku && entry.sku === item.sku) || entry.name === item.name);
+        const existing = (project.materials || []).find((entry) => String(entry.warehouseItemId || "") === String(item.id)) || (project.materials || []).find((entry) => !entry.warehouseItemId && ((item.sku && entry.sku === item.sku) || entry.name === item.name));
         const previousActual = Number(existing?.actualQty || 0);
         addWarehouseItemToProjectMaterials(project, item, qty);
         const material = project.materials.find((entry) => String(entry.warehouseItemId) === String(item.id));
@@ -382,6 +393,18 @@
       render();
       if (ui.editor) renderEditor(); else dialog().close();
       renderHome();
+      if (editor.projectId && typeof selectedProject === "function" && String(selectedProject()?.id) === String(editor.projectId)) {
+        if (typeof renderDetail === "function") renderDetail();
+        if (typeof applyProjectRoleControls === "function") applyProjectRoleControls();
+        const detail = document.querySelector("#projectDetail");
+        if (detail) {
+          const notice = document.createElement("p");
+          notice.className = "calculation-note";
+          notice.setAttribute("role", "status");
+          notice.textContent = ui.notice;
+          detail.prepend(notice);
+        }
+      }
     } catch (error) {
       const message = document.querySelector("#whFormError");
       if (message) { message.hidden = false; message.textContent = error.message; message.scrollIntoView({ block: "nearest" }); }
