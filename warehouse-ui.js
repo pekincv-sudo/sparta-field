@@ -315,7 +315,9 @@
       if (qty > available) throw new Error(`Доступно ${number(available)} ${item.unit}. Інше обладнання зарезервоване або відсутнє.`);
       item.qty = Math.round((Number(item.qty) - qty) * 1000) / 1000;
       if (project && type === "project") {
-        const existing = (project.materials || []).find((entry) => String(entry.warehouseItemId || "") === String(item.id)) || (project.materials || []).find((entry) => !entry.warehouseItemId && ((item.sku && entry.sku === item.sku) || entry.name === item.name));
+        const compatible = (entry) => (entry.currency || project.currency || "UAH") === currencyOf(item)
+          && core.normalizeText(entry.unit || "шт") === core.normalizeText(item.unit || "шт");
+        const existing = (project.materials || []).find((entry) => String(entry.warehouseItemId || "") === String(item.id)) || (project.materials || []).find((entry) => !entry.warehouseItemId && compatible(entry) && ((item.sku && entry.sku === item.sku) || entry.name === item.name));
         const previousActual = Number(existing?.actualQty || 0);
         addWarehouseItemToProjectMaterials(project, item, qty);
         const material = project.materials.find((entry) => String(entry.warehouseItemId) === String(item.id));

@@ -2,6 +2,8 @@
 
 This folder is the clean static web app for deployment.
 
+Build50 makes commercial proposals independent preliminary documents: general nomenclature selection ignores stock levels, quote prices and quantities are editable and snapshotted, and quote edits leave contracts, cash, payroll and stock untouched. Cross-currency catalog references require an explicit quote-currency price; no automatic FX occurs. See [manager instructions](docs/COMMERCIAL-OFFER-build50.md). No SQL migration is required.
+
 Build47 adds an explicit sales cash source alongside project and general cash, and an owner/admin sales gross-profit report based on immutable issue-document costs. Posting or issuing an order never fabricates a payment. Apply `database/sales-cash-build47.sql` after existing cash, team and buyer migrations before publishing this frontend. In-app order notices poll while the app is open and acknowledge only orders actually shown. See `docs/SALES-CASH-build47.md`.
 
 ## Local development

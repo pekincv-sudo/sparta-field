@@ -1511,8 +1511,8 @@ function requireProjectRole(kind = "data") {
   return false;
 }
 
-const officeProjectControls = "#newProjectButton,#newProjectQuickButton,#editProjectInfoButton,#editTechnicalButton,#editStringsButton,#saveStringsEditButton,#editMaterialsButton,#saveMaterialsEditButton,#deleteProjectButton,#copyOfferToMaterialsButton,#projectStatusSelect,#projectForm,#projectInfoForm,#technicalForm,#materialForm,#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,#commercialOfferTotalsForm,.equipment-form,[data-delete-string-index],[data-delete-material-index],[data-delete-equipment-type],[data-delete-offer-line],[data-delete-expense-index],[data-project-stock-picker]";
-const financeProjectControls = "#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,#commercialOfferTotalsForm,#copyOfferToMaterialsButton,[data-delete-offer-line],[data-delete-expense-index],[data-project-stock-picker='offer']";
+const officeProjectControls = "#newProjectButton,#newProjectQuickButton,#editProjectInfoButton,#editTechnicalButton,#editStringsButton,#saveStringsEditButton,#editMaterialsButton,#saveMaterialsEditButton,#deleteProjectButton,#copyOfferToMaterialsButton,#projectStatusSelect,#projectForm,#projectInfoForm,#technicalForm,#materialForm,#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,[data-commercial-offer-edit],#commercialOfferTotalsForm,.equipment-form,[data-delete-string-index],[data-delete-material-index],[data-delete-equipment-type],[data-delete-offer-line],[data-delete-expense-index],[data-project-stock-picker]";
+const financeProjectControls = "#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,[data-commercial-offer-edit],#commercialOfferTotalsForm,#copyOfferToMaterialsButton,[data-delete-offer-line],[data-delete-expense-index],[data-project-stock-picker='offer']";
 const fieldProjectControls = "[data-work-checklist-item],[data-checklist-action],#photoForm,#projectFileForm,[data-equipment-photo-id],[data-crm-task-photo],[data-delete-photo-index],[data-delete-file-index]";
 
 function applyProjectRoleControls() {
@@ -1869,6 +1869,8 @@ function normalizeProjectFinance(finance = {}) {
     ...finance,
     contractPrice: Number(finance.contractPrice || finance.contract_price || 0),
     installationPrice: Number(finance.installationPrice || finance.installation_price || 0),
+    offerInstallationPrice: finance.offerInstallationPrice == null ? null : Number(finance.offerInstallationPrice),
+    offerUpdatedAt: finance.offerUpdatedAt || "",
     advancePaid: Number(finance.advancePaid || finance.advance_paid || 0),
     crewPayroll: Number(finance.crewPayroll || finance.crew_payroll || 0),
     equipment: Array.isArray(finance.equipment) ? finance.equipment.map((item) => ({
@@ -1881,6 +1883,11 @@ function normalizeProjectFinance(finance = {}) {
     offerLines: Array.isArray(finance.offerLines || finance.offer_lines) ? (finance.offerLines || finance.offer_lines).map((item) => ({
       id: item.id || `offer-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       warehouseItemId: item.warehouseItemId || item.warehouse_item_id || "",
+      catalogItemId: item.catalogItemId || item.warehouseItemId || item.warehouse_item_id || "",
+      sku: item.sku || "",
+      brand: item.brand || "",
+      model: item.model || "",
+      sourceCurrency: item.sourceCurrency || item.currency || null,
       currency: item.currency || null,
       category: item.category || "Інше",
       name: item.name || "",
@@ -1911,21 +1918,26 @@ function materialQuantity(material) {
   return Math.max(0, Number(material.actualQty ?? material.issuedQty ?? 0));
 }
 
-function warehouseItemForMaterial(material) {
+function warehouseItemForMaterial(material, projectCurrency) {
+  const expectedCurrency = material?.currency || projectCurrency || "";
+  const compatible = (item) => item && (!expectedCurrency || (item.currency || "UAH") === expectedCurrency)
+    && normalizeLookupValue(item.unit || "шт") === normalizeLookupValue(material?.unit || "шт");
   const linkedItem = material?.warehouseItemId ? warehouseItemById(material.warehouseItemId) : null;
-  if (linkedItem) return linkedItem;
+  if (material?.warehouseItemId) return compatible(linkedItem) ? linkedItem : null;
   const sku = normalizeLookupValue(material?.sku);
   if (sku) {
-    const bySku = warehouseItems.find((item) => normalizeLookupValue(item.sku) === sku);
+    const bySku = warehouseItems.find((item) => compatible(item) && normalizeLookupValue(item.sku) === sku);
     if (bySku) return bySku;
   }
   const materialName = normalizeLookupValue(material?.name);
   if (!materialName) return null;
   return warehouseItems.find((item) => {
+    if (!compatible(item)) return false;
     const itemName = normalizeLookupValue(item.name);
     const itemSku = normalizeLookupValue(item.sku);
     return itemName === materialName || itemSku === materialName;
   }) || warehouseItems.find((item) => {
+    if (!compatible(item)) return false;
     const itemName = normalizeLookupValue(item.name);
     return itemName.length > 4 && (itemName.includes(materialName) || materialName.includes(itemName));
   }) || null;
@@ -1933,7 +1945,7 @@ function warehouseItemForMaterial(material) {
 
 function projectMaterialsWithWarehousePrices(project) {
   return (project?.materials || []).map((material) => {
-    const foundItem = warehouseItemForMaterial(material);
+    const foundItem = warehouseItemForMaterial(material, project?.currency);
     const warehouseItem = foundItem && (foundItem.currency || "UAH") === (material.currency || project?.currency || "UAH") ? foundItem : null;
     const qty = Math.max(0, Number(material.issuedQty ?? material.actualQty ?? 0));
     return {
@@ -2145,15 +2157,18 @@ function addWarehouseItemToProjectMaterials(project, item, qty) {
   ensureProjectCollections(project);
   const itemSku = normalizeLookupValue(item.sku);
   const itemName = normalizeLookupValue(item.name);
+  const compatible = (material) => (material.currency || project.currency || "UAH") === (item.currency || "UAH")
+    && normalizeLookupValue(material.unit || "шт") === normalizeLookupValue(item.unit || "шт");
   const existingMaterial = project.materials.find((material) => String(material.warehouseItemId || "") === String(item.id)) || project.materials.find((material) => {
-    if (material.warehouseItemId) return false;
+    if (material.warehouseItemId || !compatible(material)) return false;
     const materialSku = normalizeLookupValue(material.sku);
     const materialName = normalizeLookupValue(material.name);
     return (itemSku && materialSku === itemSku) || (itemName && materialName === itemName);
   });
 
   if (existingMaterial) {
-    if ((existingMaterial.currency || "UAH") !== (project.currency || "UAH")) throw new Error("Матеріал має іншу валюту. Створіть окрему позицію.");
+    if ((existingMaterial.currency || project.currency || "UAH") !== (project.currency || "UAH")) throw new Error("Матеріал має іншу валюту. Створіть окрему позицію.");
+    if (normalizeLookupValue(existingMaterial.unit || "шт") !== normalizeLookupValue(item.unit || "шт")) throw new Error("Одиниця матеріалу не збігається з одиницею обладнання. Створіть окрему позицію.");
     existingMaterial.currency = project.currency || "UAH";
     const priorIssued = Number(existingMaterial.issuedQty ?? existingMaterial.actualQty ?? 0);
     const priorActual = Number(existingMaterial.actualQty ?? priorIssued);
@@ -2732,9 +2747,9 @@ function offerLineTotals(project) {
   const equipmentPurchase = finance.offerLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
   const equipmentSale = finance.offerLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
   const otherExpenses = finance.expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const installationPrice = Number(finance.installationPrice || 0);
+  const installationPrice = Number(finance.offerInstallationPrice ?? finance.installationPrice ?? 0);
   const totalSale = mismatched ? NaN : equipmentSale + installationPrice;
-  const totalCost = equipmentPurchase + otherExpenses + Number(finance.crewPayroll || 0);
+  const totalCost = equipmentPurchase;
   return {
     finance,
     equipmentPurchase,
@@ -2748,75 +2763,31 @@ function offerLineTotals(project) {
 }
 
 function renderCommercialOfferStage(project) {
-  if (!canManageProjectFinance()) return `<p class="calculation-note">Комерційну пропозицію та фінансові суми готує власник або адміністратор. Файли, які вам відкрито, доступні в документах об’єкта.</p>`;
+  if (!canManageProjectFinance()) return `<p class="calculation-note">Комерційну пропозицію готує власник або адміністратор. Доступні вам файли — у документах об’єкта.</p>`;
   const totals = offerLineTotals(project);
-  const offerItems = warehouseItems.filter((item) => (item.currency || "UAH") === (project.currency || "UAH"));
-  const firstWarehouseItem = offerItems[0] || {};
-  const firstSalePrice = Number(firstWarehouseItem.retailPrice || firstWarehouseItem.installerPrice || firstWarehouseItem.salePrice || 0);
+  const currency = project.currency || "UAH";
+  const fields = (item = {}) => `
+    <label class="wide-field">Назва обладнання або матеріалу<input name="name" maxlength="1000" value="${escapeAttribute(item.name || "")}" required /></label>
+    <label>Кількість<input name="qty" type="number" min="0.001" step="0.001" value="${escapeAttribute(item.qty ?? 1)}" required /></label>
+    <label>Одиниця<input name="unit" maxlength="20" value="${escapeAttribute(item.unit || "шт")}" required /></label>
+    <label>Ціна для клієнта, ${currency}<input name="salePrice" type="number" min="0" step="0.01" value="${escapeAttribute(item.salePrice ?? 0)}" required /></label>
+    <label class="wide-field">Коментар / характеристики<textarea name="note" rows="2" maxlength="4000">${escapeAttribute(item.note || "")}</textarea></label>
+    <label>Орієнтовна закупівля, ${currency}<input name="purchasePrice" type="number" min="0" step="0.01" value="${escapeAttribute(item.purchasePrice ?? 0)}" /><small>Внутрішня оцінка, у PDF не відображається</small></label>`;
   return `
-    <p class="calculation-note">Валюта комерційної пропозиції: ${project.currency || "UAH"}. Договір, матеріали та роботи в цій самій валюті.</p>
-    <div class="proposal-actions">
-      <button class="secondary-button" type="button" id="shareCommercialOfferButton">Надіслати</button>
-      <button class="primary-button" type="button" id="printCommercialOfferButton">Друк / PDF</button>
+    <div class="offer-intro"><span class="eyebrow">Попередня пропозиція · ${currency}</span><h3>Обладнання та вартість для клієнта</h3><p>Оберіть із загальної номенклатури або додайте власну позицію. Ціни орієнтовні та редагуються для цієї КП.</p><small>КП не резервує і не списує товар, не змінює договір та не створює оплат.</small></div>
+    <div class="proposal-actions"><button class="secondary-button" type="button" id="shareCommercialOfferButton">Поділитися</button><button class="primary-button" type="button" id="printCommercialOfferButton">Друк / PDF</button></div>
+    <div class="metric-grid compact finance-metrics offer-metrics">
+      <div class="metric-card"><span>Обладнання та матеріали</span><strong>${money(totals.equipmentSale, currency)}</strong></div>
+      <div class="metric-card"><span>Монтажні роботи</span><strong>${money(totals.installationPrice, currency)}</strong></div>
+      <div class="metric-card"><span>Разом КП</span><strong>${money(totals.totalSale, currency)}</strong></div>
     </div>
-
-    <div class="metric-grid compact finance-metrics">
-      <div class="metric-card"><span>Закупка обладнання</span><strong>${money(totals.equipmentPurchase, project.currency || "UAH")}</strong></div>
-      <div class="metric-card"><span>Продаж обладнання</span><strong>${money(totals.equipmentSale, project.currency || "UAH")}</strong></div>
-      <div class="metric-card"><span>Монтаж</span><strong>${money(totals.installationPrice, project.currency || "UAH")}</strong></div>
-      <div class="metric-card"><span>Разом КП</span><strong>${money(totals.totalSale, project.currency || "UAH")}</strong></div>
+    <div class="project-stock-entry"><div><h3>Загальна номенклатура</h3><p>Пошук за назвою, моделлю й артикулом. Доступні всі позиції, незалежно від залишків.</p></div><button class="primary-button" type="button" data-project-stock-picker="offer" data-project-stock-id="${escapeAttribute(project.id)}">Обрати з номенклатури</button></div>
+    <details class="workflow-details"><summary>Додати власну позицію</summary><form class="inline-form commercial-offer-form" id="commercialOfferLineForm">${fields()}<div class="form-submit-cell"><button class="primary-button">Додати в КП</button></div></form></details>
+    <div class="offer-lines">
+      ${totals.finance.offerLines.length ? totals.finance.offerLines.map((item,index) => `<article class="offer-line-card"><div class="offer-line-heading"><div><strong>${escapeAttribute(item.name)}</strong><span>${escapeAttribute([item.category,item.sku].filter(Boolean).join(" · "))}</span>${item.note ? `<p>${escapeAttribute(item.note)}</p>` : ""}</div><b>${money(Number(item.qty || 0)*Number(item.salePrice || 0),currency)}</b></div><p class="offer-line-amount">${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)} × ${money(item.salePrice,currency)}</p><details class="workflow-details"><summary>Змінити кількість, ціну або опис</summary><form class="inline-form commercial-offer-form" data-commercial-offer-edit><input type="hidden" name="lineId" value="${escapeAttribute(item.id)}" />${fields(item)}<div class="form-submit-cell"><button class="primary-button">Зберегти позицію</button></div></form></details><button class="table-button danger-text" type="button" data-delete-offer-line="${index}">Видалити позицію</button></article>`).join("") : `<p class="calculation-note">Позицій ще немає. Додайте обладнання з номенклатури або власну позицію.</p>`}
     </div>
-
-    <div class="project-stock-entry">
-      <div><h3>Обладнання для пропозиції</h3><p>Пошук за назвою, моделлю й артикулом, вільні залишки та кількість біля кожного товару.</p></div>
-      <button class="primary-button" type="button" data-project-stock-picker="offer" data-project-stock-id="${escapeAttribute(project.id)}">Обрати зі складу</button>
-    </div>
-    <p class="calculation-note">Додавання до КП формує пропозицію. Резерв і видача оформлюються окремо в матеріалах цього об’єкта.</p>
-    <details class="workflow-details"><summary>Додати одну позицію зі своїми цінами</summary>
-    <form class="inline-form commercial-offer-form" id="commercialOfferLineForm">
-      <label>Позиція зі складу
-        <select name="warehouseItemId" id="commercialOfferItemSelect" aria-describedby="commercialOfferSelectedName">
-          ${offerItems.length
-            ? offerItems.map((item) => `<option value="${escapeAttribute(item.id)}">${escapeAttribute(item.name)} / ${escapeAttribute(item.category)} / ${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)}</option>`).join("")
-            : `<option value="">Немає обладнання у валюті об’єкта</option>`}
-        </select>
-        <span class="commercial-offer-selected-name" id="commercialOfferSelectedName">${escapeAttribute(firstWarehouseItem.name || "")}</span>
-      </label>
-      <label>Кількість<input name="qty" type="number" min="0.01" step="0.01" value="1" required /></label>
-      <label>Ціна закупки, ${project.currency || "UAH"}<input name="purchasePrice" type="number" min="0" step="0.01" value="${escapeAttribute(warehouseUnitCost(firstWarehouseItem))}" /></label>
-      <label>Ціна продажу, ${project.currency || "UAH"}<input name="salePrice" type="number" min="0" step="0.01" value="${escapeAttribute(firstSalePrice)}" /></label>
-      <label class="wide-field">Коментар<input name="note" placeholder="Комплектація, уточнення для клієнта..." /></label>
-      <div class="form-submit-cell"><button class="primary-button">Додати в КП</button></div>
-    </form>
-    </details>
-    <details class="workflow-details"><summary>Змінити вартість монтажу та ЗП</summary>
-    <form class="inline-form commercial-offer-totals-form" id="commercialOfferTotalsForm">
-      <label>Вартість монтажу, ${project.currency || "UAH"}<input name="installationPrice" type="number" min="0" step="0.01" value="${escapeAttribute(totals.finance.installationPrice)}" /></label>
-      <label>ЗП бригади / собівартість робіт, ${project.currency || "UAH"}<input name="crewPayroll" type="number" min="0" step="0.01" value="${escapeAttribute(totals.finance.crewPayroll)}" /></label>
-      <div class="form-submit-cell"><button class="secondary-button">Зберегти суми</button></div>
-    </form>
-    </details>
-
-    <div class="table-wrap commercial-offer-table">
-      <table>
-        <thead><tr><th>Позиція</th><th>К-сть</th><th>Закупка</th><th>Продаж</th><th>Сума</th><th></th></tr></thead>
-        <tbody>
-          ${totals.finance.offerLines.length
-            ? totals.finance.offerLines.map((item, index) => `
-              <tr>
-                <td><strong>${escapeAttribute(item.name)}</strong><span>${escapeAttribute(item.category)}${item.note ? ` · ${escapeAttribute(item.note)}` : ""}</span></td>
-                <td>${escapeAttribute(item.qty)} ${escapeAttribute(item.unit)}</td>
-                <td>${money(item.purchasePrice, project.currency || "UAH")}</td>
-                <td>${money(item.salePrice, project.currency || "UAH")}</td>
-                <td>${money(Number(item.qty || 0) * Number(item.salePrice || 0), project.currency || "UAH")}</td>
-                <td><button class="table-button danger-text" type="button" data-delete-offer-line="${index}">Видалити</button></td>
-              </tr>
-            `).join("")
-            : `<tr><td colspan="6">Позиції КП ще не додано. Вибери обладнання або матеріали зі складу.</td></tr>`}
-        </tbody>
-      </table>
-    </div>
-
+    <details class="workflow-details"><summary>Вартість монтажних робіт</summary><form class="inline-form commercial-offer-totals-form" id="commercialOfferTotalsForm"><label>Орієнтовна вартість монтажу, ${currency}<input name="installationPrice" type="number" min="0" step="0.01" value="${escapeAttribute(totals.installationPrice)}" required /></label><div class="form-submit-cell"><button class="secondary-button">Зберегти в КП</button></div></form></details>
+    <p class="calculation-note">Ціни й описи зберігаються у цій пропозиції. Зміни номенклатури їх не перераховують. Договір, фактичні матеріали, видача та списання оформлюються окремо.</p>
   `;
 }
 
@@ -2826,7 +2797,7 @@ function commercialOfferDocumentMarkup(project) {
     <div class="passport-document commercial-offer-document">
       <header class="passport-title">
         <div>
-          <p class="eyebrow">Комерційна пропозиція</p>
+          <p class="eyebrow">Попередня комерційна пропозиція</p>
           <h2>${escapeAttribute(project.title)}</h2>
           <p>${escapeAttribute(project.address)}</p>
         </div>
@@ -2848,7 +2819,7 @@ function commercialOfferDocumentMarkup(project) {
           <div class="data-item"><span>Ім'я / компанія</span><strong>${escapeAttribute(project.clientName || "-")}</strong></div>
           <div class="data-item"><span>Телефон</span><strong>${escapeAttribute(project.clientPhone || "-")}</strong></div>
           <div class="data-item"><span>Об'єкт</span><strong>${escapeAttribute(project.objectType || "-")}</strong></div>
-          <div class="data-item"><span>Дата</span><strong>${new Date().toLocaleDateString("uk-UA")}</strong></div>
+          <div class="data-item"><span>Оновлено КП</span><strong>${totals.finance.offerUpdatedAt ? escapeAttribute(new Date(totals.finance.offerUpdatedAt).toLocaleDateString("uk-UA")) : "—"}</strong></div>
         </div>
       </section>
       <section class="passport-section">
@@ -2869,19 +2840,20 @@ function commercialOfferDocumentMarkup(project) {
                 `).join("")
                 : `<tr><td colspan="5">Позиції КП ще не додано.</td></tr>`}
               <tr><td colspan="4"><strong>Монтажні роботи</strong></td><td>${money(totals.installationPrice, project.currency || "UAH")}</td></tr>
-              <tr><td colspan="4"><strong>Разом до оплати</strong></td><td><strong>${money(totals.totalSale, project.currency || "UAH")}</strong></td></tr>
+              <tr><td colspan="4"><strong>Орієнтовна вартість</strong></td><td><strong>${money(totals.totalSale, project.currency || "UAH")}</strong></td></tr>
             </tbody>
           </table>
         </div>
       </section>
+      <p class="calculation-note">Попередня оцінка обладнання та робіт. Остаточні комплектація, ціна й умови постачання погоджуються в договорі. Пропозиція не є рахунком на оплату.</p>
       <footer class="passport-footer">
         <div>
           <span>Представник компанії</span>
           <strong>${companyContacts.name}</strong>
         </div>
         <div>
-          <span>Дійсна на дату</span>
-          <strong>${new Date().toLocaleDateString("uk-UA")}</strong>
+          <span>Валюта пропозиції</span>
+          <strong>${escapeAttribute(project.currency || "UAH")}</strong>
         </div>
       </footer>
     </div>
@@ -2940,29 +2912,40 @@ function copyCommercialOfferToMaterials() {
     alert("Спочатку додай позиції в КП.");
     return;
   }
-  if (finance.offerLines.some((item) => item.currency && item.currency !== (project.currency || "UAH")) ||
-      (project.materials || []).some((item) => item.currency && item.currency !== (project.currency || "UAH"))) {
+  const projectCurrency = project.currency || "UAH";
+  if (finance.offerLines.some((item) => item.currency && item.currency !== projectCurrency) ||
+      (project.materials || []).some((item) => item.currency && item.currency !== projectCurrency)) {
     alert("Валюта КП та матеріалів має збігатися з валютою об’єкта.");
     return;
   }
+  const unitKey = (value) => normalizeLookupValue(value || "шт");
   project.materials ||= [];
   const plannedByItem = new Map();
   finance.offerLines.forEach((item) => {
-    const key = item.warehouseItemId || normalizeLookupValue(item.name);
-    const planned = plannedByItem.get(key) || { ...item, qty: 0 };
+    const catalogItemId = item.catalogItemId || item.warehouseItemId || "";
+    const source = catalogItemId ? warehouseItemById(catalogItemId) : null;
+    const warehouseItemId = source && (source.currency || "UAH") === projectCurrency && unitKey(source.unit) === unitKey(item.unit) ? source.id : "";
+    const key = JSON.stringify([String(warehouseItemId || catalogItemId || normalizeLookupValue(item.name)), unitKey(item.unit)]);
+    const planned = plannedByItem.get(key) || { ...item, warehouseItemId, catalogItemId, sourceCurrency: item.sourceCurrency || source?.currency || item.currency || projectCurrency, catalogUnit: source?.unit || item.unit || "шт", qty: 0 };
     planned.qty += Number(item.qty || 0);
     plannedByItem.set(key, planned);
   });
   plannedByItem.forEach((item) => {
-    const existing = (item.warehouseItemId && project.materials.find((material) => String(material.warehouseItemId || "") === String(item.warehouseItemId))) || project.materials.find((material) =>
-      !material.warehouseItemId && normalizeLookupValue(material.name) === normalizeLookupValue(item.name));
+    const compatible = (material) => (material.currency || projectCurrency) === projectCurrency && unitKey(material.unit) === unitKey(item.unit);
+    const existing = (item.warehouseItemId && project.materials.find((material) => String(material.warehouseItemId || "") === String(item.warehouseItemId) && compatible(material))) || project.materials.find((material) =>
+      !material.warehouseItemId && compatible(material) && (item.catalogItemId && String(material.catalogItemId || "") === String(item.catalogItemId) || !material.catalogItemId && normalizeLookupValue(material.name) === normalizeLookupValue(item.name)));
     if (existing) {
-      existing.plannedQty = Math.max(item.qty, Number(existing.issuedQty || 0));
+      existing.plannedQty = Math.max(item.qty, Number(existing.issuedQty || 0), Number(existing.actualQty || 0));
       existing.warehouseItemId ||= item.warehouseItemId || "";
-      if (existing.purchasePriceSnapshot == null) existing.purchasePriceSnapshot = Number(item.purchasePrice || 0);
-      if (existing.salePriceSnapshot == null) existing.salePriceSnapshot = Number(item.salePrice || 0);
+      existing.catalogItemId ||= item.catalogItemId || "";
+      existing.sourceCurrency ||= item.sourceCurrency;
+      existing.catalogUnit ||= item.catalogUnit;
+      if (!Number(existing.issuedQty || 0) && !Number(existing.actualQty || 0)) {
+        if (existing.purchasePriceSnapshot == null) existing.purchasePriceSnapshot = Number(item.purchasePrice || 0);
+        if (existing.salePriceSnapshot == null) existing.salePriceSnapshot = Number(item.salePrice || 0);
+      }
     } else {
-      project.materials.push({ currency: project.currency || "UAH", name: item.name, category: item.category, warehouseItemId: item.warehouseItemId || "", plannedQty: item.qty, issuedQty: 0, actualQty: 0, purchasePriceSnapshot: Number(item.purchasePrice || 0), salePriceSnapshot: Number(item.salePrice || 0), unit: item.unit || "шт" });
+      project.materials.push({ currency: projectCurrency, name: item.name, category: item.category, warehouseItemId: item.warehouseItemId || "", catalogItemId: item.catalogItemId || "", sourceCurrency: item.sourceCurrency, catalogUnit: item.catalogUnit, plannedQty: item.qty, issuedQty: 0, actualQty: 0, purchasePriceSnapshot: Number(item.purchasePrice || 0), salePriceSnapshot: Number(item.salePrice || 0), unit: item.unit || "шт" });
     }
   });
   saveProjects();
@@ -5837,11 +5820,13 @@ document.addEventListener("click", (event) => {
 
   const deleteOfferLineButton = event.target.closest("[data-delete-offer-line]");
   if (deleteOfferLineButton) {
+    if (!requireProjectRole("finance")) return;
     const project = selectedProject();
     if (!project) return;
     project.finance = normalizeProjectFinance(project.finance);
     project.finance.offerLines.splice(Number(deleteOfferLineButton.dataset.deleteOfferLine), 1);
-    syncCommercialOfferContractPrice(project);
+    project.finance.offerInstallationPrice ??= project.finance.installationPrice;
+    project.finance.offerUpdatedAt = new Date().toISOString();
     saveProjects();
     render();
     showSection("objectDetail");
@@ -6121,7 +6106,7 @@ document.addEventListener("submit", (event) => {
     return;
   }
 
-  if (event.target.id === "commercialOfferLineForm") {
+  if (event.target.id === "commercialOfferLineForm" || event.target.matches("[data-commercial-offer-edit]")) {
     event.preventDefault();
     addCommercialOfferLine(event.target);
     return;
@@ -6322,7 +6307,7 @@ function addWarehouseMovement(formElement) {
     }
   }
   if (type === "return") {
-    const material = (targetProject.materials || []).find((entry) => warehouseItemForMaterial(entry)?.id === item.id);
+    const material = (targetProject.materials || []).find((entry) => warehouseItemForMaterial(entry, targetProject.currency)?.id === item.id);
     const issued = Number(material?.issuedQty ?? material?.actualQty ?? 0);
     if (!material || qty > issued) {
       alert(`На об'єкті доступно для повернення тільки ${issued} ${item.unit}.`);
@@ -6400,27 +6385,31 @@ function addCommercialOfferLine(formElement) {
   const project = selectedProject();
   if (!project) return;
   const data = new FormData(formElement);
-  const item = warehouseItemById(data.get("warehouseItemId"));
-  if (!item) return;
-
-  project.finance = normalizeProjectFinance(project.finance);
-  if ((project.currency || "UAH") !== (item.currency || "UAH")) { window.alert("Оберіть обладнання у валюті об’єкта: " + (project.currency || "UAH")); return; }
-  project.finance.offerLines.push({
-    currency: project.currency || "UAH",
-    id: `offer-${Date.now()}`,
-    warehouseItemId: item.id,
-    category: item.category || "Інше",
-    name: item.name || "",
-    qty: Number(data.get("qty") || 0),
-    unit: item.unit || "шт",
-    purchasePrice: Number(data.get("purchasePrice") || warehouseUnitCost(item) || 0),
-    salePrice: Number(data.get("salePrice") || item.retailPrice || item.installerPrice || item.salePrice || 0),
-    note: String(data.get("note") || item.characteristics || "").trim(),
-  });
-  syncCommercialOfferContractPrice(project);
+  const finance = normalizeProjectFinance(project.finance);
+  const lineId = String(data.get("lineId") || "");
+  const existing = lineId ? finance.offerLines.find(item => item.id === lineId) : null;
+  if (lineId && !existing) { alert("Позиція змінилася. Оновіть КП."); return; }
+  const name = String(data.get("name") || "").trim();
+  const unit = String(data.get("unit") || "").trim();
+  const qty = Number(data.get("qty"));
+  const salePrice = Number(data.get("salePrice"));
+  const purchasePrice = Number(data.get("purchasePrice"));
+  if (!name || name.length > 1000 || !unit || unit.length > 20 || !Number.isFinite(qty) || qty <= 0 ||
+      ![salePrice,purchasePrice].every(value => Number.isFinite(value) && value >= 0) ||
+      Math.abs(qty * 1000 - Math.round(qty * 1000)) > 0.00001 ||
+      ![salePrice,purchasePrice].every(value => Number.isSafeInteger(Math.round(value * qty * 100)))) {
+    alert("Перевірте назву, одиницю, кількість і ціни позиції."); return;
+  }
+  const line = { ...(existing || {}), id: existing?.id || `offer-${crypto.randomUUID()}`, currency: project.currency || "UAH",
+    name, unit, qty, salePrice, purchasePrice, category: existing?.category || "Власна позиція", note: String(data.get("note") || "").trim().slice(0,4000) };
+  if (existing) finance.offerLines[finance.offerLines.indexOf(existing)] = line;
+  else finance.offerLines.push(line);
+  finance.offerInstallationPrice ??= finance.installationPrice;
+  const nextTotal = offerLineTotals({ ...project, finance }).totalSale;
+  if (!Number.isFinite(nextTotal) || !Number.isSafeInteger(Math.round(nextTotal * 100))) { alert("Перевірте суму й валюту позицій КП."); return; }
+  finance.offerUpdatedAt = new Date().toISOString();
+  project.finance = finance;
   saveProjects();
-  formElement.reset();
-  fillCommercialOfferPrices(formElement);
   render();
   showSection("objectDetail");
 }
@@ -6429,13 +6418,12 @@ function saveCommercialOfferTotals(formElement) {
   if (!requireProjectRole("finance")) return;
   const project = selectedProject();
   if (!project) return;
-  const data = new FormData(formElement);
-  project.finance = normalizeProjectFinance({
-    ...project.finance,
-    installationPrice: Number(data.get("installationPrice") || 0),
-    crewPayroll: Number(data.get("crewPayroll") || 0),
-  });
-  syncCommercialOfferContractPrice(project);
+  const value = Number(new FormData(formElement).get("installationPrice"));
+  if (!Number.isFinite(value) || value < 0 || !Number.isSafeInteger(Math.round(value * 100))) { alert("Перевірте вартість монтажу."); return; }
+  const finance = normalizeProjectFinance({ ...project.finance, offerInstallationPrice: value, offerUpdatedAt: new Date().toISOString() });
+  const total = offerLineTotals({ ...project, finance }).totalSale;
+  if (!Number.isFinite(total) || !Number.isSafeInteger(Math.round(total * 100))) { alert("Перевірте суму й валюту позицій КП."); return; }
+  project.finance = finance;
   saveProjects();
   render();
   showSection("objectDetail");

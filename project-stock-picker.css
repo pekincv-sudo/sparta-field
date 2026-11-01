@@ -67,6 +67,11 @@
 .psp-card-controls { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: 11px; }
 .psp-card-controls > .psp-check { margin-bottom: 1px; color: var(--psp-ink); }
 .psp-quantity { flex: 0 1 140px; }
+.psp-offer-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.psp-offer-fields > label { display: block; min-width: 0; overflow-wrap: anywhere; }
+.psp-dialog .psp-reference-price { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--psp-border); color: var(--psp-muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.psp-reference-price strong { color: var(--psp-ink); font-variant-numeric: tabular-nums; }
+.psp-offer-card .psp-card-controls { margin-top: 4px; }
 .psp-dialog .psp-row-note, .psp-dialog .psp-currency-warning { margin-top: 10px; color: #e9cf81; font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
 .psp-empty { display: grid; place-items: center; gap: 7px; padding: 30px 18px; border: 1px dashed var(--psp-border); border-radius: 11px; color: var(--psp-muted); font-size: 12px; text-align: center; }
 .psp-empty strong { color: var(--psp-ink); }
@@ -99,6 +104,7 @@
   .psp-list { padding: 11px 12px 15px; }
   .psp-grid { grid-template-columns: minmax(0, 1fr); }
   .psp-card { padding: 12px; }
+  .psp-offer-fields input[type="text"] { font-size: 16px; }
   .psp-footer { display: block; max-height: 35%; padding: 10px 12px; }
   .psp-summary { gap: 3px 8px; }
   .psp-summary > b { font-size: 16px; }
