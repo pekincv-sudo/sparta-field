@@ -265,6 +265,7 @@ function clearCompanyContext() {
   window.SpartaProjectStockPicker?.reset();
   window.SpartaProjectDocuments?.reset();
   window.SpartaProjectStockActions?.reset();
+  window.SpartaInstallationUI?.reset();
   window.SpartaSunGame?.reset();
   window.SpartaOrderNotifications?.stop();
   cloudContextRevision += 1;
@@ -1512,8 +1513,8 @@ function requireProjectRole(kind = "data") {
   return false;
 }
 
-const officeProjectControls = "#newProjectButton,#newProjectQuickButton,#editProjectInfoButton,#editTechnicalButton,#editStringsButton,#saveStringsEditButton,#editMaterialsButton,#saveMaterialsEditButton,#deleteProjectButton,#copyOfferToMaterialsButton,#projectStatusSelect,#projectForm,#projectInfoForm,#technicalForm,#materialForm,#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,[data-commercial-offer-edit],#commercialOfferTotalsForm,.equipment-form,[data-delete-string-index],[data-delete-material-index],[data-delete-equipment-type],[data-delete-offer-line],[data-delete-expense-index],[data-project-stock-picker]";
-const financeProjectControls = "#projectFinanceForm,#projectExpenseForm,#commercialOfferLineForm,[data-commercial-offer-edit],#commercialOfferTotalsForm,#copyOfferToMaterialsButton,[data-delete-offer-line],[data-delete-expense-index],[data-project-stock-picker='offer'],[data-preview-project-document]";
+const officeProjectControls = "#newProjectButton,#newProjectQuickButton,#editProjectInfoButton,#editTechnicalButton,#editStringsButton,#saveStringsEditButton,#editMaterialsButton,#saveMaterialsEditButton,#deleteProjectButton,#copyOfferToMaterialsButton,#projectStatusSelect,#projectForm,#projectInfoForm,#technicalForm,#materialForm,#projectFinanceForm,#projectContractForm,#projectExpenseForm,#commercialOfferLineForm,[data-commercial-offer-edit],#commercialOfferTotalsForm,.equipment-form,[data-delete-string-index],[data-delete-material-index],[data-delete-equipment-type],[data-delete-offer-line],[data-delete-expense-index],[data-project-stock-picker]";
+const financeProjectControls = "#projectFinanceForm,#projectContractForm,#projectExpenseForm,#commercialOfferLineForm,[data-commercial-offer-edit],#commercialOfferTotalsForm,#copyOfferToMaterialsButton,[data-delete-offer-line],[data-delete-expense-index],[data-project-stock-picker='offer'],[data-preview-project-document]";
 const fieldProjectControls = "[data-work-checklist-item],[data-checklist-action],#photoForm,#projectFileForm,[data-equipment-photo-id],[data-crm-task-photo],[data-delete-photo-index],[data-delete-file-index]";
 
 function applyProjectRoleControls() {
@@ -1970,7 +1971,7 @@ function projectFinanceTotals(project) {
   const equipmentPurchase = currencyMismatch ? NaN : materialLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.purchasePrice || 0), 0);
   const equipmentSale = currencyMismatch ? NaN : materialLines.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.salePrice || 0), 0);
   const otherExpenses = finance.expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const revenue = Number(finance.contractPrice || 0) || equipmentSale + Number(finance.installationPrice || 0);
+  const revenue = finance.contractSnapshot ? Number(finance.contractPrice || 0) : Number(finance.contractPrice || 0) || equipmentSale + Number(finance.installationPrice || 0);
   const cashPayments = window.SpartaCashBook?.projectTotals(project?.id, project?.currency || "UAH") || { clientPaidMinor: 0, recordedPayrollMinor: 0, recordedExpensesMinor: 0, materialsMinor: 0 };
   const receivedPayments = Math.round(Number(finance.advancePaid || 0) * 100 + cashPayments.clientPaidMinor) / 100;
   const balanceDue = Math.round((Math.round(revenue * 100) - Math.round(receivedPayments * 100))) / 100;
@@ -2314,6 +2315,7 @@ function statusClass(status) {
 
 function statusProgress(project) {
   if (isClosedProjectStatus(project.status)) return 100;
+  if (projectInstallationCompletion(project)) return 100;
   if (["in_progress", "waiting_review"].includes(project.status)) return installerChecklistStats(project).percent;
   const statusProgressMap = {
     new: 10,
@@ -2328,6 +2330,11 @@ function statusProgress(project) {
   };
 
   return statusProgressMap[project.status] || 10;
+}
+
+function projectInstallationCompletion(project) {
+  const state = window.SpartaWarehouseUI?.snapshot?.();
+  return state && window.SpartaInstallationCore?.completion(state, project.id) || null;
 }
 
 function statusTone(status) {
@@ -2498,7 +2505,7 @@ function renderDetail() {
               ${projectStatusOptions(project.status)}
             </select>
           </label>
-          ${project.installationDate ? `<span class="chip">Монтаж: ${escapeAttribute(project.installationDate)}</span>` : ""}
+          ${projectInstallationCompletion(project) ? `<span class="chip">Монтаж виконано: ${escapeAttribute(projectInstallationCompletion(project).completedOn)}</span>` : project.installationDate ? `<span class="chip">Виїзд: ${escapeAttribute(project.installationDate)}</span>` : ""}
         </div>
       </div>
     </div>
@@ -2542,8 +2549,8 @@ function renderProjectStageContent(status, project, isValid, stringsTotal, expec
     planned: [["Виїзд на замір", "measurement"], ["Фото заміру", "surveyPhotos"], ["Схеми та заміри", "files"]],
     proposal: [["Комерційна пропозиція", "commercialOffer"], ["Файли КП", "files"]],
     contract: [["Договір і оплати", "contract"], ["Договір та підтвердження оплат", "files"], ["Фото чеків", "receiptPhotos"]],
-    in_progress: [["Чекліст монтажу", "checklist"], ["Технічні дані та серійні номери", "technical"], ["Матеріали для монтажу", "materials"], ["MPPT / стрінги", "strings"], ["Фото монтажу", "installationPhotos"]],
-    waiting_review: [["Результат монтажу", "reviewChecklist"], ["Фото для перевірки", "installationPhotos"]],
+    in_progress: [["Завершення монтажу", "installationCompletion"], ["Фото монтажу", "installationPhotos"], ["Технічні дані та серійні номери", "technical"], ["MPPT / стрінги", "strings"]],
+    waiting_review: [["Результат монтажу", "installationCompletion"], ["Фото для перевірки", "installationPhotos"]],
     passport_issued: [["Паспорт і передача станції", "passport"], ["Паспорт та акт", "files"]],
     service: [["Сервісні звернення", "objectService"], ["Документи сервісу", "files"], ["Фото сервісу", "servicePhotos"], ["", "archive"]],
   };
@@ -2569,6 +2576,7 @@ function workflowFileCategories(stage) {
 
 function renderTabById(tabId, project, isValid, stringsTotal, expected, workflowStage = "") {
   if (tabId === "lead") return renderLeadStage(project);
+  if (tabId === "installationCompletion") return window.SpartaInstallationUI?.markup(project) || `<p class="calculation-note">Оновіть сторінку, щоб завантажити модуль монтажу.</p>`;
   if (tabId === "contract") return renderContractStage(project);
   if (tabId === "reviewChecklist") return renderWorkflowChecklist(project, true);
   if (tabId === "objectService") return renderObjectServiceStage(project);
@@ -2662,36 +2670,54 @@ function renderProjectPhotos(project, options = {}) {
     <div class="photo-grid">${entries.map(({ photo, index }) => renderPhotoTile(photo, index)).join("") || `<p class="muted-text">Фото цього етапу ще не додано.</p>`}</div>`;
 }
 
+function projectContractTerms(finance = {}) {
+  const value = finance.contractTerms || {};
+  return {
+    installationWarrantyMonths: value.installationWarrantyMonths ?? 12,
+    equipmentWarrantyMonths: value.equipmentWarrantyMonths ?? 60,
+    advancePercent: value.advancePercent ?? "",
+    remainingPaymentTerms: value.remainingPaymentTerms ?? "Остаточний розрахунок — після завершення монтажу та приймання виконаних робіт замовником. Кожна оплата підтверджується платіжним документом.",
+    performerResponsibilities: value.performerResponsibilities ?? "Виконавець постачає погоджене обладнання, якісно та безпечно виконує монтаж відповідно до документації виробника, передає документацію й гарантійні документи та усуває недоліки, за які відповідає. Зміни комплектації, вартості та строків погоджуються із замовником. Сторони несуть відповідальність за невиконання зобов’язань згідно із законом і погодженими умовами договору.",
+    customerResponsibilities: value.customerResponsibilities ?? "Замовник надає достовірні дані про об’єкт, забезпечує погоджений доступ і умови для безпечного виконання робіт, своєчасно оплачує та перевіряє результат. Зауваження щодо комплектації та якості фіксуються під час приймання. Обладнання експлуатується відповідно до інструкцій виробника.",
+    workTerms: value.workTerms ?? "",
+  };
+}
+
 function renderContractStage(project) {
   if ((!window.SPARTA_LOCAL_WORKSPACE?.enabled && !cloudState.ready) || !["owner", "admin"].includes(cloudState.memberRole)) {
     return `<p class="calculation-note">Фінанси та оплати доступні власнику й адміністратору компанії.</p>`;
   }
-  const totals = projectFinanceTotals(project);
+  const totals = projectFinanceTotals(project), quote = offerLineTotals(project), terms = projectContractTerms(project.finance);
   const contractNumber = totals.contractNumber ?? project.contractNumber ?? "";
   const contractDate = totals.contractDate ?? project.contractDate ?? "";
-  const quote = offerLineTotals(project);
-  const isDraft = !contractNumber && !contractDate && !Number(totals.contractPrice);
-  const draftPrice = isDraft ? quote.totalSale : totals.contractPrice;
-  return `<div class="data-grid contract-client-card"><div><span>Клієнт</span><strong>${escapeAttribute(project.clientName || project.title || "Не вказано")}</strong></div><div><span>Телефон</span><strong>${escapeAttribute(project.clientPhone || "Не вказано")}</strong></div><div><span>Адреса об’єкта</span><strong>${escapeAttribute(project.address || "Не вказано")}</strong></div></div><p class="calculation-note">Вартість за КП: ${money(quote.totalSale, project.currency || "UAH")}. ${isDraft ? "Суму та монтаж підставлено у чернетку умов. Перевірте їх перед збереженням." : "Збережені умови договору залишаються чинними; перевірте їх перед формуванням проєкту."}</p><div class="proposal-actions offer-document-actions"><button class="primary-button" type="button" data-preview-project-document="contract" ${!quote.finance.offerLines.length ? "disabled" : ""}>Сформувати проєкт договору / перегляд</button></div><p class="workflow-contract-meta"><strong>${escapeAttribute(contractNumber || "Номер договору ще не внесено")}</strong><span>${contractDate ? `від ${escapeAttribute(contractDate)}` : "Дата не вказана"}</span></p>
+  const snapshot = project.finance?.contractSnapshot;
+  const changed = Boolean(snapshot && JSON.stringify([snapshot.currency,snapshot.rows,snapshot.installation]) !== JSON.stringify([project.currency || "UAH",quote.finance.offerLines.map(item=>({name:item.name,note:item.note,qty:item.qty,unit:item.unit,price:item.salePrice})),quote.installationPrice]));
+  const pending = !snapshot || changed;
+  return `<div class="data-grid contract-client-card"><div><span>Клієнт</span><strong>${escapeAttribute(project.clientName || project.title || "Не вказано")}</strong></div><div><span>Телефон</span><strong>${escapeAttribute(project.clientPhone || "Не вказано")}</strong></div><div><span>Адреса об’єкта</span><strong>${escapeAttribute(project.address || "Не вказано")}</strong></div></div>
+    <p class="calculation-note">Сума договору = обладнання та матеріали за КП + монтажні роботи. ${pending ? "Перевірте й збережіть умови: це оновить суму договору у фінансах об’єкта." : "Умови збережено. Перед надсиланням перевірте проєкт договору."}${changed ? " КП змінена після останнього збереження договору; попередні погоджені умови не переписано автоматично." : ""}</p>
     <div class="metric-grid compact finance-metrics">
-      <div class="metric-card"><span>${isDraft ? "Чернетка суми договору" : "Сума договору"}</span><strong>${money(isDraft ? draftPrice : totals.revenue, project.currency || "UAH")}</strong></div>
+      <div class="metric-card"><span>Договір за поточною КП</span><strong>${money(quote.totalSale, project.currency || "UAH")}</strong></div>
       <div class="metric-card"><span>Отримано від клієнта</span><strong>${money(totals.receivedPayments, project.currency || "UAH")}</strong></div>
-      <div class="metric-card warning"><span>${totals.balanceDue < 0 ? "Переплата клієнта" : "Залишок до оплати"}</span><strong>${money(Math.abs(totals.balanceDue), project.currency || "UAH")}</strong></div>
+      <div class="metric-card warning"><span>Залишок за поточною КП</span><strong>${money(quote.totalSale - totals.receivedPayments, project.currency || "UAH")}</strong></div>
     </div>
-    <details class="workflow-details"><summary>Умови договору</summary>
-      <form class="inline-form finance-form" id="projectFinanceForm">
-        <label>Номер договору<input name="contractNumber" value="${escapeAttribute(contractNumber)}" /></label>
-        <label>Дата договору<input name="contractDate" type="date" value="${escapeAttribute(contractDate)}" /></label>
-        <label>Сума договору, ${project.currency || "UAH"}<input name="contractPrice" type="number" min="0" step="0.01" value="${escapeAttribute(draftPrice)}" /></label>
-        <label>Вартість монтажу, ${project.currency || "UAH"}<input name="installationPrice" type="number" min="0" step="0.01" value="${escapeAttribute(isDraft ? quote.installationPrice : totals.installationPrice)}" /></label>
-        <label>Бюджет ЗП бригади<input name="crewPayroll" type="number" min="0" step="0.01" value="${escapeAttribute(totals.crewPayroll)}" /></label>
-        <div class="form-submit-cell"><button class="primary-button">Зберегти умови</button></div>
+    <details class="workflow-details" ${pending ? "open" : ""}><summary>Умови договору та попередній перегляд</summary>
+      <form class="inline-form finance-form project-contract-form" id="projectContractForm">
+        <label>Номер договору<input name="contractNumber" value="${escapeAttribute(contractNumber)}" maxlength="100" required /></label>
+        <label>Дата договору<input name="contractDate" type="date" value="${escapeAttribute(contractDate)}" required /></label>
+        <label>Сума договору, ${project.currency || "UAH"}<input name="contractPrice" type="number" value="${escapeAttribute(quote.totalSale)}" readonly /></label>
+        <label>Монтаж у сумі договору, ${project.currency || "UAH"}<input name="installationPrice" type="number" value="${escapeAttribute(quote.installationPrice)}" readonly /></label>
+        <label>Гарантія на монтаж, місяців<input name="installationWarrantyMonths" type="number" min="1" max="1200" step="1" value="${escapeAttribute(terms.installationWarrantyMonths)}" required /></label>
+        <label>Гарантія виробника, місяців<input name="equipmentWarrantyMonths" type="number" min="1" max="1200" step="1" value="${escapeAttribute(terms.equipmentWarrantyMonths)}" required /></label>
+        <label>Аванс, % від суми договору<input name="advancePercent" type="number" min="0" max="100" step="0.01" value="${escapeAttribute(terms.advancePercent)}" placeholder="Укажіть погоджений аванс" required /></label>
+        <label class="contract-wide">Умови остаточної оплати<textarea name="remainingPaymentTerms" rows="3" maxlength="6000" required>${escapeAttribute(terms.remainingPaymentTerms)}</textarea></label>
+        <label class="contract-wide">Строки та порядок робіт<textarea name="workTerms" rows="3" maxlength="6000" placeholder="Погоджена дата / строк початку, завершення та приймання робіт" required>${escapeAttribute(terms.workTerms)}</textarea></label>
+        <details class="workflow-details contract-wide"><summary>Відповідальність сторін</summary><label>Виконавець<textarea name="performerResponsibilities" rows="5" maxlength="6000" required>${escapeAttribute(terms.performerResponsibilities)}</textarea></label><label>Замовник<textarea name="customerResponsibilities" rows="5" maxlength="6000" required>${escapeAttribute(terms.customerResponsibilities)}</textarea></label></details>
+        <p class="calculation-note contract-wide">Гарантія виробника діє за його гарантійною документацією. Обов’язкові гарантії та права замовника за законом зберігаються. Збереження договору не реєструє оплату й не списує склад.</p>
+        <div class="form-submit-cell contract-wide"><button class="primary-button" ${!quote.finance.offerLines.length ? "disabled" : ""}>Зберегти умови договору</button><button class="secondary-button" type="button" data-preview-project-document="contract" ${!quote.finance.offerLines.length ? "disabled" : ""}>Перегляд / PDF / надіслати клієнту</button></div>
       </form>
     </details>
-    ${window.SpartaCashBook?.projectMarkup(project, { clientOnly: true }) || ""}
-    <details class="workflow-details"><summary>Внутрішній кошторис і витрати</summary>
-      ${renderTabById("finance", project, false, 0, 0, "financial_report")}
-    </details>`;
+    <h4>Внесення авансу та оплат</h4>${window.SpartaCashBook?.projectMarkup(project, { clientOnly: true }) || ""}
+    <details class="workflow-details"><summary>Внутрішній кошторис і витрати</summary><form class="inline-form finance-form" id="projectFinanceForm"><label>Бюджет зарплати бригади, ${project.currency || "UAH"}<input name="crewPayroll" type="number" min="0" step="0.01" value="${escapeAttribute(totals.crewPayroll)}" required /></label><div class="form-submit-cell"><button class="secondary-button">Зберегти бюджет зарплати</button></div></form>${renderTabById("finance", project, false, 0, 0, "financial_report")}</details>`;
 }
 
 function renderObjectServiceStage(project) {
@@ -2752,7 +2778,7 @@ function offerLineTotals(project) {
   const equipmentSale = finance.offerLines.reduce((sum, item) => sum + Math.round(Number(item.qty || 0) * Number(item.salePrice || 0) * 100), 0) / 100;
   const otherExpenses = finance.expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const installationPrice = Math.round(Number(finance.offerInstallationPrice ?? finance.installationPrice ?? 0) * 100) / 100;
-  const totalSale = mismatched ? NaN : equipmentSale + installationPrice;
+  const totalSale = mismatched ? NaN : Math.round((equipmentSale + installationPrice) * 100) / 100;
   const totalCost = equipmentPurchase;
   return {
     finance,
@@ -2869,7 +2895,7 @@ function customerDocumentInput(project, kind = "offer", draft = {}) {
   const totals = offerLineTotals(project);
   if (!Number.isFinite(totals.totalSale)) throw new Error("Перевірте валюту й ціни позицій КП.");
   const finance = normalizeProjectFinance(project.finance);
-  const hasContract = Boolean(project.contractNumber || project.contractDate || finance.contractNumber || finance.contractDate || Number(finance.contractPrice));
+
   return { kind, project: project.title || "Об’єкт", currency: project.currency || "UAH",
     client: project.clientName || project.title || "", address: project.address || "", phone: project.clientPhone || "",
     company: { name: companyContacts.name, address: companyContacts.location, phone: companyContacts.phone, email: companyContacts.email },
@@ -2877,7 +2903,7 @@ function customerDocumentInput(project, kind = "offer", draft = {}) {
     number: draft.contractNumber ?? project.contractNumber ?? finance.contractNumber ?? "",
     rows: finance.offerLines.map(item => ({ name: item.name, note: item.note, qty: item.qty, unit: item.unit, price: item.salePrice })),
     installation: totals.installationPrice,
-    ...(kind === "contract" ? { agreed: draft.contractPrice != null ? Number(draft.contractPrice) : hasContract ? finance.contractPrice : totals.totalSale } : {}),
+    ...(kind === "contract" ? { agreed: totals.totalSale, contractTerms: { ...projectContractTerms(finance), ...draft.contractTerms } } : {}),
   };
 }
 
@@ -2888,8 +2914,8 @@ async function previewProjectDocument(kind = "offer") {
   const company = cloudState.companyId, user = cloudState.user?.id, role = cloudState.memberRole;
   const draft = {};
   if (kind === "contract") {
-    const form = document.querySelector("#projectFinanceForm");
-    if (form) { const data = new FormData(form); for (const key of ["contractNumber","contractDate","contractPrice"]) if (data.get(key) != null) draft[key] = data.get(key); }
+    const form = document.querySelector("#projectContractForm");
+    if (form) { if (!form.reportValidity()) return; const data = new FormData(form); draft.contractNumber = data.get("contractNumber"); draft.contractDate = data.get("contractDate"); draft.contractTerms = Object.fromEntries(["installationWarrantyMonths","equipmentWarrantyMonths","advancePercent","remainingPaymentTerms","workTerms","performerResponsibilities","customerResponsibilities"].map(key => [key,data.get(key)])); }
   }
   try {
     if (!window.SpartaProjectDocuments) throw new Error("Модуль документів ще не завантажено. Оновіть сторінку.");
@@ -6108,6 +6134,12 @@ document.addEventListener("submit", (event) => {
     return;
   }
 
+  if (event.target.id === "projectContractForm") {
+    event.preventDefault();
+    saveProjectContract(event.target);
+    return;
+  }
+
   if (event.target.id === "projectFinanceForm") {
     event.preventDefault();
     saveProjectFinance(event.target);
@@ -6357,21 +6389,39 @@ function addWarehouseMovement(formElement) {
   showSection("warehouse");
 }
 
+function saveProjectContract(formElement) {
+  if (!requireProjectRole("finance") || !formElement.reportValidity()) return;
+  const project = selectedProject();
+  if (!project) return;
+  try {
+    const data = new FormData(formElement), draft = { contractNumber: String(data.get("contractNumber") || "").trim(), contractDate: String(data.get("contractDate") || ""), contractTerms: Object.fromEntries(["installationWarrantyMonths","equipmentWarrantyMonths","advancePercent","remainingPaymentTerms","workTerms","performerResponsibilities","customerResponsibilities"].map(key => [key,data.get(key)])) };
+    const parsedDate = new Date(draft.contractDate + "T00:00:00Z");
+    if (!draft.contractNumber || draft.contractNumber.length > 100 || !/^\d{4}-\d{2}-\d{2}$/.test(draft.contractDate) || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0,10) !== draft.contractDate || !String(project.clientName || "").trim() || !String(project.address || "").trim() || !String(project.clientPhone || "").trim()) throw new Error("Заповніть номер (до 100 символів) і коректну дату договору, а в даних об’єкта — клієнта, телефон та адресу.");
+    const input = customerDocumentInput(project,"contract",draft);
+    const value = window.SpartaProjectDocuments.model(input);
+    const nextFinance = normalizeProjectFinance({ ...project.finance, contractNumber:draft.contractNumber, contractDate:draft.contractDate, contractPrice:value.total, installationPrice:value.installation, contractTerms:value.contractTerms, contractSnapshot:input, contractSavedAt:new Date().toISOString(), contractSavedBy:cloudState.user?.id || "local" });
+    const next = projects.map(entry => String(entry.id) === String(project.id) ? { ...entry, contractNumber:draft.contractNumber, contractDate:draft.contractDate, finance:nextFinance } : entry);
+    if (!writeLocalStorage("solarObjectManager.projects",JSON.stringify(next))) throw new Error("Не вдалося зберегти договір. Перевірте вільне місце на пристрої.");
+    project.contractNumber = draft.contractNumber; project.contractDate = draft.contractDate; project.finance = nextFinance;
+    queueCloudSync(); render(); showSection("objectDetail");
+  } catch (error) { alert(error.message); }
+}
+
 function saveProjectFinance(formElement) {
   if (!requireProjectRole("finance")) return;
   const project = selectedProject();
   if (!project) return;
   const data = new FormData(formElement);
-  if (data.get("contractNumber") !== null) project.contractNumber = String(data.get("contractNumber") || "").trim();
-  if (data.get("contractDate") !== null) project.contractDate = String(data.get("contractDate") || "");
+  if (!project.finance?.contractSnapshot && data.get("contractNumber") !== null) project.contractNumber = String(data.get("contractNumber") || "").trim();
+  if (!project.finance?.contractSnapshot && data.get("contractDate") !== null) project.contractDate = String(data.get("contractDate") || "");
   project.finance = normalizeProjectFinance({
     ...project.finance,
-    contractNumber: data.get("contractNumber") !== null ? project.contractNumber : project.finance?.contractNumber ?? project.contractNumber ?? "",
-    contractDate: data.get("contractDate") !== null ? project.contractDate : project.finance?.contractDate ?? project.contractDate ?? "",
-    contractPrice: Number(data.get("contractPrice") || 0),
-    installationPrice: Number(data.get("installationPrice") || 0),
+    contractNumber: project.finance?.contractSnapshot || data.get("contractNumber") === null ? project.finance?.contractNumber ?? project.contractNumber ?? "" : project.contractNumber,
+    contractDate: project.finance?.contractSnapshot || data.get("contractDate") === null ? project.finance?.contractDate ?? project.contractDate ?? "" : project.contractDate,
+    contractPrice: project.finance?.contractSnapshot || data.get("contractPrice") === null ? Number(project.finance?.contractPrice || 0) : Number(data.get("contractPrice") || 0),
+    installationPrice: project.finance?.contractSnapshot || data.get("installationPrice") === null ? Number(project.finance?.installationPrice || 0) : Number(data.get("installationPrice") || 0),
     advancePaid: Number(project.finance?.advancePaid || 0),
-    crewPayroll: Number(data.get("crewPayroll") || 0),
+    crewPayroll: data.get("crewPayroll") === null ? Number(project.finance?.crewPayroll || 0) : Number(data.get("crewPayroll") || 0),
   });
   saveProjects();
   render();

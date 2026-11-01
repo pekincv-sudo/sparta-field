@@ -1,6 +1,6 @@
 # SPARTA field deploy package
 
-This folder is the clean static web app for deployment.
+This folder is the clean static web app for deployment. Build52 adds quote-based contract terms (12-month installation and 60-month manufacturer equipment warranty), explicit advance conditions, full PDF preview/sharing, and a single actual-date/equipment installation confirmation. Apply `database/installation-completion.sql` after the existing migrations before the frontend. Confirmation atomically issues only missing stock and records consumption without double deduction; cash remains explicit. See [contract and installation instructions](docs/CONTRACT-INSTALLATION-build52.md).
 
 Build51 adds a quote summary table, customer document preview and locally generated multipage PDF downloads/file sharing. Contract drafts autofill customer contacts and quote values without changing saved terms or financial records. See [document instructions](docs/PROJECT-DOCUMENTS-build51.md). No migration or external PDF service is required.
 
