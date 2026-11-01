@@ -61,6 +61,18 @@
       || !local && !Number.isSafeInteger(result.revision)) throw failure("Не вдалося отримати актуальні залишки складу. Оновіть дані.", "PROJECT_STOCK_READ");
     return copy({ ...result, orderReservations: result.orderReservations || [] });
   }
+  // The shared nomenclature is a source of descriptions and indicative prices.
+  // Quote selection deliberately does not depend on warehouse revision, holds or quantities.
+  async function catalog({ refresh = true } = {}) {
+    const original = capture(null, "canQuote");
+    const local = Boolean(window.SPARTA_LOCAL_WORKSPACE?.enabled);
+    const provider = local ? window.SpartaWarehouseUI : window.SpartaWarehouseCloud;
+    if (!provider?.snapshot && !provider?.load) throw failure("Номенклатура недоступна. Оновіть сторінку.", "PROJECT_STOCK_READ");
+    const result = !local && refresh && provider.load ? await provider.load() : provider.snapshot?.();
+    current(original, null, "canQuote");
+    if (!result || !Array.isArray(result.items)) throw failure("Не вдалося прочитати номенклатуру обладнання.", "PROJECT_STOCK_READ");
+    return { items: copy(result.items.filter(item => core.isStockItem(item))) };
+  }
   function selectedLines(state, lines, targetProject) {
     if (!Array.isArray(lines) || !lines.length) throw failure("Оберіть обладнання та кількість.", "PROJECT_STOCK_INPUT");
     const selected = new Map();
@@ -91,14 +103,38 @@
     }
     return result;
   }
+  function hasPrice(value) { return value != null && String(value).trim() !== ""; }
+  function offerPrice(value) {
+    if (!["string", "number"].includes(typeof value)) throw failure("Вкажіть коректну орієнтовну ціну КП.", "PROJECT_STOCK_PRICE");
+    return price(typeof value === "string" ? value.trim().replace(",", ".") : value);
+  }
+  function safeOfferMoney(value) {
+    return Number.isFinite(value) && value >= 0 && Number.isSafeInteger(Math.round(value * 100));
+  }
+  function selectedOfferLines(state, lines, targetProject) {
+    if (!Array.isArray(lines) || !lines.length) throw failure("Оберіть обладнання та кількість.", "PROJECT_STOCK_INPUT");
+    return lines.map(input => {
+      const item = state.items.find(entry => id(entry.id) === id(input?.itemId));
+      if (!item || !core.isStockItem(item)) throw failure("Обладнання вже відсутнє в номенклатурі. Оновіть список.", "PROJECT_STOCK_ITEM");
+      const sameCurrency = currency(item) === currency(targetProject);
+      if (!sameCurrency && !hasPrice(input.salePrice)) throw failure(`Введіть ціну КП у ${currency(targetProject)}. Ціна номенклатури в ${currency(item)} не конвертується автоматично.`, "PROJECT_STOCK_CURRENCY");
+      const qty = core.quantity(input.qty, item.unit);
+      const salePrice = offerPrice(hasPrice(input.salePrice) ? input.salePrice : item.retailPrice ?? item.installerPrice ?? item.salePrice ?? 0);
+      const purchasePrice = offerPrice(hasPrice(input.purchasePrice) ? input.purchasePrice : sameCurrency ? item.purchasePrice ?? 0 : 0);
+      if (![qty * salePrice, qty * purchasePrice].every(safeOfferMoney)) throw failure("Сума позиції КП завелика. Перевірте кількість і ціни.", "PROJECT_STOCK_PRICE");
+      return { item, qty, salePrice, purchasePrice };
+    });
+  }
   function quotedFinance(targetProject, selected) {
     const result = copy(targetProject);
     result.finance = normalizeProjectFinance(copy(targetProject.finance || {}));
-    for (const { item, qty } of selected) result.finance.offerLines.push({ id: `offer-${crypto.randomUUID()}`, currency: currency(targetProject), warehouseItemId: item.id,
-      name: item.name, category: item.category || "Інше", qty, unit: item.unit || "шт", purchasePrice: core.unitCost(item),
-      salePrice: price(item.retailPrice ?? item.installerPrice ?? item.salePrice ?? 0), note: item.characteristics || "" });
-    syncCommercialOfferContractPrice(result);
-    if (!Number.isFinite(result.finance.contractPrice)) throw failure("Перевірте валюту та ціни наявних позицій КП.", "PROJECT_STOCK_PRICE");
+    for (const { item, qty, salePrice, purchasePrice } of selected) result.finance.offerLines.push({ id: `offer-${crypto.randomUUID()}`, currency: currency(targetProject), catalogItemId: item.id, warehouseItemId: item.id,
+      sourceCurrency: currency(item), name: item.name, category: item.category || "Інше", sku: item.sku || "", brand: item.brand || "", model: item.model || "",
+      qty, unit: item.unit || "шт", purchasePrice, salePrice, note: item.characteristics || "" });
+    result.finance.offerInstallationPrice ??= result.finance.installationPrice;
+    result.finance.offerUpdatedAt = new Date().toISOString();
+    const totals = offerLineTotals(result);
+    if (![totals.totalSale, totals.equipmentPurchase].every(safeOfferMoney)) throw failure("Перевірте валюту та суми наявних позицій КП.", "PROJECT_STOCK_PRICE");
     return result.finance;
   }
   function localBase(targetProject, field) {
@@ -137,6 +173,8 @@
     busy = true;
     try {
       if (window.SPARTA_LOCAL_WORKSPACE?.enabled && typeof navigator !== "undefined" && navigator.locks)
+        // Quotes and plans share the projects storage record. The same local
+        // lock prevents concurrent tabs from overwriting each other's fields.
         return await navigator.locks.request("sparta-local-warehouse-v31", callback);
       return await callback();
     } finally { busy = false; }
@@ -149,13 +187,17 @@
       const local = Boolean(window.SPARTA_LOCAL_WORKSPACE?.enabled);
       const initial = row(projectId);
       const beforeMaterials = copy(initial.materials || []);
+      const beforeFinance = copy(normalizeProjectFinance(initial.finance || {}));
       if (target === "materials" && !local) materialBase(initial, true);
-      const state = await stock();
+      const state = target === "offer" ? await catalog() : await stock();
       current(original, projectId, capability);
       const targetProject = row(projectId);
       if (isClosedProjectStatus(targetProject.status)) throw failure("Додавання обладнання доступне лише для активних об’єктів.", "PROJECT_STOCK_CLOSED");
-      const selected = selectedLines(state, lines, targetProject);
-      if (target === "offer") persistField(targetProject, "finance", quotedFinance(targetProject, selected));
+      const selected = target === "offer" ? selectedOfferLines(state, lines, targetProject) : selectedLines(state, lines, targetProject);
+      if (target === "offer") {
+        if (!same(normalizeProjectFinance(targetProject.finance || {}), beforeFinance)) throw failure("КП змінилася під час вибору обладнання. Оновіть дані та повторіть дію.", "PROJECT_STOCK_CONFLICT");
+        persistField(targetProject, "finance", quotedFinance(targetProject, selected));
+      }
       else if (local) {
         if (!same(targetProject.materials || [], beforeMaterials)) throw failure("Матеріали змінилися під час вибору обладнання. Повторіть дію.", "PROJECT_STOCK_CONFLICT");
         persistField(targetProject, "materials", plannedMaterials(targetProject.materials || [], selected, targetProject));
@@ -188,5 +230,5 @@
   }
   function reset() { epoch += 1; }
 
-  window.SpartaProjectStockActions = Object.freeze({ context, project, stock, add, move, reset });
+  window.SpartaProjectStockActions = Object.freeze({ context, project, stock, catalog, add, move, reset });
 })();

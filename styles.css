@@ -200,6 +200,16 @@ h3 {
   gap: 12px;
 }
 
+.profile-card > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-card > .profile-avatar {
+  flex-shrink: 0;
+}
+
 .brand-logo {
   width: 52px;
   height: 52px;
@@ -1839,6 +1849,23 @@ button.metric-card:hover,
   color: var(--muted);
   font-size: 12px;
   margin-top: 3px;
+}
+
+.offer-intro { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); margin-bottom: 14px; }
+.offer-intro p, .offer-intro small { display: block; color: var(--muted); line-height: 1.6; }
+.offer-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.offer-lines { display: grid; gap: 12px; margin: 14px 0; min-width: 0; }
+.offer-line-card { padding: 16px; min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); overflow-wrap: anywhere; }
+.offer-line-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 10px; }
+.offer-line-heading > div { min-width: 0; flex: 1 1 220px; }
+.offer-line-heading strong, .offer-line-heading span { display: block; }
+.offer-line-heading span, .offer-line-heading p, .offer-line-amount { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.offer-line-heading b { color: var(--yellow); }
+.offer-line-card .workflow-details { margin: 12px 0; }
+.offer-line-card .commercial-offer-form { padding: 12px; }
+@media (max-width: 640px) {
+  .offer-metrics { grid-template-columns: minmax(0, 1fr); }
+  .offer-line-card, .offer-intro { padding: 12px; }
 }
 
 .warehouse-form {
