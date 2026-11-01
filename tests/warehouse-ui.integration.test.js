@@ -36,7 +36,7 @@ async function runWarehouseIntegrationTests(projectDirectory = path.resolve(__di
     assert.ok(match, `Production function ${name} exists`);
     return match[0];
   };
-  vm.runInContext(["normalizeProjectId", "normalizeLookupValue", "warehouseUnitCost", "isClosedProjectStatus", "normalizeWarehouseItem", "addWarehouseItemToProjectMaterials"].map(functionSource).join("\n"), context);
+  vm.runInContext(["normalizeProjectId", "normalizeLookupValue", "warehouseUnitCost", "warehouseItemById", "warehouseItemForMaterial", "projectMaterialsWithWarehousePrices", "isClosedProjectStatus", "normalizeWarehouseItem", "addWarehouseItemToProjectMaterials"].map(functionSource).join("\n"), context);
   const exportNeedle = "Object.freeze({ render, bootstrap, capture, openForProject, reset, snapshot, transact })";
   assert.ok(uiSource.includes(exportNeedle), "Production warehouse UI export remains discoverable");
   vm.runInContext(uiSource.replace(exportNeedle, "Object.freeze({ render, bootstrap, capture, openForProject, reset, __test: { postMovement, baseDocument, snapshot, persist, transact, ui, recoverJournal, priceInput, renderItemDetail, renderDocumentDetail } })"), context);
@@ -64,6 +64,60 @@ async function runWarehouseIntegrationTests(projectDirectory = path.resolve(__di
     assert.equal(result.projects[0].materials[1].issuedQty, 3);
     assert.equal(result.projects[0].materials[1].actualQty, 1);
     assert.equal(context.warehouseItems[0].qty, 10);
+  });
+  check("Issue does not bind same-name quote plans with a different unit or currency", () => {
+    for (const mismatch of [{ unit: "компл", currency: "UAH" }, { unit: "шт", currency: "USD" }]) {
+      const plan = { name: item.name, sku: item.sku, catalogItemId: item.id, warehouseItemId: "", ...mismatch, plannedQty: 5, issuedQty: 0, actualQty: 3, purchasePriceSnapshot: 20, salePriceSnapshot: 30 };
+      const inputState = { ...hooks.snapshot(), projects: [{ id: "a", currency: "UAH", status: "in_progress", materials: [plan] }] };
+      const beforePlan = JSON.stringify(plan), beforeState = JSON.stringify(inputState);
+      const result = hooks.postMovement(inputState, editor("project", 1));
+      assert.equal(JSON.stringify(result.projects[0].materials[0]), beforePlan);
+      assert.equal(result.projects[0].materials.length, 2);
+      assert.equal(result.projects[0].materials[1].warehouseItemId, item.id);
+      assert.equal(result.projects[0].materials[1].unit, "шт");
+      assert.equal(result.projects[0].materials[1].currency, "UAH");
+      assert.equal(result.projects[0].materials[1].issuedQty, 1);
+      assert.equal(result.projects[0].materials[1].actualQty, 0);
+      assert.equal(JSON.stringify(inputState), beforeState);
+      assert.equal(result.documents.length, inputState.documents.length + 1);
+    }
+  });
+  check("Legacy unit and currency omissions inherit pieces and project currency on issue", () => {
+    const usdItem = { ...item, currency: "USD" };
+    const plan = { name: item.name, sku: item.sku, plannedQty: 4, issuedQty: 2, actualQty: 1, purchasePriceSnapshot: 20, salePriceSnapshot: 30 };
+    const inputState = { ...hooks.snapshot(), items: [usdItem], projects: [{ id: "a", currency: "USD", status: "in_progress", materials: [plan] }] };
+    const input = editor("project", 1); input.currency = "USD";
+    const result = hooks.postMovement(inputState, input), material = result.projects[0].materials[0];
+    assert.equal(result.projects[0].materials.length, 1);
+    assert.equal(material.warehouseItemId, item.id);
+    assert.equal(material.currency, "USD");
+    assert.equal(material.unit, "шт");
+    assert.equal(material.issuedQty, 3);
+    assert.equal(material.actualQty, 1);
+  });
+  check("An incompatible explicit warehouse link rejects issue without partial changes", () => {
+    for (const mismatch of [{ unit: "м", currency: "UAH" }, { unit: "шт", currency: "USD" }]) {
+      const inputState = { ...hooks.snapshot(), projects: [{ id: "a", currency: "UAH", status: "in_progress", materials: [{ warehouseItemId: item.id, name: item.name, ...mismatch, issuedQty: 2, actualQty: 1 }] }] };
+      const before = JSON.stringify(inputState);
+      assert.throws(() => hooks.postMovement(inputState, editor("project", 1)), /Одиниця|іншу валюту/);
+      assert.equal(JSON.stringify(inputState), before);
+    }
+  });
+  check("Material price lookup requires matching unit and currency and preserves explicit links", () => {
+    const beforeItems = context.warehouseItems;
+    context.warehouseItems = [{ ...item, id: "foreign", currency: "USD" }, { ...item, id: "unit", unit: "компл", currency: "UAH" }, { ...item, id: "correct", currency: "UAH" }];
+    try {
+      const query = { name: item.name, sku: item.sku, unit: "шт", currency: "UAH" };
+      assert.equal(context.warehouseItemForMaterial(query).id, "correct");
+      assert.equal(context.warehouseItemForMaterial({ ...query, warehouseItemId: "foreign" }), null);
+      assert.equal(context.warehouseItemForMaterial({ ...query, warehouseItemId: "unit" }), null);
+      assert.equal(context.warehouseItemForMaterial({ ...query, warehouseItemId: "missing" }), null);
+      assert.equal(context.warehouseItemForMaterial({ name: item.name, sku: item.sku }, "UAH").id, "correct");
+      assert.equal(context.warehouseItemForMaterial({ name: item.name, sku: item.sku }).id, "foreign");
+      const priced = context.projectMaterialsWithWarehousePrices({ currency: "UAH", materials: [{ name: item.name, warehouseItemId: "unit", unit: "шт", issuedQty: 1 }] });
+      assert.equal(priced[0].warehouseName, "");
+      assert.equal(priced[0].hasWarehousePrice, false);
+    } finally { context.warehouseItems = beforeItems; }
   });
   check("Receipt form defaults round weighted prices without revaluing inventory", () => {
     const weighted = 1600 / 13;

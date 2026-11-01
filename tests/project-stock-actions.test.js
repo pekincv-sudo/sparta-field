@@ -24,11 +24,11 @@ module.exports = async function runProjectStockActionsTests(directory = path.res
   ];
   const material = { name: "Панель", warehouseItemId: "pv", currency: "USD", unit: "шт", plannedQty: 4, issuedQty: 2, actualQty: 1, purchasePriceSnapshot: 40, salePriceSnapshot: 70, note: "Keep material note" };
   const initialProject = { id: "project", title: "Станція", currency: "USD", status: "proposal", materials: [material],
-    finance: { installationPrice: 100, offerLines: [{ id: "old", warehouseItemId: "pv", name: "Old quote", category: "Фотомодулі", currency: "USD", qty: 1, unit: "шт", purchasePrice: 10, salePrice: 20, note: "Keep quote note" }] } };
+    finance: { contractPrice: 777, installationPrice: 100, crewPayroll: 60, advancePaid: 30, expenses: [{name:"Existing receipt",amount:11}], offerLines: [{ id: "old", warehouseItemId: "pv", name: "Old quote", category: "Фотомодулі", currency: "USD", qty: 1, unit: "шт", purchasePrice: 10, salePrice: 20, note: "Keep quote note" }] } };
 
   async function fixture(options = {}) {
     const storage = new Map();
-    const calls = { reads: 0, writes: 0, queue: 0, renders: 0, roles: 0, opens: [], locks: 0 };
+    const calls = { reads: 0, writes: 0, queue: 0, renders: 0, roles: 0, opens: [], locks: 0, lockNames: [] };
     let readHook = null;
     let loseResponse = false;
     let rejectWrite = false;
@@ -63,7 +63,7 @@ module.exports = async function runProjectStockActionsTests(directory = path.res
       readJsonStorage(key, fallback) { return storage.has(key) ? JSON.parse(storage.get(key)) : fallback; },
       queueCloudSync() { calls.queue++; }, renderDetail() { calls.renders++; }, applyProjectRoleControls() { calls.roles++; },
       isClosedProjectStatus(status) { return ["completed", "passport_issued", "service"].includes(status); },
-      navigator: { locks: { async request(name, callback) { assert.equal(name, "sparta-local-warehouse-v31"); calls.locks++; return callback(); } } },
+      navigator: { locks: { async request(name, callback) { assert.equal(name, "sparta-local-warehouse-v31"); calls.locks++; calls.lockNames.push(name); return callback(); } } },
     };
     vm.createContext(sandbox);
     for (const name of ["emptyProjectFinance", "normalizeProjectFinance", "offerLineTotals", "syncCommercialOfferContractPrice"]) {
@@ -103,16 +103,81 @@ module.exports = async function runProjectStockActionsTests(directory = path.res
     }
   });
   await check("Quote additions use fresh prices, preserve historical lines and intentional zero, and do not consume stock", async () => {
-    const f = await fixture(); const stockBefore = clone(f.server.state); const oldQuote = clone(f.sandbox.projects[0].finance.offerLines[0]);
+    const f = await fixture(); const stockBefore = clone(f.server.state); const oldQuote = clone(f.sandbox.normalizeProjectFinance(f.sandbox.projects[0].finance).offerLines[0]);
     f.server.state.items[0].retailPrice = 95;
     const result = await f.api.add({ ...offer(), lines: [{ itemId: "pv", qty: 12 }, { itemId: "pv-other", qty: 1 }, { itemId: "cable", qty: "0,125" }] });
     const finance = f.sandbox.projects[0].finance;
-    equal(finance.offerLines[0], oldQuote); assert.equal(finance.offerLines[1].purchasePrice, 53); assert.equal(finance.offerLines[1].salePrice, 95);
+    equal(finance.offerLines[0], oldQuote); assert.equal(finance.offerLines[1].purchasePrice, 50); assert.equal(finance.offerLines[1].salePrice, 95);
     assert.equal(finance.offerLines[2].salePrice, 0); assert.equal(finance.offerLines[3].qty, 0.125);
-    assert.equal(finance.contractPrice, 20 + 12 * 95 + 0.125 * 3 + 100); assert.equal(result.count, 3);
+    assert.equal(finance.contractPrice, 777); assert.equal(result.count, 3);
     assert.match(result.message, /Залишки складу не змінені/); assert.equal(f.calls.writes, 0); assert.equal(f.calls.queue, 1);
     stockBefore.items[0].retailPrice = 95; equal(f.server.state, stockBefore);
     assert.equal(JSON.parse(f.storage.get("solarObjectManager.projects"))[0].finance.offerLines.length, 4); assert.equal(f.calls.renders, 1); assert.equal(f.calls.roles, 1);
+  });
+  await check("Catalog quotes include zero stock and ignore holds/revision while leaving materials, cash inputs and contract untouched", async () => {
+    const f = await fixture();
+    const beforeMaterials = clone(f.sandbox.projects[0].materials);
+    const beforeFinance = clone(f.sandbox.projects[0].finance);
+    f.window.SpartaWarehouseCloud = { snapshot: () => ({items: [{...items[0],qty:0}]}), load: async () => ({items:[{...items[0],qty:0}]}) };
+    const catalog = await f.api.catalog(); assert.equal(catalog.items.length,1); assert.equal(catalog.items[0].qty,0);
+    assert.deepEqual(Object.keys(catalog),["items"]);
+    await f.api.add(offer("pv", 500));
+    const finance = f.sandbox.projects[0].finance;
+    assert.equal(finance.offerLines[1].qty,500); assert.equal(finance.contractPrice,777);
+    assert.equal(finance.installationPrice,beforeFinance.installationPrice); assert.equal(finance.crewPayroll,60); assert.equal(finance.advancePaid,30);
+    equal(finance.expenses,beforeFinance.expenses); equal(f.sandbox.projects[0].materials,beforeMaterials);
+    assert.equal(f.calls.writes,0); assert.equal(f.calls.opens.length,0); assert.match(finance.offerUpdatedAt,/^\d{4}-\d{2}-\d{2}T/);
+  });
+  await check("Custom quote prices including zero override indicative catalog prices without changing the catalog", async () => {
+    const f = await fixture(); const before = clone(f.server.state);
+    await f.api.add({ ...offer(), lines: [{itemId:"pv",qty:2,salePrice:"70,25",purchasePrice:0},{itemId:"pv-other",qty:1,salePrice:0}] });
+    const lines = f.sandbox.projects[0].finance.offerLines;
+    assert.equal(lines[1].salePrice,70.25); assert.equal(lines[1].purchasePrice,0); assert.equal(lines[2].salePrice,0);
+    equal(f.server.state,before); assert.equal(f.calls.writes,0);
+  });
+  await check("Different-currency catalog items require an explicit quote-currency price and never silently convert costs", async () => {
+    for(const value of [undefined,null,""]) {
+      const f=await fixture(); await rejects(()=>f.api.add({...offer("uah"),lines:[{itemId:"uah",qty:1,salePrice:value}]}),"PROJECT_STOCK_CURRENCY"); assert.equal(f.calls.queue,0);
+    }
+    const f = await fixture(); await f.api.add({...offer("uah"),lines:[{itemId:"uah",qty:1,salePrice:45}]});
+    const line=f.sandbox.projects[0].finance.offerLines[1]; assert.equal(line.currency,"USD"); assert.equal(line.sourceCurrency,"UAH");
+    assert.equal(line.salePrice,45); assert.equal(line.purchasePrice,0); assert.equal(line.catalogItemId,"uah"); assert.equal(f.server.state.items[3].retailPrice,1500);
+  });
+  await check("Invalid manual quote prices reject the entire batch without any persistence", async () => {
+    for (const value of [-1,NaN,Infinity,"bad",true,{}]) {
+      const f=await fixture();const before=clone(f.sandbox.projects[0].finance);
+      await rejects(()=>f.api.add({...offer(),lines:[{itemId:"pv",qty:1,salePrice:90},{itemId:"pv-other",qty:1,salePrice:value}]}),"PROJECT_STOCK_PRICE");
+      equal(f.sandbox.projects[0].finance,before);assert.equal(f.calls.queue,0);assert.equal(f.calls.writes,0);
+    }
+  });
+  await check("Quote description and price snapshots survive later catalog edits and later additions", async () => {
+    const f=await fixture();Object.assign(f.server.state.items[0],{sku:"PV-01",model:"M1",brand:"Solar",characteristics:"615 W"});
+    await f.api.add({...offer(),lines:[{itemId:"pv",qty:2,salePrice:77}]});
+    const saved=clone(f.sandbox.projects[0].finance.offerLines[1]);
+    Object.assign(f.server.state.items[0],{name:"Renamed catalog product",retailPrice:999,purchasePrice:888,model:"M2",sku:"PV-02",characteristics:"Changed"});
+    await f.api.add(offer("cable",1));
+    equal(f.sandbox.projects[0].finance.offerLines[1],saved);
+    assert.equal(saved.name,"Панель");assert.equal(saved.sku,"PV-01");assert.equal(saved.model,"M1");assert.equal(saved.brand,"Solar");assert.equal(saved.note,"615 W");assert.equal(saved.salePrice,77);
+  });
+  await check("A finance edit during catalog refresh is retained and blocks stale quote submission", async () => {
+    const f=await fixture();const hold=deferred();f.hook(()=>hold.promise);const task=f.api.add(offer());
+    f.sandbox.projects[0].finance.contractPrice=900;hold.resolve();await rejects(()=>task,"PROJECT_STOCK_CONFLICT");
+    assert.equal(f.sandbox.projects[0].finance.contractPrice,900);assert.equal(f.sandbox.projects[0].finance.offerLines.length,1);assert.equal(f.calls.queue,0);
+  });
+  await check("First quote update freezes legacy installation estimate independently of subsequent contract edits", async () => {
+    const f=await fixture();await f.api.add(offer());
+    const finance=f.sandbox.projects[0].finance;assert.equal(finance.offerInstallationPrice,100);
+    finance.installationPrice=999;finance.contractPrice=1234;
+    assert.equal(f.sandbox.offerLineTotals(f.sandbox.projects[0]).installationPrice,100);
+    await f.api.add(offer("cable",1));
+    assert.equal(f.sandbox.projects[0].finance.offerInstallationPrice,100);assert.equal(f.sandbox.projects[0].finance.installationPrice,999);assert.equal(f.sandbox.projects[0].finance.contractPrice,1234);
+  });
+  await check("Unsafe quote line and aggregate monetary totals reject atomically", async () => {
+    const high=Number.MAX_SAFE_INTEGER/100;
+    for(const lines of [[{itemId:"pv",qty:2,salePrice:high}],[{itemId:"pv",qty:1,purchasePrice:1e308}],[{itemId:"pv",qty:1,salePrice:high*0.6},{itemId:"pv-other",qty:1,salePrice:high*0.6}]]){
+      const f=await fixture();const before=clone(f.sandbox.projects[0].finance);
+      await rejects(()=>f.api.add({...offer(),lines}),"PROJECT_STOCK_PRICE");equal(f.sandbox.projects[0].finance,before);assert.equal(f.calls.queue,0);assert.equal(f.calls.writes,0);
+    }
   });
   await check("Material planning is atomic, adds by warehouse ID and preserves issued quantities and historical snapshots", async () => {
     const f = await fixture({ role: "engineer" }); const before = clone(f.server.state);
@@ -180,11 +245,11 @@ module.exports = async function runProjectStockActionsTests(directory = path.res
     const task = changed.api.move({ projectId: "project", itemId: "pv", qty: 1, type: "project" }); changed.sandbox.selectedProjectId = "other"; hold.resolve();
     await assert.rejects(task); assert.equal(changed.calls.opens.length, 0);
   });
-  await check("Unavailable cloud stock has no cached quantity fallback", async () => {
+  await check("Stock movements have no cached quantity fallback; quotes may use catalog-only snapshots", async () => {
     const f = await fixture(); f.window.SpartaWarehouseCloud.invalidate();
     await rejects(() => f.api.stock({ refresh: false }), "PROJECT_STOCK_READ");
     f.window.SpartaWarehouseCloud = { snapshot: () => ({ items: clone(items), reservations: [] }) };
-    await rejects(() => f.api.add(offer()), "PROJECT_STOCK_READ"); assert.equal(f.calls.queue, 0);
+    await f.api.add(offer()); assert.equal(f.calls.queue, 1); assert.equal(f.calls.writes, 0);
   });
   await check("Storage failure rejects quote and local plan before mutating the project", async () => {
     const f = await fixture(); const before = clone(f.sandbox.projects[0].finance); f.failStorage();
@@ -200,6 +265,13 @@ module.exports = async function runProjectStockActionsTests(directory = path.res
     assert.equal(f.sandbox.projects[0].materials[0].issuedQty, 2); assert.equal(f.calls.writes, 0); assert.equal(f.calls.queue, 0); assert.equal(f.calls.locks, 1);
     after[0].materials[0].issuedQty = 3; f.storage.set("solarObjectManager.projects", JSON.stringify(after));
     await rejects(() => f.api.add(plan()), "PROJECT_STOCK_CONFLICT"); assert.equal(f.sandbox.projects[0].materials[0].issuedQty, 2);
+  });
+  await check("Local quote and material planning use the same projects storage lock without warehouse writes", async () => {
+    const f=await fixture({local:true});const before=clone(f.server.state);
+    await f.api.add(offer());await f.api.add(plan());
+    equal(f.calls.lockNames,["sparta-local-warehouse-v31","sparta-local-warehouse-v31"]);
+    const stored=JSON.parse(f.storage.get("solarObjectManager.projects"))[0];assert.equal(stored.finance.offerLines.length,2);assert.equal(stored.materials[0].plannedQty,5);
+    equal(f.server.state,before);assert.equal(f.calls.writes,0);
   });
   await check("A lost plan response is reconciled by existing RPC idempotency without a second addition", async () => {
     const f = await fixture(); f.loseResponse(); await assert.rejects(f.api.add(plan()), /Network response lost/);

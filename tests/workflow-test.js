@@ -121,6 +121,38 @@ function runWorkflowTests(projectDirectory = path.join(__dirname, "..")) {
     assert.doesNotMatch(source.slice(start, end), /project\.status\s*=/);
     assert.doesNotMatch(source.slice(start, end), /saveProjects\(/);
   });
+  const quoteCopyFixture = (quote, materials = []) => {
+    const target = { id: "quote-copy", currency: "USD", materials, finance: { contractPrice: 1234, installationPrice: 500, offerInstallationPrice: 100, offerLines: quote } };
+    const beforeStock = JSON.stringify(context.warehouseItems), beforeMovements = JSON.stringify(context.warehouseMovements), beforeFinance = JSON.stringify(target.finance);
+    const original = context.projects[0]; context.projects[0] = target;
+    try { context.copyCommercialOfferToMaterials(); context.copyCommercialOfferToMaterials(); }
+    finally { context.projects[0] = original; }
+    assert.equal(JSON.stringify(context.warehouseItems), beforeStock); assert.equal(JSON.stringify(context.warehouseMovements), beforeMovements); assert.equal(JSON.stringify(target.finance), beforeFinance);
+    return target;
+  };
+  context.warehouseItems.push({ id:"catalog-uah", name:"Catalog inverter", currency:"UAH", unit:"шт", qty:0, purchasePrice:1000 }, { id:"catalog-usd", name:"Catalog panel", currency:"USD", unit:"шт", qty:0, purchasePrice:50 });
+  check("Explicit cross-currency quote transfer creates only an unbound plan and retains the catalog source", () => {
+    const target=quoteCopyFixture([{id:"q1",warehouseItemId:"catalog-uah",catalogItemId:"catalog-uah",sourceCurrency:"UAH",currency:"USD",name:"Catalog inverter",unit:"шт",qty:10,purchasePrice:0,salePrice:40}]);
+    assert.equal(target.materials.length,1);const line=target.materials[0];assert.equal(line.warehouseItemId,"");assert.equal(line.catalogItemId,"catalog-uah");assert.equal(line.sourceCurrency,"UAH");assert.equal(line.plannedQty,10);assert.equal(line.issuedQty,0);assert.equal(line.actualQty,0);assert.equal(line.salePriceSnapshot,40);
+  });
+  check("An edited quote unit is not bound to or merged into previously issued stock", () => {
+    const issued={name:"Catalog panel",warehouseItemId:"catalog-usd",currency:"USD",unit:"шт",plannedQty:4,issuedQty:4,actualQty:3,purchasePriceSnapshot:45,salePriceSnapshot:80,note:"Keep installation history"};
+    const before=JSON.stringify(issued);const target=quoteCopyFixture([{id:"q2",warehouseItemId:"catalog-usd",currency:"USD",name:"Catalog panel",unit:"компл",qty:5,salePrice:99}], [issued]);
+    assert.equal(JSON.stringify(target.materials[0]),before);assert.equal(target.materials.length,2);assert.equal(target.materials[1].warehouseItemId,"");assert.equal(target.materials[1].catalogItemId,"catalog-usd");assert.equal(target.materials[1].unit,"компл");assert.equal(target.materials[1].plannedQty,5);assert.equal(target.materials[1].catalogUnit,"шт");
+  });
+  check("Quote lines in different units remain separate when copied repeatedly", () => {
+    const target=quoteCopyFixture([{warehouseItemId:"catalog-usd",currency:"USD",name:"Catalog panel",unit:"шт",qty:2,salePrice:70},{warehouseItemId:"catalog-usd",currency:"USD",name:"Catalog panel",unit:"компл",qty:3,salePrice:100}]);
+    assert.equal(target.materials.length,2);assert.equal(target.materials[0].warehouseItemId,"catalog-usd");assert.equal(target.materials[0].plannedQty,2);assert.equal(target.materials[1].warehouseItemId,"");assert.equal(target.materials[1].plannedQty,3);
+  });
+  check("Updating an existing issued plan preserves actual quantities and never supplies a quote price as historical cost", () => {
+    const issued={name:"Catalog panel",warehouseItemId:"catalog-usd",currency:"USD",unit:"шт",plannedQty:4,issuedQty:4,actualQty:2,note:"Keep receipt"};
+    const target=quoteCopyFixture([{warehouseItemId:"catalog-usd",currency:"USD",name:"Catalog panel",unit:"шт",qty:1,purchasePrice:999,salePrice:1999}], [issued]);
+    assert.equal(target.materials.length,1);assert.equal(issued.plannedQty,4);assert.equal(issued.issuedQty,4);assert.equal(issued.actualQty,2);assert.equal(issued.purchasePriceSnapshot,undefined);assert.equal(issued.salePriceSnapshot,undefined);assert.equal(issued.note,"Keep receipt");
+  });
+  check("A deleted catalog source remains traceable but cannot create a stale warehouse binding", () => {
+    const target=quoteCopyFixture([{warehouseItemId:"deleted-source",currency:"USD",name:"Historical equipment",unit:"шт",qty:2,salePrice:50}]);
+    assert.equal(target.materials[0].warehouseItemId,"");assert.equal(target.materials[0].catalogItemId,"deleted-source");assert.equal(target.materials[0].plannedQty,2);
+  });
   return { passed: checks.length, checks };
 }
 

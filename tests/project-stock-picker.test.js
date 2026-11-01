@@ -21,7 +21,7 @@ async function runTests(directory = path.resolve(__dirname, "..")) {
   }
   function setup(options = {}) {
     let state = stock(), loadBlock = null, addBlock = null;
-    const nodes = [], calls = { stocks: 0, adds: [], moves: [], alerts: [], photos: [] };
+    const nodes = [], calls = { stocks: 0, catalogs: 0, adds: [], moves: [], alerts: [], photos: [] };
     const ctx = { key: "company:owner:revision1", ready: true, canQuote: true, canPlan: true, canMove: true, selectedProjectId: "p", ...options.context };
     const project = { id: "p", title: 'Об’єкт <script>evil</script>', currency: "USD", closed: false, ...options.project };
     const element = tag => {
@@ -41,6 +41,7 @@ async function runTests(directory = path.resolve(__dirname, "..")) {
     const actions = {
       context() { return { ...ctx }; }, project(projectId) { return String(projectId) === project.id ? clone(project) : null; },
       async stock() { calls.stocks++; if (loadBlock) await loadBlock; return clone(state); },
+      async catalog() { calls.catalogs++; if (loadBlock) await loadBlock; return { items: clone(state.items) }; },
       async add(payload) { calls.adds.push(clone(payload)); if (addBlock) await addBlock; return { message: "Додано до плану. Залишки не змінено." }; },
       async move(payload) { calls.moves.push({ ...clone(payload), pickerClosed: !dialog() }); },
     };
@@ -54,7 +55,8 @@ async function runTests(directory = path.resolve(__dirname, "..")) {
     const choose = async (itemId, checked = true) => { dispatch("change", { dataset: { pspSelect: itemId }, checked }); await flush(); };
     const filter = async (name, value) => { dispatch(name === "query" ? "input" : "change", { dataset: { pspFilter: name }, value, checked: Boolean(value) }); await flush(); };
     const qty = async (itemId, value) => { dispatch("input", { dataset: { pspQty: itemId }, value, closest() { return null; } }); await flush(); };
-    return { ui, ctx, project, calls, dialog, open, click, choose, filter, qty, edit(fn) { fn(state); }, snapshot: () => clone(state), blockLoad(value) { loadBlock = value; }, blockAdd(value) { addBlock = value; } };
+    const price = async (itemId, value) => { dispatch("input", { dataset: { pspPrice: itemId }, value, closest() { return null; } }); await flush(); };
+    return { ui, ctx, project, calls, dialog, open, click, choose, filter, qty, price, edit(fn) { fn(state); }, snapshot: () => clone(state), blockLoad(value) { loadBlock = value; }, blockAdd(value) { addBlock = value; } };
   }
   const checks = [], check = async (name, fn) => { await fn(); checks.push(name); };
   await check("Search covers model, SKU, brand and specifications while category and currency scopes compose", async () => {
@@ -64,12 +66,12 @@ async function runTests(directory = path.resolve(__dirname, "..")) {
     assert.equal(helpers.filterStock(state, { ...filters, group: "inverters" }, "offer", "p", "USD").length, 0);
     assert.equal(helpers.filterStock(state, { query: "", freeOnly: false, otherCurrency: true }, "offer", "p", "USD").length, 4);
   });
-  await check("Offer uses global free stock; materials add back only this project's own reservations", async () => {
+  await check("Catalog ignores physical availability; materials add back only this project's own reservations", async () => {
     const state = stock(), panel = state.items[0];
     assert.equal(helpers.availabilityFor(panel, state, "offer", "p"), 3);
     assert.equal(helpers.availabilityFor(panel, state, "materials", "p"), 6);
     state.items[0].qty = 7;
-    assert.equal(helpers.filterStock(state, { freeOnly: true }, "offer", "p", "USD").some(item => item.id === "panel"), false);
+    assert.equal(helpers.filterStock(state, { freeOnly: true }, "offer", "p", "USD").some(item => item.id === "panel"), true);
     assert.equal(helpers.filterStock(state, { freeOnly: true }, "materials", "p", "USD").some(item => item.id === "panel"), true);
   });
   await check("Totals preserve explicit zero prices, validate units and warn without rejecting plans over stock", async () => {
@@ -77,17 +79,17 @@ async function runTests(directory = path.resolve(__dirname, "..")) {
     assert.equal(helpers.priceFor(state.items[0], "offer"), 0);
     assert.equal(helpers.priceFor(state.items[0], "materials"), 80);
     let summary = helpers.summarize(state, new Map([["panel", "11"]]), "offer", "p", "USD");
-    assert.equal(summary.errors.length, 0); assert.equal(summary.shortages[0].shortage, 8); assert.equal(summary.lines[0].qty, 11); assert.equal(summary.total, 0);
+    assert.equal(summary.errors.length, 0); assert.equal(summary.shortages.length, 0); assert.equal(summary.lines[0].qty, 11); assert.equal(summary.total, 0);
     summary = helpers.summarize(state, new Map([["panel", "1,5"], ["cable", "1,125"]]), "materials", "p", "USD");
     assert.equal(summary.errors.length, 1); assert.equal(summary.lines[0].qty, 1.125); assert.equal(summary.total, 1.125);
     for (const raw of ["", "0", "-1", "Infinity", "1.0001"]) assert.ok(helpers.summarize(state, new Map([["cable", raw]]), "materials", "p", "USD").errors.length);
-    assert.match(helpers.summarize(state, new Map([["uah", "1"]]), "offer", "p", "USD").errors[0], /валюта/);
+    assert.match(helpers.summarize(state, new Map([["uah", "1"]]), "offer", "p", "USD").errors[0], /ціну/);
   });
-  await check("Opening refreshes stock, defaults to free same-currency equipment, escapes text and cancels without writes", async () => {
+  await check("Opening loads the general catalog including absent and foreign-currency goods, cancels without writes", async () => {
     const f = setup(), before = f.snapshot(); await f.open();
-    assert.equal(f.calls.stocks, 1); assert.match(f.dialog().innerHTML, /data-psp-filter="freeOnly" checked/); assert.match(f.dialog().innerHTML, /data-psp-card="panel"/);
-    assert.doesNotMatch(f.dialog().innerHTML, /data-psp-card="(?:uah|cable|service)"/); assert.match(f.dialog().innerHTML, /&lt;script&gt;/); assert.doesNotMatch(f.dialog().innerHTML, /<script>/);
-    assert.match(f.dialog().innerHTML, /не резервує й не списує/); assert.ok(f.calls.photos.includes("panel"));
+    assert.equal(f.calls.catalogs, 1); assert.equal(f.calls.stocks, 0); assert.doesNotMatch(f.dialog().innerHTML, /data-psp-filter="(?:freeOnly|otherCurrency)"/); assert.match(f.dialog().innerHTML, /data-psp-card="panel"/);
+    assert.match(f.dialog().innerHTML, /data-psp-card="uah"/); assert.match(f.dialog().innerHTML, /data-psp-card="cable"/); assert.doesNotMatch(f.dialog().innerHTML, /data-psp-card="service"/); assert.match(f.dialog().innerHTML, /&lt;script&gt;/); assert.doesNotMatch(f.dialog().innerHTML, /<script>/);
+    assert.match(f.dialog().innerHTML, /без руху складу й каси/); assert.doesNotMatch(f.dialog().innerHTML, /Доступно|Тільки вільні|Основний склад|Стелаж А/); assert.ok(f.calls.photos.includes("panel"));
     await f.choose("panel"); f.dialog().listeners.cancel({ preventDefault() {} });
     assert.equal(f.dialog(), undefined); assert.equal(f.calls.adds.length, 0); assert.equal(f.calls.moves.length, 0); assert.deepEqual(f.snapshot(), before);
   });
@@ -98,15 +100,48 @@ async function runTests(directory = path.resolve(__dirname, "..")) {
     assert.match(f.dialog().innerHTML, /Обрано позицій: 2/);
     f.edit(state => { state.items[0].qty = 0; }); await f.click("refresh");
     assert.match(f.dialog().innerHTML, /Обрано позицій: 2/); await f.click("add");
-    assert.deepEqual(f.calls.adds[0], { projectId: "p", target: "offer", lines: [{ itemId: "panel", qty: 7 }, { itemId: "inverter", qty: 1 }] });
+    assert.deepEqual(f.calls.adds[0], { projectId: "p", target: "offer", lines: [{ itemId: "panel", qty: 7, salePrice: 100 }, { itemId: "inverter", qty: 1, salePrice: 300 }] });
     assert.equal(f.calls.moves.length, 0); assert.match(f.dialog().innerHTML, /Додано до плану/); assert.match(f.dialog().innerHTML, /Обрано позицій: 0/);
     await f.click("add"); assert.equal(f.calls.adds.length, 1);
   });
-  await check("Foreign-currency inventory is view-only and never enters a project's selection or total", async () => {
-    const f = setup(); await f.open(); await f.filter("otherCurrency", true);
-    assert.match(f.dialog().innerHTML, /data-psp-select="uah"\s+disabled/); assert.match(f.dialog().innerHTML, /АКБ &lt;img/); assert.doesNotMatch(f.dialog().innerHTML, /<img src=x/);
-    assert.match(f.dialog().innerHTML, /Товар у UAH, проєкт у USD/);
-    await f.choose("uah"); await f.qty("uah", "2"); await f.click("add"); assert.equal(f.calls.adds.length, 0); assert.match(f.dialog().innerHTML, /Обрано позицій: 0/);
+  await check("Foreign-currency catalog goods require a manual quote price and never silently convert", async () => {
+    const f = setup(); await f.open();
+    assert.doesNotMatch(f.dialog().innerHTML, /data-psp-select="uah"\s+disabled/); assert.match(f.dialog().innerHTML, /АКБ &lt;img/); assert.doesNotMatch(f.dialog().innerHTML, /<img src=x/);
+    assert.match(f.dialog().innerHTML, /Вкажіть власну ціну в USD/);
+    await f.choose("uah"); await f.qty("uah", "2"); await f.click("add"); assert.equal(f.calls.adds.length, 0); assert.match(f.dialog().innerHTML, /Вкажіть ціну/);
+    await f.price("uah", "25,50"); await f.click("add");
+    assert.deepEqual(f.calls.adds[0].lines, [{ itemId: "uah", qty: 2, salePrice: 25.5 }]);
+    assert.equal(f.calls.stocks, 0); assert.equal(f.calls.moves.length, 0);
+  });
+  await check("Editable quote price and quantity survive filters, deselection and catalog refresh", async () => {
+    const f = setup(); await f.open(); await f.qty("panel", "3"); await f.price("panel", "72,25");
+    await f.filter("query", "cable"); await f.filter("query", ""); await f.choose("panel", false); await f.choose("panel");
+    f.edit(state => { state.items[0].retailPrice = 999; state.items[0].qty = 0; }); await f.click("refresh");
+    await f.click("add"); assert.deepEqual(f.calls.adds[0].lines, [{ itemId: "panel", qty: 3, salePrice: 72.25 }]);
+    assert.equal(f.calls.stocks, 0); assert.equal(f.calls.moves.length, 0);
+  });
+  await check("Selected indicative price stays stable when catalog prices refresh", async () => {
+    const f = setup(); await f.open(); await f.choose("panel");
+    f.edit(state => { state.items[0].retailPrice = 900; }); await f.click("refresh");
+    assert.match(f.dialog().innerHTML, /data-psp-price="panel"[^>]*value="100"/);
+    await f.click("add"); assert.equal(f.calls.adds[0].lines[0].salePrice, 100);
+  });
+  await check("Quote price validation preserves explicit zero and rejects blank, negative and nonfinite values", async () => {
+    const f = setup(); await f.open();
+    for (const raw of ["", " ", "-1", "Infinity", "NaN", "abc"]) { await f.price("panel", raw); await f.click("add"); assert.equal(f.calls.adds.length, 0); }
+    await f.price("panel", "0"); await f.click("add"); assert.equal(f.calls.adds[0].lines[0].salePrice, 0);
+  });
+  await check("Offer catalog search and totals never inspect invalid physical stock or reservations", async () => {
+    const state = stock(); state.items[0].qty = "invalid"; state.reservations[0].qty = "invalid";
+    assert.equal(helpers.filterStock(state, { query: "M580", freeOnly: true }, "offer", "p", "USD")[0].id, "panel");
+    const summary = helpers.summarize(state, new Map([["panel", { qty: "500", salePrice: "77" }]]), "offer", "p", "USD");
+    assert.equal(summary.errors.length, 0); assert.equal(summary.shortages.length, 0); assert.equal(summary.total, 38500);
+    const f = setup(); f.edit(value => { value.items[0].qty = "invalid"; value.reservations[0].qty = "invalid"; }); await f.open(); await f.qty("panel", "500"); await f.click("add"); assert.equal(f.calls.adds.length, 1);
+  });
+  await check("Materials still prohibit foreign-currency goods and use actual stock controls", async () => {
+    const f = setup(); await f.open("materials"); await f.filter("otherCurrency", true);
+    assert.match(f.dialog().innerHTML, /data-psp-select="uah"\s+disabled/); await f.choose("uah"); await f.qty("uah", "2"); await f.click("add");
+    assert.equal(f.calls.adds.length, 0); assert.equal(f.calls.stocks, 1); assert.equal(f.calls.catalogs, 0);
   });
   await check("Invalid quantities block add; valid fractional units and shortages remain plan-only", async () => {
     const f = setup(); await f.open("materials"); await f.qty("panel", "1.5"); await f.click("add");
