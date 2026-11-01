@@ -29,7 +29,7 @@ function runRenderSafetyTests(sourceFile = path.join(__dirname, "..", "app.js"))
     canManageCrmTask() { return true; }, canViewAllCrmTasks() { return true; },
     projectFileIcon() { return "DOC"; }, projectFileCategoryLabel() { return "Договір"; }, formatFileSize() { return "1 КБ"; }, formatProjectFileDate() { return "25.10.2026"; },
   });
-  for (const name of ["escapeAttribute", "projectSubtitle", "formatFilledCombined", "formatCombined", "formatBatteryPassport", "renderPassportPhotos", "objectTechnicalSpecs", "renderProjectList", "renderDetail", "commercialOfferDocumentMarkup", "renderEquipmentCard", "renderAllStringsTable", "renderStringVisual", "renderConnectionDiagram", "passportDocumentMarkup", "renderHome", "renderPhotoTile", "renderProjectFileCard", "renderCrmTaskCard", "companyMemberName", "companyMemberEmail", "renderRoleLabel", "renderCompanyMemberProfile"]) {
+  for (const name of ["escapeAttribute", "projectSubtitle", "formatFilledCombined", "formatCombined", "formatBatteryPassport", "renderPassportPhotos", "objectTechnicalSpecs", "renderProjectList", "projectInstallationCompletion", "renderDetail", "commercialOfferDocumentMarkup", "renderEquipmentCard", "renderAllStringsTable", "renderStringVisual", "renderConnectionDiagram", "passportDocumentMarkup", "renderHome", "renderPhotoTile", "renderProjectFileCard", "renderCrmTaskCard", "companyMemberName", "companyMemberEmail", "renderRoleLabel", "renderCompanyMemberProfile"]) {
     assert.ok(functions.has(name), `${name} exists`); vm.runInContext(functions.get(name), context);
   }
   let passed = 0;

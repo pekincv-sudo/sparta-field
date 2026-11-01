@@ -37,7 +37,7 @@ function runWorkflowTests(projectDirectory = path.join(__dirname, "..")) {
     declarationSource(/const installerChecklistGroups = \[[^]*?\n\];/, "installerChecklistGroups"),
     declarationSource(/const installerChecklistItemIds = [^\n]+;/, "installerChecklistItemIds"),
     declarationSource(/const installerChecklistWeights = \{[^]*?\n\};/, "installerChecklistWeights"),
-    ...["normalizeProjectId", "normalizeLookupValue", "emptyProjectFinance", "normalizeProjectFinance", "emptyInstallerChecklist", "isClosedProjectStatus", "materialQuantity", "warehouseUnitCost", "warehouseItemById", "warehouseItemForMaterial", "projectMaterialsWithWarehousePrices", "addWarehouseItemToProjectMaterials", "installerChecklistStats", "statusProgress", "copyCommercialOfferToMaterials", "addWarehouseMovement"].map(functionSource),
+    ...["normalizeProjectId", "normalizeLookupValue", "emptyProjectFinance", "normalizeProjectFinance", "emptyInstallerChecklist", "isClosedProjectStatus", "materialQuantity", "warehouseUnitCost", "warehouseItemById", "warehouseItemForMaterial", "projectMaterialsWithWarehousePrices", "addWarehouseItemToProjectMaterials", "installerChecklistStats", "projectInstallationCompletion", "statusProgress", "copyCommercialOfferToMaterials", "addWarehouseMovement"].map(functionSource),
   ].join("\n"), context);
 
   const checks = [];
