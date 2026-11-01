@@ -26,7 +26,7 @@
       && (local ? !window.SPARTA_LOCAL_WORKSPACE.initError : cloud.ready && cloud.client && cloud.user?.id && cloud.companyId));
     const selected = typeof selectedProjectId === "undefined" ? "" : id(selectedProjectId);
     return { local, ready, role, selectedProjectId: selected, canWrite: ready && ["owner", "admin", "warehouse"].includes(role),
-      canPlan: ready && ["owner", "admin"].includes(role), client: cloud.client || null,
+      canPlan: ready && ["owner", "admin", "engineer"].includes(role), client: cloud.client || null,
       userId: local ? "local" : id(cloud.user?.id), actorName: local ? "Локальний користувач" : cloud.profile?.full_name || cloud.user?.email || id(cloud.user?.id),
       key: JSON.stringify([local ? "local" : "cloud", local ? window.SPARTA_LOCAL_WORKSPACE.companyId || "local-sparta" : cloud.companyId || "",
         local ? "local" : cloud.user?.id || "", role, selected, typeof cloudContextRevision === "number" ? cloudContextRevision : 0,
