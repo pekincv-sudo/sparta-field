@@ -1,0 +1,47 @@
+.installation-panel,.installation-panel *{box-sizing:border-box;min-width:0}
+.installation-panel{display:grid;gap:16px;width:100%;max-width:100%;padding:18px;border:1px solid #29363d;border-radius:16px;background:#0d171c;color:#f5f6ef;overflow-wrap:anywhere}
+.installation-panel h3,.installation-panel p{margin:0}
+.installation-panel h3{font-size:1.15rem;line-height:1.35}
+.installation-header{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.installation-header>div{flex:1 1 220px}
+.installation-header>button{flex:0 1 auto}
+.installation-panel .installation-note{color:#a5b2b9;font-size:.9rem;line-height:1.5}
+.installation-header .installation-note{margin-top:5px}
+.installation-panel .installation-error,.installation-panel .installation-success{padding:12px;border-radius:10px;border:1px solid #74413c;background:#301e20;color:#ffb6a9;line-height:1.5;font-size:.9rem}
+.installation-panel .installation-success{border-color:#275340;background:#142b22;color:#9ce2b5}
+.installation-panel small.installation-error{display:block;margin-top:5px;padding:7px}
+.installation-actions{display:flex;flex-wrap:wrap;gap:10px}
+.installation-panel button{max-width:100%;white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+.installation-table-wrap{width:100%;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+.installation-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse}
+.installation-table th,.installation-table td{padding:12px 8px;border-bottom:1px solid #29363d;text-align:left;vertical-align:top;white-space:normal;overflow-wrap:anywhere}
+.installation-table th{font-size:.8rem;color:#a5b2b9;font-weight:600}
+.installation-table th:first-child{width:43%}
+.installation-table td strong{display:block;font-size:.95rem;line-height:1.45}
+.installation-table td small{display:block;margin-top:4px;color:#a5b2b9;font-size:.8rem}
+.installation-qty-label{display:flex;align-items:center;flex-wrap:wrap;gap:5px;max-width:100%}
+.installation-panel input[type=number],.installation-panel input[type=date]{width:100%;max-width:100%;min-width:0;padding:10px;border:1px solid #34434b;border-radius:9px;background:#081216;color:#f5f6ef;font:inherit}
+.installation-panel input[type=number]{min-height:43px}
+.installation-qty-label>span:last-child{color:#a5b2b9;font-size:.8rem}
+.installation-footer{display:grid;gap:14px;margin-top:18px}
+.installation-date-label{display:grid;gap:7px;max-width:300px;font-size:.9rem}
+.installation-confirm{display:flex;align-items:flex-start;gap:10px;font-size:.95rem;line-height:1.5}
+.installation-confirm input[type=checkbox]{width:20px;height:20px;min-width:20px;flex:0 0 20px;margin:2px 0 0;accent-color:#ffdb18}
+.installation-submit{justify-self:start}
+.installation-panel button:disabled,.installation-panel input:disabled{opacity:.6;cursor:not-allowed}
+.installation-panel button:focus-visible,.installation-panel input:focus-visible{outline:2px solid #ffdb18;outline-offset:3px}
+.installation-sr-only{position:absolute!important;width:1px!important;height:1px!important;margin:-1px!important;padding:0!important;overflow:hidden!important;clip:rect(0,0,0,0);white-space:nowrap!important;border:0!important}
+.installation-record-table th:first-child{width:75%}
+@media(max-width:560px){
+  .installation-panel{padding:12px;gap:14px}
+  .installation-header>button,.installation-actions>button,.installation-submit,.installation-date-label{width:100%;max-width:100%}
+  .installation-table,.installation-table tbody{display:block;width:100%}
+  .installation-table thead{display:none}
+  .installation-table tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-bottom:12px;padding:12px;border:1px solid #29363d;border-radius:12px}
+  .installation-table td{display:block;padding:0;border:0;font-size:.95rem}
+  .installation-table td:first-child,.installation-table td:last-child{grid-column:1/-1}
+  .installation-table td[data-label]:before{display:block;content:attr(data-label);color:#a5b2b9;font-size:.75rem;margin-bottom:5px}
+  .installation-qty-label{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
+  .installation-record-table tr{grid-template-columns:minmax(0,1fr)}
+  .installation-table-wrap{overflow-x:hidden}
+}

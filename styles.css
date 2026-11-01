@@ -3763,3 +3763,7 @@ dialog::backdrop {
 
 .cash-currency { min-width: 150px; margin-left: auto; }
 .cash-currency select { min-width: 0; width: 100%; }
+.project-contract-form .contract-wide { grid-column: 1 / -1; min-width: 0; }
+.project-contract-form textarea { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; resize: vertical; }
+.project-contract-form .form-submit-cell { display: flex; flex-wrap: wrap; gap: 10px; }
+.project-contract-form .form-submit-cell button { white-space: normal; overflow-wrap: anywhere; }
